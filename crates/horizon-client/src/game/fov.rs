@@ -55,7 +55,7 @@ impl Game<'_> {
         let p = self.player.as_ref()?;
         let using = self.using.and_then(|(slot, ticks)| {
             let stack = self.stack_in(slot)?;
-            let item = match &*stack.item {
+            let item = match self.res.items().behaves_as(&stack.item) {
                 "minecraft:bow" => UseItem::Bow,
                 "minecraft:spyglass" => UseItem::Spyglass,
                 _ => UseItem::Other,

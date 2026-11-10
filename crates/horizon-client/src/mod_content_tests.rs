@@ -68,6 +68,35 @@ fn item_components_patch_the_template_entry() {
 }
 
 #[test]
+fn a_standalone_item_records_the_vanilla_item_it_behaves_as() {
+    // A mod bow copies `minecraft:bow`: its row says so, which is what the game's checks by id ("minecraft:bow") read. A block's own
+    // item does not (it is a block, not a template to behave as).
+    let scratch = std::env::temp_dir().join(format!("horizon-behaves-as-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&scratch);
+    let base = scratch.join("base");
+    fs::create_dir_all(&base).unwrap();
+    let mods = [folder_mod(
+        &scratch.join("bows"),
+        &[
+            ("horizon-mod.toml", &manifest("bows", "")),
+            (
+                "data/bows/horizon/item/electric_bow.json",
+                r#"{"template": "minecraft:bow", "components": {"!minecraft:max_damage": {}}}"#,
+            ),
+        ],
+    )];
+    let mut doc: J =
+        serde_json::from_str(r#"{"minecraft:bow": {"minecraft:max_damage": 384, "minecraft:enchantable": {"value": 1}}}"#)
+            .unwrap();
+    Plan::new(&base, &mods).unwrap().json("items.json", &mut doc).unwrap();
+    let doc: serde_json::Value = serde_json::to_value(&doc).unwrap();
+    assert_eq!(doc["bows:electric_bow"]["horizon:behaves_as"], "minecraft:bow");
+    assert!(doc["bows:electric_bow"].get("minecraft:max_damage").is_none());
+    assert!(doc["minecraft:bow"].get("horizon:behaves_as").is_none());
+    let _ = fs::remove_dir_all(&scratch);
+}
+
+#[test]
 fn creative_tabs_keep_vanilla_items_missing_from_search() {
     let tab = horizon_mods::content::CreativeTab {
         id: "test:restricted".into(),

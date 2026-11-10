@@ -237,6 +237,10 @@ pub enum EntityCommand {
     RemoveMob {
         id: u32,
     },
+    SetFire {
+        id: u32,
+        ticks: u32,
+    },
 }
 
 /// What mods may read of the game, copied once per tick by the game.
@@ -921,6 +925,45 @@ impl Mods {
             .iter()
             .filter_map(|e| e.run.as_ref()?.hooks.server())
             .any(|r| r.damage)
+    }
+    /// Whether a running server mod asked for `item-release`.
+    pub fn hears_item_release(&self) -> bool {
+        self.entries
+            .iter()
+            .filter_map(|e| e.run.as_ref()?.hooks.server())
+            .any(|r| r.item_release)
+    }
+    /// `player` let go of the bow-like `stack` (in `hand`) after `ticks` of drawing: false when a mod cancels the shot.
+    pub fn item_released(&mut self, player: &ServerPlayer, stack: &ModItemStack, hand: &str, ticks: u32) -> bool {
+        for i in 0..self.entries.len() {
+            if !self.entries[i].run.as_ref().and_then(|r| r.hooks.server()).is_some_and(|r| r.item_release) {
+                continue;
+            }
+            let answer = self.call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m
+                    .horizon_mods_server_events()
+                    .call_item_released(&mut run.store, player, stack, hand, ticks),
+                Hooks::Client(..) => Ok(true),
+            });
+            if answer == Some(false) {
+                return false;
+            }
+        }
+        true
+    }
+    /// The arrows `projectiles` of `player`'s shot with `stack` exist.
+    pub fn item_shot(&mut self, player: &ServerPlayer, stack: &ModItemStack, projectiles: &[u32]) {
+        for i in 0..self.entries.len() {
+            if !self.entries[i].run.as_ref().and_then(|r| r.hooks.server()).is_some_and(|r| r.item_release) {
+                continue;
+            }
+            let _ = self.call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m
+                    .horizon_mods_server_events()
+                    .call_item_shot(&mut run.store, player, stack, projectiles),
+                Hooks::Client(..) => Ok(()),
+            });
+        }
     }
     /// `player` is about to be hurt by `source` for `amount`: the damage to go on with (the first mod that changes it decides).
     pub fn player_damaged(&mut self, player: &ServerPlayer, source: &DamageSource, amount: f32) -> f32 {
@@ -2941,6 +2984,9 @@ impl entities::Host for State {
     }
     fn remove_mob(&mut self, dimension: String, id: u32) -> Result<(), String> {
         self.entity_request(dimension, EntityCommand::RemoveMob { id }, &[])
+    }
+    fn set_entity_fire(&mut self, dimension: String, id: u32, ticks: u32) -> Result<(), String> {
+        self.entity_request(dimension, EntityCommand::SetFire { id, ticks: ticks.min(72_000) }, &[])
     }
 }
 /// Most bytes a mod message holds, and messages a call may send.

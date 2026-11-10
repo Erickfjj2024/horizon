@@ -500,6 +500,8 @@ struct NewItem {
     rarity: Option<Rarity>,
     components: Vec<(String, J)>,
     crafting_remainder: Option<String>,
+    /// A standalone item of a mod (not a block's): the game's checks by item id take it for its template (`Items::behaves_as`).
+    behaves_as: bool,
 }
 
 struct Plan<'a> {
@@ -960,6 +962,7 @@ impl<'a> Plan<'a> {
                     rarity: None,
                     components: component_patch(&b.decl.id, &b.decl.components)?,
                     crafting_remainder: None,
+                    behaves_as: false,
                 });
             }
         }
@@ -971,6 +974,7 @@ impl<'a> Plan<'a> {
                     rarity: i.rarity,
                     components: component_patch(&i.id, &i.components)?,
                     crafting_remainder: i.crafting_remainder.clone(),
+                    behaves_as: true,
                 });
             }
         }
@@ -1133,6 +1137,10 @@ impl<'a> Plan<'a> {
             let mut v = v.clone();
             v.rename(&i.rename, false);
             if components {
+                // What the game's checks by id (`"minecraft:bow"`) take this item for.
+                if i.behaves_as {
+                    v.set("horizon:behaves_as", J::Str(i.rename.from.clone()));
+                }
                 if let Some(n) = i.max_stack_size {
                     v.set("minecraft:max_stack_size", J::Num(n.into()));
                 }

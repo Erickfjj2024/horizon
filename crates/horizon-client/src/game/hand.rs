@@ -588,12 +588,12 @@ impl Game<'_> {
     pub(super) fn hands_to_render(&self) -> [bool; 2] {
         let held = |slot| {
             self.stack_in(slot)
-                .map(|s: &ItemStack| (&*s.item, s.data().is_some_and(|d| !d.charged.is_empty())))
+                .map(|s: &ItemStack| (self.res.items().behaves_as(&s.item), s.data().is_some_and(|d| !d.charged.is_empty())))
         };
         let using = self.used_hand().zip(
             self.using
                 .and_then(|(slot, _)| self.stack_in(slot))
-                .map(|s| &*s.item),
+                .map(|s| self.res.items().behaves_as(&s.item)),
         );
         horizon_client::first_person::hands_to_render(
             [held(self.selected), held(super::shield::OFFHAND_SLOT)],

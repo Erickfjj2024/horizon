@@ -272,6 +272,12 @@ pub mod server {
         fn item_hit_damage(&mut self, _player: &Player, _stack: ItemStack, _kind: &str, damage: f32) -> f32 {
             damage
         }
+        /// A player let go of a bow-like item of the mod: false cancels the shot. When [`Registration::on_item_release`] is set.
+        fn item_released(&mut self, _player: &Player, _stack: ItemStack, _hand: &str, _ticks_held: u32) -> bool {
+            true
+        }
+        /// The arrows of a shot exist, with these entity ids. When [`Registration::on_item_release`] is set.
+        fn item_shot(&mut self, _player: &Player, _stack: ItemStack, _projectiles: Vec<u32>) {}
         /// A mod's block was placed at `pos`: false takes it away again (`BlockItem.canPlace`). When [`Registration::blocks`] is set.
         fn can_place(&mut self, _player: &Player, _pos: BlockPos, _state: &str) -> bool {
             true
@@ -365,6 +371,7 @@ pub mod server {
                 items: false,
                 chunks: false,
                 damage: false,
+                item_release: false,
                 redirects: Vec::new(),
             }
         }
@@ -447,6 +454,11 @@ pub mod server {
         /// Call [`ServerMod::player_damaged`] and [`ServerMod::item_hit_damage`].
         pub fn on_damage(mut self) -> Self {
             self.damage = true;
+            self
+        }
+        /// Call [`ServerMod::item_released`] and [`ServerMod::item_shot`] for bow-like items.
+        pub fn on_item_release(mut self) -> Self {
+            self.item_release = true;
             self
         }
         /// Call [`ServerMod::chunk_loaded`].
@@ -654,6 +666,14 @@ macro_rules! export_server_mod {
                     let mut out = damage;
                     with(|m| out = m.item_hit_damage(&player, stack, &kind, damage));
                     out
+                }
+                fn item_released(player: Player, stack: ItemStack, hand: String, ticks_held: u32) -> bool {
+                    let mut out = true;
+                    with(|m| out = m.item_released(&player, stack, &hand, ticks_held));
+                    out
+                }
+                fn item_shot(player: Player, stack: ItemStack, projectiles: Vec<u32>) {
+                    with(|m| m.item_shot(&player, stack, projectiles));
                 }
                 fn can_place(player: Player, pos: BlockPos, state: String) -> bool {
                     let mut out = true;

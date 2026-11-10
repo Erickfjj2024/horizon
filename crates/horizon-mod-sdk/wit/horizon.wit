@@ -1119,6 +1119,9 @@ interface entities {
     kill-mob: func(dimension: string, id: u32) -> result<_, string>;
     /// Takes a mob out of the world with no death and no loot.
     remove-mob: func(dimension: string, id: u32) -> result<_, string>;
+    /// Sets an entity on fire for `ticks` (`Entity.igniteForTicks`: it keeps a longer fire it already has): a mob, or a projectile in
+    /// flight, which is how a mod's bow lights the arrow it just shot (Flame). API 33.
+    set-entity-fire: func(dimension: string, id: u32, ticks: u32) -> result<_, string>;
 }
 
 /// Types shared by the server interfaces; no capability asks for it.
@@ -1301,6 +1304,8 @@ interface server-events {
         chunks: bool,
         /// Call `player-damaged` and `item-hit-damage`.
         damage: bool,
+        /// Call `item-released` and `item-shot` (a bow-like item of the mod, whose template is `minecraft:bow`).
+        item-release: bool,
         /// Blocks of the mod that stand for another block (FORK-35): a click on
         /// them, or breaking them, reaches the block they name.
         redirects: list<redirect-spec>,
@@ -1565,6 +1570,14 @@ interface server-events {
     /// scale it, against an entity of `kind`, holding `stack`. Returns the
     /// damage to use. The first mod to change it decides.
     item-hit-damage: func(player: player, stack: item-stack, kind: string, damage: f32) -> f32;
+    /// A player let go of a bow-like item (`registration.item-release`; `BowItem.releaseUsing`): `stack` is the held weapon, `hand` is
+    /// `main` or `off`, `ticks-held` how long the string was drawn. Answer false to cancel the shot (nothing is consumed, no arrow, no
+    /// sound); true lets the game shoot. The first mod to answer false decides.
+    /// (An export: it has no level; a mod that implements it needs a Horizon that has it.)
+    item-released: func(player: player, stack: item-stack, hand: string, ticks-held: u32) -> bool;
+    /// The arrows of a shot exist (`ItemElectricBow.shoot`'s place in `ProjectileWeaponItem.shoot`): their entity ids, to light with
+    /// `entities.set-entity-fire` or to charge for. Asked after `item-released` answered true. Nothing to answer.
+    item-shot: func(player: player, stack: item-stack, projectiles: list<u32>);
     /// A player placed the mod's block `state` at `pos` (`registration.blocks`):
     /// asked right after the game set it, for the blocks of any mod that asked.
     /// Answer false to refuse: the block is taken away again and nothing is

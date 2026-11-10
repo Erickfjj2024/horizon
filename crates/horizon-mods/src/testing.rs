@@ -67,6 +67,8 @@ pub struct TestGame {
     /// What the last `player_damaged` and `item_hit_damage` answered.
     pub damage_result: Option<f32>,
     pub hit_damage_result: Option<f32>,
+    /// What the last `item_released` answered.
+    pub release_result: Option<bool>,
     /// What the last `can_place` answered.
     pub can_place_result: Option<bool>,
     /// The blocks packed into boxes (`world.pack-block`), by the box's position.
@@ -261,6 +263,7 @@ impl TestGame {
             block_use: None,
             damage_result: None,
             hit_damage_result: None,
+            release_result: None,
             can_place_result: None,
             packed: Default::default(),
             crafts: Vec::new(),
@@ -1046,6 +1049,19 @@ pub struct HitDamageSet {
     damage: f32,
 }
 
+/// A bow-like item let go: `item-released`, and when the mod lets the shot stand, `item-shot` with the arrows' ids.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseSet {
+    stack: String,
+    ticks: u32,
+    #[serde(default)]
+    hand: Option<String>,
+    /// The entity ids of the arrows the game made.
+    #[serde(default)]
+    projectiles: Vec<u32>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UseBlockSet {
@@ -1231,6 +1247,8 @@ pub struct Step {
     place_mod_block: Option<PlaceSet>,
     /// Server mods: the actor's melee blow is worked out.
     hit_damage: Option<HitDamageSet>,
+    /// Server mods: the actor let go of a bow-like item.
+    release_item: Option<ReleaseSet>,
     /// Server mods, capability `entities`: the mobs of the Overworld from now on.
     mobs: Option<Vec<MobSet>>,
     /// Server mods: a spawn ticket is answered after the ticks.
@@ -1289,6 +1307,8 @@ pub struct Expect {
     redirects: Option<Vec<String>>,
     /// Server mods: what the mod answered to the step's `hit-damage`.
     hit_damage_result: Option<f32>,
+    /// Server mods: whether the mod let the step's `release-item` shoot.
+    release_result: Option<bool>,
     /// Server mods, capability `player-items`: every request, as `"set-slot Name 3 stack"`
     /// (`-` for an empty slot), `"hurt Name type amount"` and `"effect Name id ticks level"`.
     player_items: Option<Vec<String>>,
@@ -1538,6 +1558,7 @@ impl Step {
             || self.damage.is_some()
             || self.place_mod_block.is_some()
             || self.hit_damage.is_some()
+            || self.release_item.is_some()
             || self.hit_with.is_some()
             || self.press.is_some()
             || self.net.is_some()
@@ -1673,6 +1694,16 @@ impl Step {
             game.snapshot();
             let stack = parse_stack(&h.stack).ok_or("hit-damage: a stack is item*count")?;
             game.hit_damage_result = Some(game.mods.item_hit_damage(who, &stack, &h.kind, h.damage));
+        }
+        if let (Some(r), Some(who)) = (&self.release_item, &who) {
+            game.snapshot();
+            let stack = parse_stack(&r.stack).ok_or("release-item: a stack is item*count")?;
+            let hand = r.hand.as_deref().unwrap_or("main");
+            let allowed = game.mods.item_released(who, &stack, hand, r.ticks);
+            if allowed {
+                game.mods.item_shot(who, &stack, &r.projectiles);
+            }
+            game.release_result = Some(allowed);
         }
         if let (Some(u), Some(who)) = (&self.use_block, &who) {
             game.snapshot();
@@ -1985,6 +2016,11 @@ impl Step {
                 return Err(format!("hit-damage-result: expected {want}, got {:?}", game.hit_damage_result));
             }
         }
+        if let Some(want) = e.release_result {
+            if game.release_result != Some(want) {
+                return Err(format!("release-result: expected {want}, got {:?}", game.release_result));
+            }
+        }
         if let Some(want) = &e.block_use {
             if game.block_use != Some(want.as_str()) {
                 return Err(format!("block-use: expected {want}, got {:?}", game.block_use));
@@ -2071,6 +2107,7 @@ impl Step {
                         C::SetMobHealth { id, health } => format!("health {id} {health}"),
                         C::KillMob { id } => format!("kill-mob {id}"),
                         C::RemoveMob { id } => format!("remove-mob {id}"),
+                        C::SetFire { id, ticks } => format!("fire {id} {ticks}"),
                     }),
                     _ => None,
                 })

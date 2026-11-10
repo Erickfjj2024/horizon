@@ -379,7 +379,7 @@ impl Game<'_> {
     fn trigger_feels(&self) -> (TriggerFeel, TriggerFeel) {
         let using = match self.using {
             Some((slot, ticks)) => match self.stack_in(slot) {
-                Some(s) if &*s.item == "minecraft:bow" => {
+                Some(s) if self.res.items().behaves_as(&s.item) == "minecraft:bow" => {
                     TriggerFeel::Draw(gamepad::bow_power(ticks))
                 }
                 // TridentItem.THROW_THRESHOLD_TIME.

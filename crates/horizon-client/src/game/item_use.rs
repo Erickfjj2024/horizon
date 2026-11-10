@@ -33,7 +33,7 @@ impl Game<'_> {
     /// goat horns, 0 for the rest, then a mod's answer.
     pub(super) fn use_duration(&self, stack: &ItemStack) -> i32 {
         let info = self.items().get(&stack.item);
-        let mut duration = match &*stack.item {
+        let mut duration = match self.res.items().behaves_as(&stack.item) {
             "minecraft:bow" | "minecraft:crossbow" | "minecraft:trident" => 72_000,
             "minecraft:spyglass" => 1200,
             "minecraft:brush" => 200,

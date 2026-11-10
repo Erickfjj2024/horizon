@@ -7655,7 +7655,7 @@ impl Game<'_> {
             return true;
         }
         let bundle = self.items().get(&held.item).is_some_and(|i| i.bundle);
-        let start = match &*held.item {
+        let start = match self.res.items().behaves_as(&held.item) {
             // BundleItem.use: always starts; the server drops the contents.
             _ if bundle => true,
             // BowItem.use: with an arrow, or in creative.
@@ -7695,7 +7695,7 @@ impl Game<'_> {
         if start {
             self.start_using_item();
         }
-        start || !matches!(&*held.item, "minecraft:bow" | "minecraft:crossbow")
+        start || !matches!(self.res.items().behaves_as(&held.item), "minecraft:bow" | "minecraft:crossbow")
     }
     /// `InstrumentItem.use` on this client: unless the horn is on cooldown,
     /// it is held up, plays its sound at the player and starts its cooldown.
@@ -7727,7 +7727,7 @@ impl Game<'_> {
             return true;
         }
         matches!(
-            &*stack.item,
+            self.res.items().behaves_as(&stack.item),
             "minecraft:bow"
                 | "minecraft:crossbow"
                 | "minecraft:trident"

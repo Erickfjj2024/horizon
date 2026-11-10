@@ -2008,6 +2008,31 @@ mod run {
             self.mods.mods.item_hit_damage(&player, &stack, kind, damage)
         }
 
+        /// A bow-like item of a mod was let go after `ticks` of drawing: false when a server mod cancels the shot.
+        pub(in crate::game) fn mod_item_released(&mut self, stack: &horizon_client::items::ItemStack, ticks: u32) -> bool {
+            if !self.mods.server || !self.mods.mods.hears_item_release() {
+                return true;
+            }
+            let Some(player) = self.acting_server_player() else {
+                return true;
+            };
+            let hand = if self.used_hand() == Some(horizon_client::first_person::Hand::Off) { "off" } else { "main" };
+            let stack = Self::mod_stack(stack);
+            self.mods.mods.item_released(&player, &stack, hand, ticks)
+        }
+
+        /// The arrows `ids` of the acting player's shot with `stack` exist.
+        pub(in crate::game) fn mod_item_shot(&mut self, stack: &horizon_client::items::ItemStack, ids: &[u32]) {
+            if !self.mods.server || !self.mods.mods.hears_item_release() {
+                return;
+            }
+            let Some(player) = self.acting_server_player() else {
+                return;
+            };
+            let stack = Self::mod_stack(stack);
+            self.mods.mods.item_shot(&player, &stack, ids);
+        }
+
         /// The acting player hit entity `entity` of `kind` holding `stack`.
         pub(in crate::game) fn mod_item_hit(
             &mut self,
@@ -2620,6 +2645,7 @@ mod run {
                         C::SetMobHealth { id, health } => self.native_set_mob_health(&dimension, id, health),
                         C::KillMob { id } => self.native_kill_mob(&dimension, id),
                         C::RemoveMob { id } => self.native_remove_mob(&dimension, id),
+                        C::SetFire { id, ticks } => self.native_set_fire(&dimension, id, ticks),
                     };
                     if !done {
                         log::debug!("Horizon: mod {name}'s entity request was refused");

@@ -904,6 +904,7 @@ A display entity's transformation (`block_display`, `item_display`, `text_displa
 | `set-mob-health` | `func(dimension: string, id: u32, health: f32) -> result<_, string>` | Sets a living mob's health (above 0, cut to its maximum). |
 | `kill-mob` | `func(dimension: string, id: u32) -> result<_, string>` | Kills a mob as `/kill` does: it falls and drops its loot. |
 | `remove-mob` | `func(dimension: string, id: u32) -> result<_, string>` | Takes a mob out of the world with no death and no loot. |
+| `set-entity-fire` | `func(dimension: string, id: u32, ticks: u32) -> result<_, string>` | Sets an entity on fire for `ticks` (`Entity.igniteForTicks`: it keeps a longer fire it already has): a mob, or a projectile in flight, which is how a mod's bow lights the arrow it just shot (Flame). API 33. |
 
 ## `item-types`
 
@@ -1224,6 +1225,7 @@ The slots of a block entity. Slot numbers start at 0; at most 256 slots.
 | `items` | `bool` | Call `item-used` and `item-hit`. |
 | `chunks` | `bool` | Call `chunk-loaded`. |
 | `damage` | `bool` | Call `player-damaged` and `item-hit-damage`. |
+| `item-release` | `bool` | Call `item-released` and `item-shot` (a bow-like item of the mod, whose template is `minecraft:bow`). |
 | `redirects` | `list<redirect-spec>` | Blocks of the mod that stand for another block (FORK-35): a click on them, or breaking them, reaches the block they name. |
 
 ### record `block-entity`
@@ -1281,5 +1283,7 @@ New bytes and slots for the block entity at `pos` in `dimension`.
 | `block-used` | `func(player: player, pos: block-pos, sneaking: bool, stack: option<item-stack>) -> block-use` | What a right click on a block of this mod does (`registration.blocks`), asked at the moment of the click for the mod's own blocks, with the block's own use still to come: `default` leaves it to the game (the block opens its menu or acts as it would), `pass` skips the block's own use and goes on to the held item (so a block in hand is placed against it), `consume` takes the click (the hand swings and nothing else runs). `sneaking` and `stack` (the held item, none for an empty hand) are as at the click. API 24. |
 | `player-damaged` | `func(player: player, source: damage-source, amount: f32) -> f32` | A player is about to be hurt (`registration.damage`): where NeoForge's `LivingIncomingDamageEvent` runs, in `hurtServer` once its guards (creative, dead, immune) have passed and before the armour, the enchantments, the resistance and the absorption take their share of `amount`. Returns the damage to go on with: the same to leave it, less to reduce it, 0 (or less) to cancel the hit. The first mod to change it decides. What the mod asks for through imports is made at the end of the tick; `player-items.get-inventory` is as of the last tick. (An export: it has no level; a mod that implements it needs a Horizon that has it.) |
 | `item-hit-damage` | `func(player: player, stack: item-stack, kind: string, damage: f32) -> f32` | A player's melee blow is being worked out (`registration.damage`): the attack damage attribute, with the held weapon's modifiers, is `damage` before the attack strength, the critical hit and the enchantments scale it, against an entity of `kind`, holding `stack`. Returns the damage to use. The first mod to change it decides. |
+| `item-released` | `func(player: player, stack: item-stack, hand: string, ticks-held: u32) -> bool` | A player let go of a bow-like item (`registration.item-release`; `BowItem.releaseUsing`): `stack` is the held weapon, `hand` is `main` or `off`, `ticks-held` how long the string was drawn. Answer false to cancel the shot (nothing is consumed, no arrow, no sound); true lets the game shoot. The first mod to answer false decides. (An export: it has no level; a mod that implements it needs a Horizon that has it.) |
+| `item-shot` | `func(player: player, stack: item-stack, projectiles: list<u32>)` | The arrows of a shot exist (`ItemElectricBow.shoot`'s place in `ProjectileWeaponItem.shoot`): their entity ids, to light with `entities.set-entity-fire` or to charge for. Asked after `item-released` answered true. Nothing to answer. |
 | `can-place` | `func(player: player, pos: block-pos, state: string) -> bool` | A player placed the mod's block `state` at `pos` (`registration.blocks`): asked right after the game set it, for the blocks of any mod that asked. Answer false to refuse: the block is taken away again and nothing is used up (a big machine whose model needs the blocks around it free). Where `BlockItem.canPlace` is in the original. |
 | `item-hit` | `func(player: player, stack: item-stack, entity: u32, kind: string)` | A player hit the entity `entity` of `kind` holding `stack` (`registration.items`): where `Item.hurtEnemy` starts. It only hears. |

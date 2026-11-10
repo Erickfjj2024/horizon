@@ -1,0 +1,26 @@
+[[step]]
+join = "Alex"
+# 250 energy: the first shot passes, and its arrow (entity 41) is not lit in the normal mode.
+release-item = { stack = "bowhooks:power_bow*1", ticks = 20, projectiles = [41] }
+ticks = 1
+expect.release-result = true
+expect.entity-commands = []
+
+[[step]]
+# The fire mode lights the arrow of the second shot.
+release-item = { stack = 'bowhooks:power_bow*1{mode:"fire"}', ticks = 20, projectiles = [42] }
+ticks = 1
+expect.release-result = true
+expect.entity-commands = ["fire 42 100"]
+
+[[step]]
+# 50 energy are left: the third shot is cancelled and nothing is asked for its arrow.
+release-item = { stack = 'bowhooks:power_bow*1{mode:"fire"}', ticks = 20, projectiles = [43] }
+ticks = 1
+expect.release-result = false
+expect.entity-commands = []
+
+[[step]]
+# Another item is not the mod's bow: it goes on.
+release-item = { stack = "minecraft:bow*1", ticks = 20, projectiles = [44] }
+expect.release-result = true

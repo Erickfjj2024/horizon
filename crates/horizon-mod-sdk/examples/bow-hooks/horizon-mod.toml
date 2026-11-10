@@ -1,0 +1,9 @@
+id = "bowhooks"
+name = "Bow Hooks"
+version = "0.1.0"
+description = "Test mod for item-released and item-shot: bowhooks:power_bow (a bow-like item) spends 100 energy a shot, is refused when there is not enough, and its fire mode lights the arrows it shoots."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "entities"]
+experimental = ["entities"]

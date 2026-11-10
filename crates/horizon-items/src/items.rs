@@ -202,6 +202,9 @@ pub struct ItemInfo {
     pub interact_vibrations: bool,
     /// `glider` (elytra).
     pub glider: bool,
+    /// The vanilla item a mod item copies, which the game's id checks (`"minecraft:bow"`...) treat it as: set for the items of
+    /// content mods (`horizon:behaves_as` of their row). `None` for vanilla items.
+    pub behaves_as: Option<Arc<str>>,
     /// `equippable.swappable` and `equip_sound`.
     pub swappable: bool,
     /// `equippable.dispensable` (dispensers may put it on an entity).
@@ -795,6 +798,7 @@ impl Items {
                         .unwrap_or(name)
                         .to_owned(),
                     glider: c["minecraft:glider"].is_object(),
+                    behaves_as: c["horizon:behaves_as"].as_str().map(Arc::from),
                     swappable: c["minecraft:equippable"]["swappable"]
                         .as_bool()
                         .unwrap_or(true),
@@ -920,6 +924,11 @@ impl Items {
     }
     pub fn get(&self, id: &str) -> Option<&ItemInfo> {
         self.items.get(id)
+    }
+    /// The item whose behaviour `id` has: the vanilla template a mod item copies (`minecraft:bow` for a mod bow), else `id`.
+    /// The game's checks by item id go through it.
+    pub fn behaves_as<'a>(&'a self, id: &'a str) -> &'a str {
+        self.items.get(id).and_then(|i| i.behaves_as.as_deref()).unwrap_or(id)
     }
     /// The instrument a goat horn plays: its `instrument` component's
     /// registry entry or inline instrument.

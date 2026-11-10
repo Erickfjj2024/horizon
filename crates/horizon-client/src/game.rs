@@ -6092,7 +6092,7 @@ impl Game<'_> {
             self.use_instrument(&stack);
             return Ok(true);
         }
-        if !on_block && &*stack.item == "minecraft:bow" {
+        if !on_block && self.res.items().behaves_as(&stack.item) == "minecraft:bow" {
             if self.creative || self.projectile_slot("minecraft:bow").is_some() {
                 self.start_using_item();
             }
@@ -6545,7 +6545,7 @@ impl Game<'_> {
     /// used for `ticks`, its hand acting: a bow or a trident lets go (not
     /// when its hand changed), a spyglass stops scoping.
     pub(super) fn release_used_item(&mut self, stack: &ItemStack, ticks: u32, hand_changed: bool) {
-        match &*stack.item {
+        match self.res.items().behaves_as(&stack.item) {
             "minecraft:bow" if !hand_changed => self.release_bow(ticks),
             "minecraft:trident" if !hand_changed => self.release_trident(ticks),
             "minecraft:spyglass" => self.stop_spyglass(),
@@ -13186,6 +13186,13 @@ impl Game<'_> {
         let Some(eye) = self.eye_position() else {
             return;
         };
+        // A mod's bow-like item may cancel the shot (`item-released`): nothing is shot or used.
+        if let Some(held) = self.held().cloned()
+            && self.res.items().get(&held.item).is_some_and(|i| i.behaves_as.is_some())
+            && !self.mod_item_released(&held, ticks)
+        {
+            return;
+        }
         // BowItem.shootProjectile: shootFromRotation(power * 3, inaccuracy 1).
         let p = Vec3::new(eye[0], eye[1] - 0.1, eye[2]);
         let ammo = arrow_slot
@@ -13237,6 +13244,13 @@ impl Game<'_> {
             on_ground,
         );
         self.add_projectile(arrow);
+        // The arrow's id is the last one added; a mod's bow-like item hears it (`item-shot`).
+        if let Some(held) = self.held().cloned()
+            && self.res.items().get(&held.item).is_some_and(|i| i.behaves_as.is_some())
+            && let Some(id) = self.creatures.projectiles.last().map(|p| p.id)
+        {
+            self.mod_item_shot(&held, &[id]);
+        }
         self.player_projectile_shot();
         let pitch = 1.0 / (self.world.random.next_float() * 0.4 + 1.2) + power * 0.5;
         self.audio

@@ -172,6 +172,33 @@ impl Game<'_> {
         m.needs_sync = true;
         true
     }
+    /// Sets the mob `id`, or the projectile `id` in flight, on fire for `ticks` (`Entity.igniteForTicks`: a longer fire it has stays):
+    /// false for none of them, another dimension or a mob that is immune. API 33.
+    pub(super) fn native_set_fire(&mut self, dimension: &str, id: u32, ticks: u32) -> bool {
+        if !self.native_mob_level(dimension) {
+            return false;
+        }
+        let ticks = ticks as i32;
+        if let Some(m) = self.mobs.iter_mut().find(|m| m.id == id && !m.removed) {
+            if m.kind.flags.fire_immune {
+                return false;
+            }
+            m.fire_ticks = m.fire_ticks.max(ticks);
+            m.needs_sync = true;
+            return true;
+        }
+        if let Some(a) = self
+            .creatures
+            .projectiles
+            .iter_mut()
+            .find(|p| p.id == id)
+            .and_then(|p| p.arrow.as_mut())
+        {
+            a.ignite_for_ticks(ticks);
+            return true;
+        }
+        false
+    }
     /// Sets the living mob `id`'s health, cut to its maximum: false for no such
     /// mob, another dimension or a health that isn't above 0 (`native_kill_mob`
     /// kills). API 37.
