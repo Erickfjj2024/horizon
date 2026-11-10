@@ -707,6 +707,25 @@ impl Game<'_> {
     pub(super) fn apply_effect_action(&mut self, action: EffectAction) {
         let creative = self.creative;
         let rules = self.world.health_rules;
+        // A server mod may change the damage of a harmful effect, or cancel it, before the armour (`player-damaged`).
+        let mut poison_amount = 1.0;
+        let action = match action {
+            EffectAction::Hurt(source, amount) if !creative => match self.mod_incoming_damage(source, amount, 0) {
+                Some(left) => EffectAction::Hurt(source, left),
+                None => {
+                    self.combat.forget_noted(true);
+                    return;
+                }
+            },
+            EffectAction::Poison if !creative => match self.mod_incoming_damage("minecraft:magic", 1.0, 0) {
+                Some(left) => {
+                    poison_amount = left;
+                    EffectAction::Poison
+                }
+                None => return,
+            },
+            other => other,
+        };
         let Some(p) = self.player.as_mut() else {
             self.combat.forget_noted(false);
             return;
@@ -730,11 +749,12 @@ impl Game<'_> {
                 self.combat.forget_noted(canceled);
             }
             EffectAction::Poison => {
+                let amount = poison_amount;
                 if !creative
                     && p.health.health() > 1.0
                     && let Some(id) = self.motion.health.damage.id("minecraft:magic")
                 {
-                    let _ = p.hurt(&self.motion.health, rules, id, 1.0);
+                    let _ = p.hurt(&self.motion.health, rules, id, amount);
                 }
             }
             EffectAction::Exhaust(amount) => {

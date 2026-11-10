@@ -398,6 +398,15 @@ impl Game<'_> {
         if let Some((id, name)) = attacker.filter(|_| !creative && !spectator && hurtable) {
             self.note_named_attacker(damage_type, *id, name.clone());
         }
+        // A server mod may change the blast's damage, or cancel it, before the armour and the enchantments.
+        let (amount, hurtable) = if creative || spectator || !hurtable {
+            (amount, hurtable)
+        } else {
+            match self.mod_incoming_damage(damage_type, amount, attacker.map_or(0, |(id, _)| *id as i32)) {
+                Some(left) => (left, true),
+                None => (amount, false),
+            }
+        };
         if let Some(p) = self.player.as_mut()
             && let Some(id) = self.motion.health.damage.id(damage_type)
         {

@@ -3126,6 +3126,11 @@ impl Game<'_> {
         let owner = owner.filter(|_| projectile);
         let causing = known.flatten().or(owner).map_or(0, |id| id as i32);
         let mut outcome = horizon_client::health::BlockOutcome::default();
+        // A server mod may change the damage, or cancel the hit, before the armour and the enchantments (FORK `player-damaged`).
+        let Some(amount) = self.mod_incoming_damage(damage_type, amount, causing) else {
+            self.combat.forget_noted(true);
+            return false;
+        };
         if let Some(player) = self.player.as_mut()
             && let Some(id) = self.motion.health.damage.id(damage_type)
             && let Ok(o) = player.hurt_caused_by(
@@ -3257,6 +3262,11 @@ impl Game<'_> {
     }
     pub(super) fn hurt_player_by(&mut self, damage_type: &str, amount: f32) {
         let mut canceled = false;
+        let amount = if self.creative { Some(amount) } else { self.mod_incoming_damage(damage_type, amount, 0) };
+        let Some(amount) = amount else {
+            self.combat.forget_noted(true);
+            return;
+        };
         if !self.creative
             && let Some(player) = self.player.as_mut()
             && let Some(id) = self.motion.health.damage.id(damage_type)

@@ -1,0 +1,34 @@
+[[step]]
+join = "Alex"
+inventory = [
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "", "damagemods:suit*1",
+]
+damage = { type = "minecraft:on_fire", amount = 3.0, tags = ["minecraft:is_fire"] }
+expect.damage-result = 1.5
+
+[[step]]
+damage = { type = "minecraft:magic", amount = 6.0 }
+expect.damage-result = 0.0
+
+[[step]]
+# Anything else goes on as it was.
+damage = { type = "minecraft:fall", amount = 4.0, tags = ["minecraft:is_fall"] }
+expect.damage-result = 4.0
+
+[[step]]
+# Without the suit nothing changes.
+inventory = [
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "", "",
+]
+damage = { type = "minecraft:magic", amount = 6.0 }
+expect.damage-result = 6.0
+
+[[step]]
+hit-damage = { stack = "damagemods:blade*1", kind = "minecraft:zombie", damage = 4.0 }
+expect.hit-damage-result = 8.0
+
+[[step]]
+hit-damage = { stack = "minecraft:stick*1", kind = "minecraft:zombie", damage = 1.0 }
+expect.hit-damage-result = 1.0

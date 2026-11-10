@@ -947,6 +947,20 @@ What the server calls in a server mod (manifest `api = "0.3"`, experimental). On
 
 `type item-stack = item-stack`
 
+### record `damage-source`
+
+What hurts a player (`player-damaged`): the damage type and what the game knows of it.
+
+| Field | Type | |
+| --- | --- | --- |
+| `damage-type` | `string` | `minecraft:fall`, `minecraft:magic`, `minecraft:player_attack`... |
+| `causing` | `option<u32>` | The entity that caused it (a mob's id; the shooter of an arrow), none when there is none or it is not known. |
+| `is-magic` | `bool` | `minecraft:magic` or `minecraft:indirect_magic`. |
+| `is-fire` | `bool` | In the damage type tag `minecraft:is_fire`. |
+| `is-fall` | `bool` | In `minecraft:is_fall`. |
+| `is-explosion` | `bool` | In `minecraft:is_explosion`. |
+| `tags` | `list<string>` | Every damage type tag the type is in (`minecraft:is_fire`, a mod's own...). |
+
 ### enum `block-use`
 
 How a mod answers a click on one of its blocks (`block-used`).
@@ -1132,6 +1146,7 @@ The slots of a block entity. Slot numbers start at 0; at most 256 slots.
 | `net` | `bool` | Call `net-message` for what players' client halves send. |
 | `items` | `bool` | Call `item-used` and `item-hit`. |
 | `chunks` | `bool` | Call `chunk-loaded`. |
+| `damage` | `bool` | Call `player-damaged` and `item-hit-damage`. |
 
 ### record `block-entity`
 
@@ -1186,4 +1201,6 @@ New bytes and slots for the block entity at `pos` in `dimension`.
 | `chunk-loaded` | `func(dimension: string, chunk-x: s32, chunk-z: s32, new: bool)` | A chunk came into the world (`registration.chunks`): `new` when it was just generated, false when it was read from the save. Its blocks are there (read them with `world.get-block`); what the mod changes with `world.set-blocks` is made at the end of the tick. This is where a mod adds its ores. The chunks around the spawn come before the first tick. |
 | `item-used` | `func(player: player, stack: item-stack, pos: option<block-pos>) -> bool` | A player used `stack` (right click), in the air (no `pos`) or on the block at `pos`, when `registration.items` is set. Answer true to take the use: the hand swings and neither the item's own use nor the block's runs after it; false leaves it to the game. It is asked at the moment of the click, so what it asks for through imports is made at the end of the tick; `world.get-block` reads the blocks as they are now. |
 | `block-used` | `func(player: player, pos: block-pos, sneaking: bool, stack: option<item-stack>) -> block-use` | What a right click on a block of this mod does (`registration.blocks`), asked at the moment of the click for the mod's own blocks, with the block's own use still to come: `default` leaves it to the game (the block opens its menu or acts as it would), `pass` skips the block's own use and goes on to the held item (so a block in hand is placed against it), `consume` takes the click (the hand swings and nothing else runs). `sneaking` and `stack` (the held item, none for an empty hand) are as at the click. API 24. |
+| `player-damaged` | `func(player: player, source: damage-source, amount: f32) -> f32` | A player is about to be hurt (`registration.damage`): where NeoForge's `LivingIncomingDamageEvent` runs, in `hurtServer` once its guards (creative, dead, immune) have passed and before the armour, the enchantments, the resistance and the absorption take their share of `amount`. Returns the damage to go on with: the same to leave it, less to reduce it, 0 (or less) to cancel the hit. The first mod to change it decides. What the mod asks for through imports is made at the end of the tick; `player-items.get-inventory` is as of the last tick. (An export: it has no level; a mod that implements it needs a Horizon that has it.) |
+| `item-hit-damage` | `func(player: player, stack: item-stack, kind: string, damage: f32) -> f32` | A player's melee blow is being worked out (`registration.damage`): the attack damage attribute, with the held weapon's modifiers, is `damage` before the attack strength, the critical hit and the enchantments scale it, against an entity of `kind`, holding `stack`. Returns the damage to use. The first mod to change it decides. |
 | `item-hit` | `func(player: player, stack: item-stack, entity: u32, kind: string)` | A player hit the entity `entity` of `kind` holding `stack` (`registration.items`): where `Item.hurtEnemy` starts. It only hears. |

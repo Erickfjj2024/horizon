@@ -62,6 +62,9 @@ pub struct TestGame {
     pub claimed: Option<bool>,
     /// What the last `block_used` answered (`default`, `pass` or `consume`).
     pub block_use: Option<&'static str>,
+    /// What the last `player_damaged` and `item_hit_damage` answered.
+    pub damage_result: Option<f32>,
+    pub hit_damage_result: Option<f32>,
     /// The mobs of the Overworld a script set, for capability `entities`.
     pub mobs: Vec<crate::MobInfo>,
     /// The structures last told to the mod, by dimension and group.
@@ -212,6 +215,8 @@ impl TestGame {
             inventories: Vec::new(),
             claimed: None,
             block_use: None,
+            damage_result: None,
+            hit_damage_result: None,
         };
         copy_mod(hmod, &copy)?;
         game.start()?;
@@ -942,6 +947,25 @@ fn with_property(state: &str, property: &str, value: &str) -> String {
 /// A stack used or hit with in a step: `"minecraft:stick*1"`, components after the count.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct DamageSet {
+    #[serde(rename = "type")]
+    damage_type: String,
+    amount: f32,
+    causing: Option<u32>,
+    #[serde(default)]
+    tags: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HitDamageSet {
+    stack: String,
+    kind: String,
+    damage: f32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UseBlockSet {
     pos: [i32; 3],
     stack: Option<String>,
@@ -1117,6 +1141,10 @@ pub struct Step {
     hit_with: Option<UseSet>,
     /// Server mods (FORK-29): the actor right-clicks the block at `pos` after the ticks, holding `stack` (none: an empty hand).
     use_block: Option<UseBlockSet>,
+    /// Server mods: the actor is about to be hurt.
+    damage: Option<DamageSet>,
+    /// Server mods: the actor's melee blow is worked out.
+    hit_damage: Option<HitDamageSet>,
     /// Server mods, capability `entities`: the mobs of the Overworld from now on.
     mobs: Option<Vec<MobSet>>,
     /// Server mods: a spawn ticket is answered after the ticks.
@@ -1167,6 +1195,10 @@ pub struct Expect {
     claimed: Option<bool>,
     /// Server mods (FORK-29): what the mod answered to the step's `use-block`: `default`, `pass` or `consume`.
     block_use: Option<String>,
+    /// Server mods: what the mod answered to the step's `damage` (the damage to go on with).
+    damage_result: Option<f32>,
+    /// Server mods: what the mod answered to the step's `hit-damage`.
+    hit_damage_result: Option<f32>,
     /// Server mods, capability `player-items`: every request, as `"set-slot Name 3 stack"`
     /// (`-` for an empty slot), `"hurt Name type amount"` and `"effect Name id ticks level"`.
     player_items: Option<Vec<String>>,
@@ -1408,6 +1440,8 @@ impl Step {
             || self.inventory.is_some()
             || self.use_item.is_some()
             || self.use_block.is_some()
+            || self.damage.is_some()
+            || self.hit_damage.is_some()
             || self.hit_with.is_some()
             || self.press.is_some()
             || self.net.is_some()
@@ -1482,6 +1516,26 @@ impl Step {
             game.snapshot();
             let stack = parse_stack(&u.stack).ok_or("use-item: a stack is item*count")?;
             game.claimed = Some(game.mods.item_used(who, &stack, u.pos));
+        }
+        if let (Some(d), Some(who)) = (&self.damage, &who) {
+            game.snapshot();
+            let t = d.damage_type.as_str();
+            let has = |tag: &str| d.tags.iter().any(|x| x == tag);
+            let source = crate::DamageSource {
+                damage_type: t.to_owned(),
+                causing: d.causing,
+                is_magic: matches!(t, "minecraft:magic" | "minecraft:indirect_magic"),
+                is_fire: has("minecraft:is_fire"),
+                is_fall: has("minecraft:is_fall"),
+                is_explosion: has("minecraft:is_explosion"),
+                tags: d.tags.clone(),
+            };
+            game.damage_result = Some(game.mods.player_damaged(who, &source, d.amount));
+        }
+        if let (Some(h), Some(who)) = (&self.hit_damage, &who) {
+            game.snapshot();
+            let stack = parse_stack(&h.stack).ok_or("hit-damage: a stack is item*count")?;
+            game.hit_damage_result = Some(game.mods.item_hit_damage(who, &stack, &h.kind, h.damage));
         }
         if let (Some(u), Some(who)) = (&self.use_block, &who) {
             game.snapshot();
@@ -1756,6 +1810,16 @@ impl Step {
                 })
                 .collect();
             same("chunk-forced", want, &got)?;
+        }
+        if let Some(want) = e.damage_result {
+            if game.damage_result != Some(want) {
+                return Err(format!("damage-result: expected {want}, got {:?}", game.damage_result));
+            }
+        }
+        if let Some(want) = e.hit_damage_result {
+            if game.hit_damage_result != Some(want) {
+                return Err(format!("hit-damage-result: expected {want}, got {:?}", game.hit_damage_result));
+            }
         }
         if let Some(want) = &e.block_use {
             if game.block_use != Some(want.as_str()) {

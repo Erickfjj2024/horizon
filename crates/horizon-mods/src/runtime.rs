@@ -54,7 +54,7 @@ use bindings::{
 pub use server_bindings::{
     exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
-        BlockPos, BlockUse, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
+        BlockPos, BlockUse, DamageSource, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
     },
     horizon::mods::player_control::Motion,
     horizon::mods::players::{GameMode, Player as ServerPlayer},
@@ -827,6 +827,49 @@ impl Mods {
             }
         }
         BlockUse::Default
+    }
+    /// Whether a running server mod asked for `damage`.
+    pub fn hears_damage(&self) -> bool {
+        self.entries
+            .iter()
+            .filter_map(|e| e.run.as_ref()?.hooks.server())
+            .any(|r| r.damage)
+    }
+    /// `player` is about to be hurt by `source` for `amount`: the damage to go on with (the first mod that changes it decides).
+    pub fn player_damaged(&mut self, player: &ServerPlayer, source: &DamageSource, amount: f32) -> f32 {
+        for i in 0..self.entries.len() {
+            if !self.entries[i].run.as_ref().and_then(|r| r.hooks.server()).is_some_and(|r| r.damage) {
+                continue;
+            }
+            let answer = self.call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m
+                    .horizon_mods_server_events()
+                    .call_player_damaged(&mut run.store, player, source, amount),
+                Hooks::Client(..) => Ok(amount),
+            });
+            if let Some(a) = answer.filter(|a| a.is_finite() && (*a - amount).abs() > f32::EPSILON) {
+                return a.min(amount.max(0.0) * 1000.0 + 1000.0);
+            }
+        }
+        amount
+    }
+    /// `player`'s melee blow with `stack` against `kind` has `damage` attack damage: what to use.
+    pub fn item_hit_damage(&mut self, player: &ServerPlayer, stack: &ModItemStack, kind: &str, damage: f32) -> f32 {
+        for i in 0..self.entries.len() {
+            if !self.entries[i].run.as_ref().and_then(|r| r.hooks.server()).is_some_and(|r| r.damage) {
+                continue;
+            }
+            let answer = self.call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m
+                    .horizon_mods_server_events()
+                    .call_item_hit_damage(&mut run.store, player, stack, kind, damage),
+                Hooks::Client(..) => Ok(damage),
+            });
+            if let Some(a) = answer.filter(|a| a.is_finite() && (*a - damage).abs() > f32::EPSILON) {
+                return a.clamp(0.0, 1024.0);
+            }
+        }
+        damage
     }
     /// Whether a running server mod asked for `blocks` (and so hears `block-used`).
     pub fn hears_blocks(&self) -> bool {

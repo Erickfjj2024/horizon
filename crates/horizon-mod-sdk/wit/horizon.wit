@@ -1041,6 +1041,26 @@ interface server-events {
     use players.{player};
     use item-types.{item-stack};
 
+    /// What hurts a player (`player-damaged`): the damage type and what the
+    /// game knows of it.
+    record damage-source {
+        /// `minecraft:fall`, `minecraft:magic`, `minecraft:player_attack`...
+        damage-type: string,
+        /// The entity that caused it (a mob's id; the shooter of an arrow), none
+        /// when there is none or it is not known.
+        causing: option<u32>,
+        /// `minecraft:magic` or `minecraft:indirect_magic`.
+        is-magic: bool,
+        /// In the damage type tag `minecraft:is_fire`.
+        is-fire: bool,
+        /// In `minecraft:is_fall`.
+        is-fall: bool,
+        /// In `minecraft:is_explosion`.
+        is-explosion: bool,
+        /// Every damage type tag the type is in (`minecraft:is_fire`, a mod's own...).
+        tags: list<string>,
+    }
+
     /// How a mod answers a click on one of its blocks (`block-used`).
     enum block-use {
         default,
@@ -1123,6 +1143,8 @@ interface server-events {
         items: bool,
         /// Call `chunk-loaded`.
         chunks: bool,
+        /// Call `player-damaged` and `item-hit-damage`.
+        damage: bool,
     }
     record block-entity-kind {
         /// The block's id, `mymod:machine`.
@@ -1368,6 +1390,22 @@ interface server-events {
     /// runs). `sneaking` and `stack` (the held item, none for an empty hand)
     /// are as at the click. API 24.
     block-used: func(player: player, pos: block-pos, sneaking: bool, stack: option<item-stack>) -> block-use;
+    /// A player is about to be hurt (`registration.damage`): where NeoForge's
+    /// `LivingIncomingDamageEvent` runs, in `hurtServer` once its guards
+    /// (creative, dead, immune) have passed and before the armour, the
+    /// enchantments, the resistance and the absorption take their share of
+    /// `amount`. Returns the damage to go on with: the same to leave it, less
+    /// to reduce it, 0 (or less) to cancel the hit. The first mod to change
+    /// it decides. What the mod asks for through imports is made at the end
+    /// of the tick; `player-items.get-inventory` is as of the last tick.
+    /// (An export: it has no level; a mod that implements it needs a Horizon that has it.)
+    player-damaged: func(player: player, source: damage-source, amount: f32) -> f32;
+    /// A player's melee blow is being worked out (`registration.damage`): the
+    /// attack damage attribute, with the held weapon's modifiers, is `damage`
+    /// before the attack strength, the critical hit and the enchantments
+    /// scale it, against an entity of `kind`, holding `stack`. Returns the
+    /// damage to use. The first mod to change it decides.
+    item-hit-damage: func(player: player, stack: item-stack, kind: string, damage: f32) -> f32;
     /// A player hit the entity `entity` of `kind` holding `stack`
     /// (`registration.items`): where `Item.hurtEnemy` starts. It only hears.
     item-hit: func(player: player, stack: item-stack, entity: u32, kind: string);

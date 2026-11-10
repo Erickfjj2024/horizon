@@ -1,0 +1,9 @@
+id = "damagemods"
+name = "Damage Mods"
+version = "0.1.0"
+description = "Test mod for damage hooks: a worn damagemods:suit takes half of the fire damage and all of the magic damage, and damagemods:blade hits twice as hard."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "player-items"]
+experimental = ["player-items"]

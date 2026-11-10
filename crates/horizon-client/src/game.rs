@@ -10958,6 +10958,8 @@ impl Game<'_> {
         living: bool,
     ) -> (f32, f32, bool, bool) {
         let hand_damage = self.attack_damage();
+        // A server mod may change the attack damage of the blow (the Meka-Tool's modules do, in the original through its attribute).
+        let hand_damage = self.mod_hit_damage(target_kind, hand_damage);
         // Riptide's spin replaces the attack damage attribute.
         let spin = self.player.as_ref().map_or(0.0, |p| p.auto_spin_attack_dmg);
         let damage = if spin > 0.0 { spin } else { hand_damage };

@@ -209,7 +209,7 @@ pub mod server {
 
     pub use exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
-        BlockPos, BlockUse, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,
+        BlockPos, BlockUse, DamageSource, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,
     };
     pub use horizon::mods::players::{self, GameMode, Player};
     pub use horizon::mods::player_control::{self, Motion};
@@ -261,6 +261,16 @@ pub mod server {
         /// on to the held item (a block in hand is placed against it), [`BlockUse::Consume`] takes the click.
         fn block_used(&mut self, _player: &Player, _pos: BlockPos, _sneaking: bool, _stack: Option<ItemStack>) -> BlockUse {
             BlockUse::Default
+        }
+        /// A player is about to be hurt, before armour and enchantments (NeoForge's `LivingIncomingDamageEvent`): the damage to go on
+        /// with (0 cancels). When [`Registration::on_damage`] is set.
+        fn player_damaged(&mut self, _player: &Player, _source: DamageSource, amount: f32) -> f32 {
+            amount
+        }
+        /// The attack damage of a player's melee blow against an entity of `kind`, before the attack strength scales it: the damage to
+        /// use. When [`Registration::on_damage`] is set.
+        fn item_hit_damage(&mut self, _player: &Player, _stack: ItemStack, _kind: &str, damage: f32) -> f32 {
+            damage
         }
         /// A player hit an entity holding `stack`. When [`Registration::on_items`] is set.
         fn item_hit(&mut self, _player: &Player, _stack: ItemStack, _entity: u32, _kind: &str) {}
@@ -350,6 +360,7 @@ pub mod server {
                 net: false,
                 items: false,
                 chunks: false,
+                damage: false,
             }
         }
         /// `block` (`mymod:machine`) carries a block entity; `ticks` asks
@@ -420,6 +431,11 @@ pub mod server {
         }
         pub fn on_chat(mut self) -> Self {
             self.chat = true;
+            self
+        }
+        /// Call [`ServerMod::player_damaged`] and [`ServerMod::item_hit_damage`].
+        pub fn on_damage(mut self) -> Self {
+            self.damage = true;
             self
         }
         /// Call [`ServerMod::chunk_loaded`].
@@ -556,7 +572,7 @@ macro_rules! export_server_mod {
         const _: () = {
             use ::std::cell::RefCell;
             use $crate::server::{
-                Args, ArgumentValue, BlockEntity, BlockEntityUpdate, BlockPos, BlockUse, Player, Registration,
+                Args, ArgumentValue, BlockEntity, BlockEntityUpdate, BlockPos, BlockUse, DamageSource, Player, Registration,
                 ItemStack, ServerMod, Structure,
             };
             ::std::thread_local! {
@@ -616,6 +632,16 @@ macro_rules! export_server_mod {
                 fn block_used(player: Player, pos: BlockPos, sneaking: bool, stack: Option<ItemStack>) -> BlockUse {
                     let mut out = BlockUse::Default;
                     with(|m| out = m.block_used(&player, pos, sneaking, stack));
+                    out
+                }
+                fn player_damaged(player: Player, source: DamageSource, amount: f32) -> f32 {
+                    let mut out = amount;
+                    with(|m| out = m.player_damaged(&player, source, amount));
+                    out
+                }
+                fn item_hit_damage(player: Player, stack: ItemStack, kind: String, damage: f32) -> f32 {
+                    let mut out = damage;
+                    with(|m| out = m.item_hit_damage(&player, stack, &kind, damage));
                     out
                 }
                 fn item_hit(player: Player, stack: ItemStack, entity: u32, kind: String) {

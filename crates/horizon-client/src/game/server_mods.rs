@@ -66,6 +66,12 @@ impl Game<'_> {
         false
     }
     pub(super) fn apply_mod_block_writes(&mut self) {}
+    pub(super) fn mod_incoming_damage(&mut self, _damage_type: &str, amount: f32, _causing: i32) -> Option<f32> {
+        Some(amount)
+    }
+    pub(super) fn mod_hit_damage(&mut self, _kind: &str, damage: f32) -> f32 {
+        damage
+    }
 }
 
 #[cfg(feature = "mods")]
@@ -1686,6 +1692,56 @@ mod run {
             self.return_world();
             self.apply_mod_block_writes();
             answer
+        }
+
+        /// `LivingIncomingDamageEvent` for the acting player: the damage a server mod lets through of `amount` of `damage_type`, before
+        /// the armour and the enchantments; none when it cancels the hit. Past the guards the caller has (creative, spectator).
+        pub(in crate::game) fn mod_incoming_damage(&mut self, damage_type: &str, amount: f32, causing: i32) -> Option<f32> {
+            if amount <= 0.0 || !self.mods.server || !self.mods.mods.hears_damage() {
+                return Some(amount);
+            }
+            let Some(player) = self.acting_server_player() else {
+                return Some(amount);
+            };
+            let tags: Vec<String> = self
+                .res
+                .stations()
+                .enchantments
+                .damage_tags
+                .iter()
+                .filter(|(_, types)| types.contains(damage_type))
+                .map(|(tag, _)| tag.to_string())
+                .collect();
+            let has = |t: &str| tags.iter().any(|x| x == t);
+            let source = horizon_mods::DamageSource {
+                damage_type: damage_type.to_owned(),
+                causing: u32::try_from(causing).ok().filter(|c| *c != 0),
+                is_magic: matches!(damage_type, "minecraft:magic" | "minecraft:indirect_magic"),
+                is_fire: has("minecraft:is_fire"),
+                is_fall: has("minecraft:is_fall"),
+                is_explosion: has("minecraft:is_explosion"),
+                tags,
+            };
+            self.lend_world();
+            let left = self.mods.mods.player_damaged(&player, &source, amount);
+            self.return_world();
+            self.apply_mod_block_writes();
+            (left > 0.0).then_some(left)
+        }
+
+        /// The attack damage of the acting player's melee blow against `kind`, as a server mod makes it.
+        pub(in crate::game) fn mod_hit_damage(&mut self, kind: &str, damage: f32) -> f32 {
+            if !self.mods.server || !self.mods.mods.hears_damage() {
+                return damage;
+            }
+            let Some(player) = self.acting_server_player() else {
+                return damage;
+            };
+            let Some(stack) = self.held().cloned() else {
+                return damage;
+            };
+            let stack = Self::mod_stack(&stack);
+            self.mods.mods.item_hit_damage(&player, &stack, kind, damage)
         }
 
         /// The acting player hit entity `entity` of `kind` holding `stack`.

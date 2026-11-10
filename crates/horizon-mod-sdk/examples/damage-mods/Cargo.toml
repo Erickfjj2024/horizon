@@ -1,0 +1,16 @@
+[package]
+name = "damage-mods"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Example Horizon server mod: changing the damage a player takes and the damage of their blow"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+horizon-mod-sdk = { path = "../.." }
+
+[lints]
+workspace = true

@@ -185,6 +185,9 @@ impl Game<'_> {
         } else {
             amount
         };
+        let Some(amount) = self.mod_incoming_damage(kind, amount, 0) else {
+            return;
+        };
         if let Some(p) = self.player.as_mut()
             && let Some(id) = self.motion.health.damage.id(kind)
         {
