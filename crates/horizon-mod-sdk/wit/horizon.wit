@@ -1014,6 +1014,13 @@ interface server-events {
     use players.{player};
     use item-types.{item-stack};
 
+    /// How a mod answers a click on one of its blocks (`block-used`).
+    enum block-use {
+        default,
+        pass,
+        consume,
+    }
+
     record block-pos {
         x: s32,
         y: s32,
@@ -1075,7 +1082,7 @@ interface server-events {
         joins: bool,
         /// Call `chat` for each chat message a player sends.
         chat: bool,
-        /// Call `block-broken` and `block-placed`.
+        /// Call `block-broken`, `block-placed` and `block-used`.
         blocks: bool,
         /// Blocks of the mod that carry a block entity: its saved bytes
         /// (`block-entity.data`), kept with the chunk and ticked by
@@ -1325,6 +1332,15 @@ interface server-events {
     /// moment of the click, so what it asks for through imports is made at the
     /// end of the tick; `world.get-block` reads the blocks as they are now.
     item-used: func(player: player, stack: item-stack, pos: option<block-pos>) -> bool;
+    /// What a right click on a block of this mod does (`registration.blocks`),
+    /// asked at the moment of the click for the mod's own blocks, with the
+    /// block's own use still to come: `default` leaves it to the game (the
+    /// block opens its menu or acts as it would), `pass` skips the block's own
+    /// use and goes on to the held item (so a block in hand is placed against
+    /// it), `consume` takes the click (the hand swings and nothing else
+    /// runs). `sneaking` and `stack` (the held item, none for an empty hand)
+    /// are as at the click. API 24.
+    block-used: func(player: player, pos: block-pos, sneaking: bool, stack: option<item-stack>) -> block-use;
     /// A player hit the entity `entity` of `kind` holding `stack`
     /// (`registration.items`): where `Item.hurtEnemy` starts. It only hears.
     item-hit: func(player: player, stack: item-stack, entity: u32, kind: string);

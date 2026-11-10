@@ -943,6 +943,16 @@ What the server calls in a server mod (manifest `api = "0.3"`, experimental). On
 
 `type item-stack = item-stack`
 
+### enum `block-use`
+
+How a mod answers a click on one of its blocks (`block-used`).
+
+| Case | |
+| --- | --- |
+| `default` |  |
+| `pass` |  |
+| `consume` |  |
+
 ### record `block-pos`
 
 | Field | Type | |
@@ -1113,7 +1123,7 @@ The slots of a block entity. Slot numbers start at 0; at most 256 slots.
 | `tick` | `bool` | Call `tick` every server tick (20 per second). |
 | `joins` | `bool` | Call `player-joined` and `player-left`. |
 | `chat` | `bool` | Call `chat` for each chat message a player sends. |
-| `blocks` | `bool` | Call `block-broken` and `block-placed`. |
+| `blocks` | `bool` | Call `block-broken`, `block-placed` and `block-used`. |
 | `block-entities` | `list<block-entity-kind>` | Blocks of the mod that carry a block entity: its saved bytes (`block-entity.data`), kept with the chunk and ticked by `block-entities-tick`. The block's content `template` must itself have a block entity (a furnace, a chest...), so that breaking the block removes it. |
 | `net` | `bool` | Call `net-message` for what players' client halves send. |
 | `items` | `bool` | Call `item-used` and `item-hit`. |
@@ -1171,4 +1181,5 @@ New bytes and slots for the block entity at `pos` in `dimension`.
 | `entity-spawned` | `func(ticket: u64, id: option<u32>)` | The answer to a `spawn-mob` or `summon`: the new entity's id, or none when it could not be made (an unknown kind, a chunk not loaded, a monster on peaceful, a mod keeping it out). |
 | `chunk-loaded` | `func(dimension: string, chunk-x: s32, chunk-z: s32, new: bool)` | A chunk came into the world (`registration.chunks`): `new` when it was just generated, false when it was read from the save. Its blocks are there (read them with `world.get-block`); what the mod changes with `world.set-blocks` is made at the end of the tick. This is where a mod adds its ores. The chunks around the spawn come before the first tick. |
 | `item-used` | `func(player: player, stack: item-stack, pos: option<block-pos>) -> bool` | A player used `stack` (right click), in the air (no `pos`) or on the block at `pos`, when `registration.items` is set. Answer true to take the use: the hand swings and neither the item's own use nor the block's runs after it; false leaves it to the game. It is asked at the moment of the click, so what it asks for through imports is made at the end of the tick; `world.get-block` reads the blocks as they are now. |
+| `block-used` | `func(player: player, pos: block-pos, sneaking: bool, stack: option<item-stack>) -> block-use` | What a right click on a block of this mod does (`registration.blocks`), asked at the moment of the click for the mod's own blocks, with the block's own use still to come: `default` leaves it to the game (the block opens its menu or acts as it would), `pass` skips the block's own use and goes on to the held item (so a block in hand is placed against it), `consume` takes the click (the hand swings and nothing else runs). `sneaking` and `stack` (the held item, none for an empty hand) are as at the click. API 24. |
 | `item-hit` | `func(player: player, stack: item-stack, entity: u32, kind: string)` | A player hit the entity `entity` of `kind` holding `stack` (`registration.items`): where `Item.hurtEnemy` starts. It only hears. |

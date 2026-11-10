@@ -359,6 +359,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "block-use"
+version = "0.1.0"
+dependencies = [
+ "horizon-mod-sdk",
+]
+
+[[package]]
 name = "block2"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

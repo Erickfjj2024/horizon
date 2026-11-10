@@ -208,7 +208,7 @@ pub mod server {
 
     pub use exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
-        BlockPos, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,
+        BlockPos, BlockUse, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,
     };
     pub use horizon::mods::players::{self, GameMode, Player};
     pub use horizon::mods::player_control::{self, Motion};
@@ -254,6 +254,12 @@ pub mod server {
         /// Answer true to take the use. When [`Registration::on_items`] is set.
         fn item_used(&mut self, _player: &Player, _stack: ItemStack, _pos: Option<BlockPos>) -> bool {
             false
+        }
+        /// A right click on one of the mod's blocks, asked before the block's own use, when [`Registration::blocks`]
+        /// is set: [`BlockUse::Default`] leaves it to the game, [`BlockUse::Pass`] skips the block's use and goes
+        /// on to the held item (a block in hand is placed against it), [`BlockUse::Consume`] takes the click.
+        fn block_used(&mut self, _player: &Player, _pos: BlockPos, _sneaking: bool, _stack: Option<ItemStack>) -> BlockUse {
+            BlockUse::Default
         }
         /// A player hit an entity holding `stack`. When [`Registration::on_items`] is set.
         fn item_hit(&mut self, _player: &Player, _stack: ItemStack, _entity: u32, _kind: &str) {}
@@ -549,7 +555,7 @@ macro_rules! export_server_mod {
         const _: () = {
             use ::std::cell::RefCell;
             use $crate::server::{
-                Args, ArgumentValue, BlockEntity, BlockEntityUpdate, BlockPos, Player, Registration,
+                Args, ArgumentValue, BlockEntity, BlockEntityUpdate, BlockPos, BlockUse, Player, Registration,
                 ItemStack, ServerMod, Structure,
             };
             ::std::thread_local! {
@@ -604,6 +610,11 @@ macro_rules! export_server_mod {
                 fn item_used(player: Player, stack: ItemStack, pos: Option<BlockPos>) -> bool {
                     let mut out = false;
                     with(|m| out = m.item_used(&player, stack, pos));
+                    out
+                }
+                fn block_used(player: Player, pos: BlockPos, sneaking: bool, stack: Option<ItemStack>) -> BlockUse {
+                    let mut out = BlockUse::Default;
+                    with(|m| out = m.block_used(&player, pos, sneaking, stack));
                     out
                 }
                 fn item_hit(player: Player, stack: ItemStack, entity: u32, kind: String) {

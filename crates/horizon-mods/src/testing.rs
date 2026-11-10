@@ -60,6 +60,8 @@ pub struct TestGame {
     pub inventories: Vec<(String, Vec<Option<crate::ModItemStack>>)>,
     /// What the last `item_used` answered.
     pub claimed: Option<bool>,
+    /// What the last `block_used` answered (`default`, `pass` or `consume`).
+    pub block_use: Option<&'static str>,
     /// The mobs of the Overworld a script set, for capability `entities`.
     pub mobs: Vec<crate::MobInfo>,
     /// The structures last told to the mod, by dimension and group.
@@ -209,6 +211,7 @@ impl TestGame {
             mobs: Vec::new(),
             inventories: Vec::new(),
             claimed: None,
+            block_use: None,
         };
         copy_mod(hmod, &copy)?;
         game.start()?;
@@ -939,6 +942,15 @@ fn with_property(state: &str, property: &str, value: &str) -> String {
 /// A stack used or hit with in a step: `"minecraft:stick*1"`, components after the count.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct UseBlockSet {
+    pos: [i32; 3],
+    stack: Option<String>,
+    #[serde(default)]
+    sneaking: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UseSet {
     stack: String,
     /// The block clicked; none: in the air.
@@ -1103,6 +1115,8 @@ pub struct Step {
     use_item: Option<UseSet>,
     /// Server mods: the actor hits an entity holding a stack after the ticks.
     hit_with: Option<UseSet>,
+    /// Server mods (FORK-29): the actor right-clicks the block at `pos` after the ticks, holding `stack` (none: an empty hand).
+    use_block: Option<UseBlockSet>,
     /// Server mods, capability `entities`: the mobs of the Overworld from now on.
     mobs: Option<Vec<MobSet>>,
     /// Server mods: a spawn ticket is answered after the ticks.
@@ -1151,6 +1165,8 @@ pub struct Expect {
     chunk_forced: Option<Vec<String>>,
     /// Server mods: whether the mod took the step's `use-item`.
     claimed: Option<bool>,
+    /// Server mods (FORK-29): what the mod answered to the step's `use-block`: `default`, `pass` or `consume`.
+    block_use: Option<String>,
     /// Server mods, capability `player-items`: every request, as `"set-slot Name 3 stack"`
     /// (`-` for an empty slot), `"hurt Name type amount"` and `"effect Name id ticks level"`.
     player_items: Option<Vec<String>>,
@@ -1389,6 +1405,7 @@ impl Step {
         let acts = self.player.is_some()
             || self.inventory.is_some()
             || self.use_item.is_some()
+            || self.use_block.is_some()
             || self.hit_with.is_some()
             || self.press.is_some()
             || self.net.is_some()
@@ -1463,6 +1480,18 @@ impl Step {
             game.snapshot();
             let stack = parse_stack(&u.stack).ok_or("use-item: a stack is item*count")?;
             game.claimed = Some(game.mods.item_used(who, &stack, u.pos));
+        }
+        if let (Some(u), Some(who)) = (&self.use_block, &who) {
+            game.snapshot();
+            let stack = match &u.stack {
+                Some(text) => Some(parse_stack(text).ok_or("use-block: a stack is item*count")?),
+                None => None,
+            };
+            game.block_use = Some(match game.mods.block_used(who, u.pos, u.sneaking, stack.as_ref()) {
+                crate::BlockUse::Default => "default",
+                crate::BlockUse::Pass => "pass",
+                crate::BlockUse::Consume => "consume",
+            });
         }
         if let (Some(u), Some(who)) = (&self.hit_with, &who) {
             game.snapshot();
@@ -1725,6 +1754,11 @@ impl Step {
                 })
                 .collect();
             same("chunk-forced", want, &got)?;
+        }
+        if let Some(want) = &e.block_use {
+            if game.block_use != Some(want.as_str()) {
+                return Err(format!("block-use: expected {want}, got {:?}", game.block_use));
+            }
         }
         if let Some(want) = e.claimed {
             if game.claimed != Some(want) {

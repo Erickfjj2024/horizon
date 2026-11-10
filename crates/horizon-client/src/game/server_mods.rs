@@ -1637,6 +1637,38 @@ mod run {
             claimed
         }
 
+        /// FORK-29: the acting player right-clicked the block at `pos` holding `stack`; what a server mod that owns
+        /// the block decides for the block's own use. Only blocks of a mod are asked.
+        pub(in crate::game) fn mod_block_use(
+            &mut self,
+            pos: [i32; 3],
+            stack: Option<&horizon_client::items::ItemStack>,
+            sneaking: bool,
+        ) -> horizon_mods::BlockUse {
+            if !self.mods.server || !self.mods.mods.hears_blocks() {
+                return horizon_mods::BlockUse::Default;
+            }
+            let name = self
+                .res
+                .facts()
+                .get(self.world.block(pos[0], pos[1], pos[2]))
+                .name
+                .clone();
+            // The blocks the mods declared are the ones their ids name: vanilla blocks are not theirs to decide.
+            if name.starts_with("minecraft:") {
+                return horizon_mods::BlockUse::Default;
+            }
+            let Some(player) = self.acting_server_player() else {
+                return horizon_mods::BlockUse::Default;
+            };
+            let stack = stack.map(Self::mod_stack);
+            self.lend_world();
+            let answer = self.mods.mods.block_used(&player, pos, sneaking, stack.as_ref());
+            self.return_world();
+            self.apply_mod_block_writes();
+            answer
+        }
+
         /// The acting player hit entity `entity` of `kind` holding `stack`.
         pub(in crate::game) fn mod_item_hit(
             &mut self,

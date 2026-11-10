@@ -54,7 +54,7 @@ use bindings::{
 pub use server_bindings::{
     exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
-        BlockPos, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
+        BlockPos, BlockUse, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
     },
     horizon::mods::player_control::Motion,
     horizon::mods::players::{GameMode, Player as ServerPlayer},
@@ -768,6 +768,45 @@ impl Mods {
             }
         }
         claimed
+    }
+    /// `player` right-clicked the block at `pos` (a block of a mod that asked for `blocks`), `stack` in hand: what the mod
+    /// decides for the block's own use (FORK-29). The first mod that does not answer `default` decides.
+    pub fn block_used(
+        &mut self,
+        player: &ServerPlayer,
+        pos: [i32; 3],
+        sneaking: bool,
+        stack: Option<&ModItemStack>,
+    ) -> BlockUse {
+        let at = BlockPos { x: pos[0], y: pos[1], z: pos[2] };
+        for i in 0..self.entries.len() {
+            if !self.entries[i]
+                .run
+                .as_ref()
+                .and_then(|r| r.hooks.server())
+                .is_some_and(|r| r.blocks)
+            {
+                continue;
+            }
+            let answer = self.call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m
+                    .horizon_mods_server_events()
+                    .call_block_used(&mut run.store, player, at, sneaking, stack),
+                Hooks::Client(..) => Ok(BlockUse::Default),
+            });
+            match answer {
+                Some(BlockUse::Default) | None => {}
+                Some(other) => return other,
+            }
+        }
+        BlockUse::Default
+    }
+    /// Whether a running server mod asked for `blocks` (and so hears `block-used`).
+    pub fn hears_blocks(&self) -> bool {
+        self.entries
+            .iter()
+            .filter_map(|e| e.run.as_ref()?.hooks.server())
+            .any(|r| r.blocks)
     }
     /// `player` hit entity `entity` of `kind` holding `stack`.
     pub fn item_hit(&mut self, player: &ServerPlayer, stack: &ModItemStack, entity: u32, kind: &str) {

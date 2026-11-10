@@ -40,6 +40,7 @@ members = [
     "crates/horizon-mod-sdk/examples/coords-hud",
     "crates/horizon-mod-sdk/examples/elevator",
     "crates/horizon-mod-sdk/examples/block-counter",
+    "crates/horizon-mod-sdk/examples/block-use",
     "crates/horizon-mod-sdk/examples/block-mover",
     "crates/horizon-mod-sdk/examples/energy-demo",
     "crates/horizon-mod-sdk/examples/tank-demo",

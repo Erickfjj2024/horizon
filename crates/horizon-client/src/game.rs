@@ -5757,8 +5757,27 @@ impl Game<'_> {
             self.swing_arm();
             return Ok(true);
         }
+        // FORK-29: a mod that owns the block decides what its own use does: `pass` skips it (the held item is used
+        // against the block, a block in hand is placed), `consume` takes the click.
+        #[cfg(feature = "mods")]
+        let mut block_passed = false;
+        #[cfg(feature = "mods")]
+        if let Some(hit) = block_hit {
+            let held = self.held().cloned();
+            match self.mod_block_use(hit.pos, held.as_ref(), sneaking) {
+                horizon_mods::BlockUse::Default => {}
+                horizon_mods::BlockUse::Pass => block_passed = true,
+                horizon_mods::BlockUse::Consume => {
+                    self.swing_arm();
+                    return Ok(true);
+                }
+            }
+        }
+        #[cfg(not(feature = "mods"))]
+        let block_passed = false;
         // MultiPlayerGameMode.useItemOn: blocks react first.
-        if !(sneaking && hands_full)
+        if !block_passed
+            && !(sneaking && hands_full)
             && let Some(hit) = block_hit
         {
             let held = self.held().cloned();

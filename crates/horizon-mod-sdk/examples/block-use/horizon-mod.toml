@@ -1,0 +1,8 @@
+id = "blockuse"
+name = "Block Use"
+version = "0.1.0"
+description = "Test mod for mod-decided block use (FORK-29): a click on a block decides between the block's own use, passing to the held item, or taking the click."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players"]

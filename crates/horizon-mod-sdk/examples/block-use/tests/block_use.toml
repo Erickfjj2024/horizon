@@ -1,0 +1,19 @@
+[[step]]
+join = "Alex"
+# A block in hand: the mod's block does not use itself, the held block goes against it.
+use-block = { pos = [1, 64, 1], stack = "minecraft:stone*4" }
+expect.block-use = "pass"
+
+[[step]]
+# An empty hand, not sneaking: the mod takes the click.
+use-block = { pos = [1, 64, 1] }
+expect.block-use = "consume"
+
+[[step]]
+# Sneaking with an empty hand, or holding something else: the game does what it does.
+use-block = { pos = [1, 64, 1], sneaking = true }
+expect.block-use = "default"
+
+[[step]]
+use-block = { pos = [1, 64, 1], stack = "minecraft:stick*1" }
+expect.block-use = "default"
