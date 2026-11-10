@@ -5416,6 +5416,8 @@ impl Game<'_> {
         broken
     }
     fn break_block_as_player(&mut self, pos: [i32; 3]) -> Result<()> {
+        // FORK-35: breaking a block that stands for another (a machine's bounding block) breaks that one.
+        let pos = self.mod_redirect(pos).unwrap_or(pos);
         // DebugStickItem.canDestroyBlock: a left click selects a property and
         // never destroys the block.
         if !self.debug_stick_can_destroy(pos)? {
@@ -5731,6 +5733,9 @@ impl Game<'_> {
     /// then `useItem`. Whether the click ends here (it acted or failed).
     fn use_hand(&mut self, block_hit: Option<&Hit>) -> Result<bool> {
         self.use_failed = false;
+        // FORK-35: a block that stands for another (a machine's bounding block) is a click on that one.
+        let redirected = block_hit.and_then(|h| self.mod_redirect(h.pos).map(|pos| Hit { pos, ..*h }));
+        let block_hit = redirected.as_ref().or(block_hit);
         // isSecondaryUseActive with something in either hand keeps blocks
         // from reacting.
         let sneaking = self.keys.contains(&KeyCode::ShiftLeft);
@@ -6178,6 +6183,13 @@ impl Game<'_> {
         };
         let target = [pos.x, pos.y, pos.z];
         let state = self.apply_item_block_state(target, state, &stack)?;
+        // FORK-35: a mod's block the mods refuse (a machine without the room its model fills) is taken away again, nothing used up.
+        if !self.mod_can_place(target, state) {
+            // (State 0 of the registry is `minecraft:air`.)
+            let _ = self.place_state(target, BlockStateId(0), false);
+            self.use_failed = true;
+            return Ok(true);
+        }
         self.mod_block_event(target, state, true);
         let name = self.res.facts().get(state).name.clone();
         if let Some(entity) = self.new_block_entity(&name) {

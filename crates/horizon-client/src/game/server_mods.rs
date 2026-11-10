@@ -69,6 +69,12 @@ impl Game<'_> {
     pub(super) fn mod_incoming_damage(&mut self, _damage_type: &str, amount: f32, _causing: i32) -> Option<f32> {
         Some(amount)
     }
+    pub(super) fn mod_redirect(&self, _pos: [i32; 3]) -> Option<[i32; 3]> {
+        None
+    }
+    pub(super) fn mod_can_place(&mut self, _pos: [i32; 3], _state: BlockStateId) -> bool {
+        true
+    }
     pub(super) fn mod_hit_damage(&mut self, _kind: &str, damage: f32) -> f32 {
         damage
     }
@@ -1736,6 +1742,46 @@ mod run {
             self.return_world();
             self.apply_mod_block_writes();
             (left > 0.0).then_some(left)
+        }
+
+        /// FORK-35: the block that the one at `pos` stands for, when a server mod says it does (its bounding blocks stand for the machine).
+        pub(in crate::game) fn mod_redirect(&self, pos: [i32; 3]) -> Option<[i32; 3]> {
+            if !self.mods.server {
+                return None;
+            }
+            let horizon_client_render::containers::BlockEntity::Mod(m) =
+                self.world.block_entities.get(&(pos[0], pos[1], pos[2]))?
+            else {
+                return None;
+            };
+            let spec = self.mods.mods.redirects().into_iter().find(|r| r.block == m.id)?;
+            let data = match m.nbt.get(&horizon_world::nbt::JavaString::from("data")) {
+                Some(horizon_world::nbt::Tag::ByteArray(b)) => b.clone(),
+                _ => return None,
+            };
+            let target = horizon_mods::block_render::redirect_target(&data, spec.flag_at as usize, spec.pos_at as usize)?;
+            // Never to itself, and never far (a corrupted position): a machine's bounding blocks are within a few blocks.
+            let near = (0..3).all(|a| (target[a] - pos[a]).abs() <= 16);
+            (target != pos && near).then_some(target)
+        }
+
+        /// FORK-35: whether the mods allow the mod's block `state` just placed at `pos` to stay (`BlockItem.canPlace`).
+        pub(in crate::game) fn mod_can_place(&mut self, pos: [i32; 3], state: BlockStateId) -> bool {
+            if !self.mods.server || !self.mods.mods.hears_blocks() {
+                return true;
+            }
+            let name = self.res.facts().get(state).name.clone();
+            if name.starts_with("minecraft:") {
+                return true;
+            }
+            let Some(player) = self.acting_server_player() else {
+                return true;
+            };
+            let text = state_string(self.pack.assets.registry, state);
+            self.lend_world();
+            let allowed = self.mods.mods.can_place(&player, pos, &text);
+            self.return_world();
+            allowed
         }
 
         /// The attack damage of the acting player's melee blow against `kind`, as a server mod makes it.

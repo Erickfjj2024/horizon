@@ -65,6 +65,8 @@ pub struct TestGame {
     /// What the last `player_damaged` and `item_hit_damage` answered.
     pub damage_result: Option<f32>,
     pub hit_damage_result: Option<f32>,
+    /// What the last `can_place` answered.
+    pub can_place_result: Option<bool>,
     /// The mobs of the Overworld a script set, for capability `entities`.
     pub mobs: Vec<crate::MobInfo>,
     /// The structures last told to the mod, by dimension and group.
@@ -217,6 +219,7 @@ impl TestGame {
             block_use: None,
             damage_result: None,
             hit_damage_result: None,
+            can_place_result: None,
         };
         copy_mod(hmod, &copy)?;
         game.start()?;
@@ -950,6 +953,13 @@ fn with_property(state: &str, property: &str, value: &str) -> String {
 /// A stack used or hit with in a step: `"minecraft:stick*1"`, components after the count.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct PlaceSet {
+    pos: [i32; 3],
+    state: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DamageSet {
     #[serde(rename = "type")]
     damage_type: String,
@@ -1146,6 +1156,8 @@ pub struct Step {
     use_block: Option<UseBlockSet>,
     /// Server mods: the actor is about to be hurt.
     damage: Option<DamageSet>,
+    /// Server mods (FORK-35): the actor placed a block of the mod at a position (`pos` and `state`).
+    place_mod_block: Option<PlaceSet>,
     /// Server mods: the actor's melee blow is worked out.
     hit_damage: Option<HitDamageSet>,
     /// Server mods, capability `entities`: the mobs of the Overworld from now on.
@@ -1200,6 +1212,10 @@ pub struct Expect {
     block_use: Option<String>,
     /// Server mods: what the mod answered to the step's `damage` (the damage to go on with).
     damage_result: Option<f32>,
+    /// Server mods (FORK-35): whether the mod let the step's `place` stand.
+    can_place: Option<bool>,
+    /// Server mods (FORK-35): the redirecting blocks the mods declared, as `"block flag-at pos-at"`.
+    redirects: Option<Vec<String>>,
     /// Server mods: what the mod answered to the step's `hit-damage`.
     hit_damage_result: Option<f32>,
     /// Server mods, capability `player-items`: every request, as `"set-slot Name 3 stack"`
@@ -1447,6 +1463,7 @@ impl Step {
             || self.use_item.is_some()
             || self.use_block.is_some()
             || self.damage.is_some()
+            || self.place_mod_block.is_some()
             || self.hit_damage.is_some()
             || self.hit_with.is_some()
             || self.press.is_some()
@@ -1537,6 +1554,10 @@ impl Step {
                 tags: d.tags.clone(),
             };
             game.damage_result = Some(game.mods.player_damaged(who, &source, d.amount));
+        }
+        if let (Some(p), Some(who)) = (&self.place_mod_block, &who) {
+            game.snapshot();
+            game.can_place_result = Some(game.mods.can_place(who, p.pos, &p.state));
         }
         if let (Some(h), Some(who)) = (&self.hit_damage, &who) {
             game.snapshot();
@@ -1816,6 +1837,15 @@ impl Step {
                 })
                 .collect();
             same("chunk-forced", want, &got)?;
+        }
+        if let Some(want) = e.can_place {
+            if game.can_place_result != Some(want) {
+                return Err(format!("can-place: expected {want}, got {:?}", game.can_place_result));
+            }
+        }
+        if let Some(want) = &e.redirects {
+            let got: Vec<String> = game.mods.redirects().iter().map(|r| format!("{} {} {}", r.block, r.flag_at, r.pos_at)).collect();
+            same("redirects", want, &got)?;
         }
         if let Some(want) = e.damage_result {
             if game.damage_result != Some(want) {

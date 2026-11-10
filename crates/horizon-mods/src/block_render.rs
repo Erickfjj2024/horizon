@@ -41,6 +41,16 @@ pub fn volume_fluid_box(data: &[u8], box_at: usize, draw_at: usize, fill_at: usi
     fluid_box(lo, hi, f32::from(fill) / 255.0)
 }
 
+/// FORK-35: the block a redirecting block stands for, from its entity's `data`: byte `flag_at` is 1 and three little-endian whole numbers
+/// at `pos_at` are the position. None when it does not stand for one.
+pub fn redirect_target(data: &[u8], flag_at: usize, pos_at: usize) -> Option<[i32; 3]> {
+    if data.get(flag_at) != Some(&1) || data.len() < pos_at + 12 {
+        return None;
+    }
+    let int = |i: usize| i32::from_le_bytes(std::array::from_fn(|k| data[pos_at + 4 * i + k]));
+    Some([int(0), int(1), int(2)])
+}
+
 /// The sprite of `substance`: the renderer's own, else vanilla's for water
 /// and lava, else the default.
 pub fn fluid_sprite<'a>(
@@ -129,6 +139,18 @@ mod tests {
         data[draw_at] = 0;
         assert_eq!(volume_fluid_box(&data, box_at, draw_at, fill_at, [10, 64, 20]), None);
         assert_eq!(volume_fluid_box(&[], box_at, draw_at, fill_at, [0; 3]), None);
+    }
+    #[test]
+    fn a_redirecting_block_names_the_block_it_stands_for() {
+        let mut data = vec![1u8];
+        for v in [5i32, -64, 300] {
+            data.extend(v.to_le_bytes());
+        }
+        assert_eq!(redirect_target(&data, 0, 1), Some([5, -64, 300]));
+        data[0] = 0;
+        assert_eq!(redirect_target(&data, 0, 1), None);
+        assert_eq!(redirect_target(&[1, 0, 0], 0, 1), None);
+        assert_eq!(redirect_target(&[], 0, 1), None);
     }
     #[test]
     fn substances_have_sprites_and_tints() {

@@ -1078,6 +1078,19 @@ interface server-events {
         tags: list<string>,
     }
 
+    /// A block of the mod that stands for another one (Mekanism's bounding
+    /// blocks stand for the machine whose model fills them). While byte
+    /// `flag-at` of its block entity's data is 1, the three whole numbers
+    /// (little-endian, four bytes each, absolute block coordinates) from byte
+    /// `pos-at` name that block: a right click on it is a right click on that
+    /// block (its menu opens, its `block-used` is asked), and breaking it
+    /// breaks that block, whose drops are the only drops.
+    record redirect-spec {
+        block: string,
+        flag-at: u32,
+        pos-at: u32,
+    }
+
     /// How a mod answers a click on one of its blocks (`block-used`).
     enum block-use {
         default,
@@ -1162,6 +1175,9 @@ interface server-events {
         chunks: bool,
         /// Call `player-damaged` and `item-hit-damage`.
         damage: bool,
+        /// Blocks of the mod that stand for another block (FORK-35): a click on
+        /// them, or breaking them, reaches the block they name.
+        redirects: list<redirect-spec>,
     }
     record block-entity-kind {
         /// The block's id, `mymod:machine`.
@@ -1423,6 +1439,12 @@ interface server-events {
     /// scale it, against an entity of `kind`, holding `stack`. Returns the
     /// damage to use. The first mod to change it decides.
     item-hit-damage: func(player: player, stack: item-stack, kind: string, damage: f32) -> f32;
+    /// A player placed the mod's block `state` at `pos` (`registration.blocks`):
+    /// asked right after the game set it, for the blocks of any mod that asked.
+    /// Answer false to refuse: the block is taken away again and nothing is
+    /// used up (a big machine whose model needs the blocks around it free).
+    /// Where `BlockItem.canPlace` is in the original.
+    can-place: func(player: player, pos: block-pos, state: string) -> bool;
     /// A player hit the entity `entity` of `kind` holding `stack`
     /// (`registration.items`): where `Item.hurtEnemy` starts. It only hears.
     item-hit: func(player: player, stack: item-stack, entity: u32, kind: string);

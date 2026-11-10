@@ -209,7 +209,7 @@ pub mod server {
 
     pub use exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
-        BlockPos, BlockUse, DamageSource, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,
+        BlockPos, BlockUse, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,
     };
     pub use horizon::mods::players::{self, GameMode, Player};
     pub use horizon::mods::player_control::{self, Motion};
@@ -271,6 +271,10 @@ pub mod server {
         /// use. When [`Registration::on_damage`] is set.
         fn item_hit_damage(&mut self, _player: &Player, _stack: ItemStack, _kind: &str, damage: f32) -> f32 {
             damage
+        }
+        /// A mod's block was placed at `pos`: false takes it away again (`BlockItem.canPlace`). When [`Registration::blocks`] is set.
+        fn can_place(&mut self, _player: &Player, _pos: BlockPos, _state: &str) -> bool {
+            true
         }
         /// A player hit an entity holding `stack`. When [`Registration::on_items`] is set.
         fn item_hit(&mut self, _player: &Player, _stack: ItemStack, _entity: u32, _kind: &str) {}
@@ -361,6 +365,7 @@ pub mod server {
                 items: false,
                 chunks: false,
                 damage: false,
+                redirects: Vec::new(),
             }
         }
         /// `block` (`mymod:machine`) carries a block entity; `ticks` asks
@@ -431,6 +436,12 @@ pub mod server {
         }
         pub fn on_chat(mut self) -> Self {
             self.chat = true;
+            self
+        }
+        /// `block` stands for another block while byte `flag_at` of its entity's data is 1: the three little-endian whole numbers at `pos_at`
+        /// are that block's position (FORK-35), so a click on it or breaking it reaches that block.
+        pub fn redirect(mut self, block: &str, flag_at: u32, pos_at: u32) -> Self {
+            self.redirects.push(RedirectSpec { block: block.into(), flag_at, pos_at });
             self
         }
         /// Call [`ServerMod::player_damaged`] and [`ServerMod::item_hit_damage`].
@@ -642,6 +653,11 @@ macro_rules! export_server_mod {
                 fn item_hit_damage(player: Player, stack: ItemStack, kind: String, damage: f32) -> f32 {
                     let mut out = damage;
                     with(|m| out = m.item_hit_damage(&player, stack, &kind, damage));
+                    out
+                }
+                fn can_place(player: Player, pos: BlockPos, state: String) -> bool {
+                    let mut out = true;
+                    with(|m| out = m.can_place(&player, pos, &state));
                     out
                 }
                 fn item_hit(player: Player, stack: ItemStack, entity: u32, kind: String) {

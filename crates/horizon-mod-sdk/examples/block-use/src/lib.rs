@@ -7,7 +7,11 @@ struct Gate;
 
 impl ServerMod for Gate {
     fn init() -> Result<(Self, Registration), String> {
-        Ok((Gate, Registration::new().on_blocks()))
+        Ok((Gate, Registration::new().on_blocks().redirect("blockuse:bound", 0, 1)))
+    }
+    /// FORK-35: a machine of the mod needs the block above it free: with one over it (y 81 over a block at 80), the placement is refused.
+    fn can_place(&mut self, _player: &Player, pos: BlockPos, _state: &str) -> bool {
+        world::get_block("minecraft:overworld", pos.x, pos.y + 1, pos.z).is_none_or(|b| b == "minecraft:air")
     }
     fn block_used(&mut self, player: &Player, pos: BlockPos, sneaking: bool, stack: Option<ItemStack>) -> BlockUse {
         // FORK-34: the gate at y 70 is a structure that is not formed: its items, tanks and energy are closed to the outside.

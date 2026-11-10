@@ -54,7 +54,7 @@ use bindings::{
 pub use server_bindings::{
     exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
-        BlockPos, BlockUse, DamageSource, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
+        BlockPos, BlockUse, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
     },
     horizon::mods::player_control::Motion,
     horizon::mods::players::{GameMode, Player as ServerPlayer},
@@ -840,6 +840,31 @@ impl Mods {
             }
         }
         BlockUse::Default
+    }
+    /// The blocks the running server mods say stand for another block (FORK-35).
+    pub fn redirects(&self) -> Vec<RedirectSpec> {
+        self.entries
+            .iter()
+            .filter_map(|e| e.run.as_ref()?.hooks.server())
+            .flat_map(|r| r.redirects.iter().cloned())
+            .collect()
+    }
+    /// `player` placed the mod's block `state` at `pos`: false when a mod refuses it (the first refusal decides).
+    pub fn can_place(&mut self, player: &ServerPlayer, pos: [i32; 3], state: &str) -> bool {
+        let at = BlockPos { x: pos[0], y: pos[1], z: pos[2] };
+        for i in 0..self.entries.len() {
+            if !self.entries[i].run.as_ref().and_then(|r| r.hooks.server()).is_some_and(|r| r.blocks) {
+                continue;
+            }
+            let answer = self.call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m.horizon_mods_server_events().call_can_place(&mut run.store, player, at, state),
+                Hooks::Client(..) => Ok(true),
+            });
+            if answer == Some(false) {
+                return false;
+            }
+        }
+        true
     }
     /// Whether a running server mod asked for `damage`.
     pub fn hears_damage(&self) -> bool {

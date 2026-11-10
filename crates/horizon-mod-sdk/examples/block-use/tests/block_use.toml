@@ -27,3 +27,16 @@ expect.capabilities = ["minecraft:overworld 1 70 1 items=false fluids=false ener
 # FORK-30: a structure that has formed sparkles.
 use-block = { pos = [1, 71, 1] }
 expect.particles = ["minecraft:overworld minecraft:dust 1.5 71.5 1.5 8"]
+
+[[step]]
+# FORK-35: the mod stands bounding blocks for a machine (a click or a break on them reaches the machine), and tells the game it refuses
+# a machine without room above it.
+blocks = [{ x = 30, y = 65, z = 0, state = "minecraft:stone" }]
+place-mod-block = { pos = [30, 64, 0], state = "blockuse:machine" }
+expect.can-place = false
+expect.redirects = ["blockuse:bound 0 1"]
+
+[[step]]
+blocks = [{ x = 30, y = 65, z = 0, state = "minecraft:air" }]
+place-mod-block = { pos = [30, 64, 0], state = "blockuse:machine" }
+expect.can-place = true
