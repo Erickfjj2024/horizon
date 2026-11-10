@@ -632,6 +632,7 @@ impl Game<'_> {
             font_widths: self.mods.font_widths.clone(),
             players,
             motions: Vec::new(),
+            states: Vec::new(),
             looks: Vec::new(),
             mobs: Vec::new(),
             mobs_dimension: String::new(),
@@ -869,6 +870,7 @@ impl Game<'_> {
                 | Output::Teleport { .. }
                 | Output::TakeXp { .. }
                 | Output::SetMotion { .. }
+                | Output::SetFood { .. }
                 | Output::SetAllowFlight { .. }
                 | Output::PlaySound { .. }
                 | Output::NetSend { .. }

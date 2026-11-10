@@ -1,0 +1,9 @@
+id = "bodyprobe"
+name = "Body Probe"
+version = "0.1.0"
+description = "Test mod for player-control's get-state and set-food: using bodyprobe:probe tells what the player's body is doing and feeds them."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "player-control"]
+experimental = ["player-control"]

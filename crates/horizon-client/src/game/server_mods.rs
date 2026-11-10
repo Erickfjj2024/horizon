@@ -397,6 +397,7 @@ mod run {
             let mut snapshot = self.mod_snapshot_with(players.clone());
             if self.mods.world {
                 snapshot.motions = self.server_motions();
+                snapshot.states = self.server_states();
                 snapshot.looks = self.server_looks();
             }
             if self.mods.mods.wants_player_items() {
@@ -666,6 +667,74 @@ mod run {
                 xp_level: self.experience.level,
                 xp_progress: self.experience.progress,
             }
+        }
+
+        /// This player's body as `player-control.get-state` reads it.
+        fn own_state(&self) -> horizon_mods::PlayerState {
+            let effects = self
+                .potions
+                .effects
+                .saved()
+                .into_iter()
+                .map(|(id, duration, amplifier, _, _)| horizon_mods::EffectState {
+                    id: if id.contains(':') { id } else { format!("minecraft:{id}") },
+                    duration,
+                    amplifier,
+                })
+                .collect();
+            let Some(p) = self.player.as_ref() else {
+                return horizon_mods::PlayerState {
+                    velocity_x: 0.0, velocity_y: 0.0, velocity_z: 0.0, jumping: false, sprinting: false, flying: false, may_fly: false,
+                    fall_flying: false, swimming: false, in_water: false, eyes_in_water: false, in_lava: false, air: 300, max_air: 300,
+                    fire_ticks: 0, passenger: false, sleeping: false, food: 20, saturation: 5.0, effects,
+                };
+            };
+            horizon_mods::PlayerState {
+                velocity_x: p.velocity.x,
+                velocity_y: p.velocity.y,
+                velocity_z: p.velocity.z,
+                jumping: p.jumping,
+                sprinting: p.sprinting,
+                flying: p.flying,
+                may_fly: p.may_fly,
+                fall_flying: p.fall_flying,
+                swimming: p.swimming,
+                in_water: p.fluids.was_touching_water,
+                eyes_in_water: p.is_under_water(),
+                in_lava: p.is_in_lava(),
+                air: p.air,
+                max_air: 300,
+                fire_ticks: p.fire_ticks.max(0),
+                passenger: p.is_passenger,
+                sleeping: p.sleeping,
+                food: p.health.food.food.clamp(0, 20) as u32,
+                saturation: p.health.food.saturation,
+                effects,
+            }
+        }
+
+        /// What every player's body is doing, as `player-control.get-state` reads it (as `server_motions`).
+        fn server_states(&mut self) -> Vec<(String, horizon_mods::PlayerState)> {
+            let mut out = Vec::new();
+            if self.options.execution_role.is_client()
+                && self.remote.is_none()
+                && self.player.is_some()
+            {
+                out.push((uuid_string(self.player_uuid()), self.own_state()));
+            }
+            let guests: Vec<(u32, u128, bool, bool)> = self
+                .lan
+                .iter()
+                .flat_map(|h| &h.hub.guests)
+                .filter(|g| g.placed)
+                .map(|g| (g.conn, g.uuid, g.sneaking, g.mod_may_fly))
+                .collect();
+            for (conn, uuid, _, _) in guests {
+                if let Some(s) = self.for_player(Target::Guest(conn), |g| g.own_state()) {
+                    out.push((uuid_string(uuid), s));
+                }
+            }
+            out
         }
 
         /// Who a server mod's player id names: the window's own player in-frame,
@@ -2103,6 +2172,23 @@ mod run {
                         [yaw.unwrap_or(cy), pitch.unwrap_or(cp)]
                     });
                     self.teleport_to_in_level(target, pos, rotation);
+                }
+                Output::SetFood { name, player, food, saturation } => {
+                    let Some((target, _)) = self.mod_player(&player) else {
+                        return;
+                    };
+                    let done = self
+                        .for_player(target, |g| {
+                            if let Some(p) = g.player.as_mut() {
+                                p.health.food.food = food.min(20) as i32;
+                                // FoodData.setSaturation: within the food level.
+                                p.health.food.saturation = saturation.clamp(0.0, p.health.food.food as f32);
+                            }
+                        })
+                        .is_some();
+                    if !done {
+                        log::debug!("Horizon: mod {name} set the food of a player that is not here");
+                    }
                 }
                 Output::SetMotion { name, player, velocity } => {
                     let Some((Target::Guest(conn), _)) = self.mod_player(&player) else {

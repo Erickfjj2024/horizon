@@ -1,0 +1,7 @@
+[[step]]
+join = "Alex"
+state = { velocity = [0.0, -0.5, 0.0], jumping = true, air = 120, fire-ticks = 40, food = 7, effects = ["minecraft:poison 100 1"] }
+use-item = { stack = "bodyprobe:probe*1" }
+expect.claimed = true
+expect.told = ["Alex: vy -0.5 jump true air 120/300 fire 40 food 7 effects [minecraft:poison:100:1]"]
+expect.player-items = ["set-food Alex 20 5"]

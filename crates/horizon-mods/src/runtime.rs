@@ -56,7 +56,7 @@ pub use server_bindings::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
         BlockPos, BlockUse, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
     },
-    horizon::mods::player_control::Motion,
+    horizon::mods::player_control::{EffectState, Motion, PlayerState},
     horizon::mods::players::{GameMode, Player as ServerPlayer},
     horizon::mods::world::{BlockChange, CollisionBox, Environment},
 };
@@ -254,6 +254,8 @@ pub struct Snapshot {
     /// What each of those players is doing, by player id, for capability
     /// `player-control`'s `motion`.
     pub motions: Vec<(String, Motion)>,
+    /// The body of each of those players, by player id, for `player-control`'s `get-state`.
+    pub states: Vec<(String, PlayerState)>,
     /// Where each of those players looks, `(yaw, pitch)`, by player id.
     pub looks: Vec<(String, (f32, f32))>,
     /// The living mobs of the level in place (`mobs_dimension`), for
@@ -349,6 +351,13 @@ pub enum Output {
         pos: [f64; 3],
         yaw: Option<f32>,
         pitch: Option<f32>,
+    },
+    /// `player-control.set-food`: the player's food level and saturation.
+    SetFood {
+        name: String,
+        player: String,
+        food: u32,
+        saturation: f32,
     },
     /// `player-control.set-motion`: the player's velocity, in blocks a tick.
     SetMotion {
@@ -3015,6 +3024,23 @@ impl player_control::Host for State {
             .iter()
             .find(|(id, _)| *id == player)
             .map(|(_, m)| m.clone())
+    }
+    fn get_state(&mut self, player: String) -> Option<PlayerState> {
+        self.snapshot.states.iter().find(|(id, _)| *id == player).map(|(_, s)| s.clone())
+    }
+    fn set_food(&mut self, player: String, food: u32, saturation: f32) -> Result<(), String> {
+        if food > 20 || !saturation.is_finite() || saturation < 0.0 {
+            return Err("a food level of 0 to 20 and a saturation of 0 or more".into());
+        }
+        if !self.snapshot.players.iter().any(|p| p.id == player) {
+            return Err(format!("no player {player} is online"));
+        }
+        let queued = self.out.iter().filter(|o| matches!(o, Output::SetFood { .. })).count();
+        if queued >= CONTROL_PER_CALL {
+            return Err(format!("at most {CONTROL_PER_CALL} food changes per call"));
+        }
+        self.out.push(Output::SetFood { name: self.name.clone(), player, food, saturation });
+        Ok(())
     }
     fn get_look(&mut self, player: String) -> Option<(f32, f32)> {
         self.snapshot

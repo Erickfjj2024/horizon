@@ -758,9 +758,48 @@ What a player is doing as of the last server tick.
 | `xp-level` | `s32` | The experience level (`Player.experienceLevel`). |
 | `xp-progress` | `f32` | The progress toward the next level, 0 up to (not including) 1 (`Player.experienceProgress`). |
 
+### record `effect-state`
+
+One effect on a player.
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | `string` | `minecraft:speed`, a content mod's own `mymod:radiation`. |
+| `duration` | `s32` | Ticks left; -1 is infinite. |
+| `amplifier` | `s32` | 0 is level I. |
+
+### record `player-state`
+
+What a player's body is doing as of the last server tick: what equipment that reacts to the player (a jetpack, a suit that breathes for them) needs and `motion` does not hold.
+
+| Field | Type | |
+| --- | --- | --- |
+| `velocity-x` | `f64` | The velocity (`deltaMovement`), blocks a tick. |
+| `velocity-y` | `f64` |  |
+| `velocity-z` | `f64` |  |
+| `jumping` | `bool` | The jump key is held. |
+| `sprinting` | `bool` |  |
+| `flying` | `bool` | Creative flight is on. |
+| `may-fly` | `bool` | The player may fly (`Abilities.mayfly`). |
+| `fall-flying` | `bool` | Gliding with an elytra. |
+| `swimming` | `bool` |  |
+| `in-water` | `bool` | Touching water (`isInWater`). |
+| `eyes-in-water` | `bool` | The eyes are in water (`isUnderWater`). |
+| `in-lava` | `bool` |  |
+| `air` | `s32` | Air left, in ticks (300 is full), and the most they hold. |
+| `max-air` | `s32` |  |
+| `fire-ticks` | `s32` | Ticks of burning left (0 when not on fire). |
+| `passenger` | `bool` | Riding a vehicle. |
+| `sleeping` | `bool` |  |
+| `food` | `u32` | Food level 0 to 20 and saturation. |
+| `saturation` | `f32` |  |
+| `effects` | `list<effect-state>` |  |
+
 | Function | Signature | What it does |
 | --- | --- | --- |
 | `get-motion` | `func(player: string) -> option<motion>` | What the player with this id is doing; none for an id that is not online. |
+| `get-state` | `func(player: string) -> option<player-state>` | The body of the player with this id; none for an id that is not online. API 29. |
+| `set-food` | `func(player: string, food: u32, saturation: f32) -> result<_, string>` | Sets the player's food level (0 to 20) and saturation (at most the food level, as vanilla's), made after this call returns. An error for a player not online. API 29. |
 | `get-look` | `func(player: string) -> option<tuple<f32, f32>>` | Where the player with this id looks, `(yaw, pitch)` in degrees as F3 shows them (yaw 0 faces south, pitch -90 looks straight up); none for an id that is not online. With the eye (the feet and 1.62 blocks, 1.27 sneaking) it gives the face of a block a use met. API 16. |
 | `teleport` | `func(player: string, dimension: string, x: f64, y: f64, z: f64, yaw: option<f32>, pitch: option<f32>) -> result<_, string>` | Moves the player, as `/tp` does: the vehicle is left, velocity and fall distance reset. `yaw` and `pitch` stay as they are when none. The move is made after this call returns, before the next tick. An error (nothing queued) for a player not online, a dimension the server does not have, a position that is not finite or lies outside the world border of 30,000,000 blocks. |
 | `take-xp` | `func(player: string, points: u32) -> result<_, string>` | Takes `points` experience points from the player, as vanilla's `Player.giveExperiencePoints(-points)` does, going down a level when the level's points run out; never below level 0. Made after this call returns. An error (nothing queued) for a player not online or 0 points. |

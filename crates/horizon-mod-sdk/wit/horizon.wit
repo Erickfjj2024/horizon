@@ -814,8 +814,59 @@ interface player-control {
         /// (`Player.experienceProgress`).
         xp-progress: f32,
     }
+    /// One effect on a player.
+    record effect-state {
+        /// `minecraft:speed`, a content mod's own `mymod:radiation`.
+        id: string,
+        /// Ticks left; -1 is infinite.
+        duration: s32,
+        /// 0 is level I.
+        amplifier: s32,
+    }
+    /// What a player's body is doing as of the last server tick: what
+    /// equipment that reacts to the player (a jetpack, a suit that breathes
+    /// for them) needs and `motion` does not hold.
+    record player-state {
+        /// The velocity (`deltaMovement`), blocks a tick.
+        velocity-x: f64,
+        velocity-y: f64,
+        velocity-z: f64,
+        /// The jump key is held.
+        jumping: bool,
+        sprinting: bool,
+        /// Creative flight is on.
+        flying: bool,
+        /// The player may fly (`Abilities.mayfly`).
+        may-fly: bool,
+        /// Gliding with an elytra.
+        fall-flying: bool,
+        swimming: bool,
+        /// Touching water (`isInWater`).
+        in-water: bool,
+        /// The eyes are in water (`isUnderWater`).
+        eyes-in-water: bool,
+        in-lava: bool,
+        /// Air left, in ticks (300 is full), and the most they hold.
+        air: s32,
+        max-air: s32,
+        /// Ticks of burning left (0 when not on fire).
+        fire-ticks: s32,
+        /// Riding a vehicle.
+        passenger: bool,
+        sleeping: bool,
+        /// Food level 0 to 20 and saturation.
+        food: u32,
+        saturation: f32,
+        effects: list<effect-state>,
+    }
     /// What the player with this id is doing; none for an id that is not online.
     get-motion: func(player: string) -> option<motion>;
+    /// The body of the player with this id; none for an id that is not online. API 29.
+    get-state: func(player: string) -> option<player-state>;
+    /// Sets the player's food level (0 to 20) and saturation (at most the
+    /// food level, as vanilla's), made after this call returns. An error for a
+    /// player not online. API 29.
+    set-food: func(player: string, food: u32, saturation: f32) -> result<_, string>;
     /// Where the player with this id looks, `(yaw, pitch)` in degrees as F3
     /// shows them (yaw 0 faces south, pitch -90 looks straight up); none for
     /// an id that is not online. With the eye (the feet and 1.62 blocks, 1.27

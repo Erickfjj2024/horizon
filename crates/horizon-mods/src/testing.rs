@@ -30,6 +30,8 @@ pub struct TestGame {
     /// What each of those players is doing, by player id (capability
     /// `player-control`); a player with no entry is standing still with no experience.
     pub motions: Vec<(String, Motion)>,
+    /// The body of each player, by player id (`player-control.get-state`); none listed is the standing still default.
+    pub states: Vec<(String, crate::PlayerState)>,
     /// Where each player looks, `(yaw, pitch)`, by player id; none listed looks south, level.
     pub looks: Vec<(String, (f32, f32))>,
     /// Every name that joined, for their id.
@@ -238,6 +240,7 @@ impl TestGame {
             }),
             players: Vec::new(),
             motions: Vec::new(),
+            states: Vec::new(),
             looks: Vec::new(),
             names: Vec::new(),
             tick: 0,
@@ -287,6 +290,7 @@ impl TestGame {
             clock: self.clock,
             players: self.players.clone(),
             motions: self.motions.clone(),
+            states: self.states.clone(),
             looks: self.looks.clone(),
             mobs: self.mobs.clone(),
             mobs_dimension: "minecraft:overworld".into(),
@@ -911,6 +915,23 @@ impl From<Mode> for GameMode {
 /// the others keep their values.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct StateSet {
+    velocity: Option<[f64; 3]>,
+    jumping: Option<bool>,
+    flying: Option<bool>,
+    fall_flying: Option<bool>,
+    in_water: Option<bool>,
+    in_lava: Option<bool>,
+    air: Option<i32>,
+    fire_ticks: Option<i32>,
+    food: Option<u32>,
+    saturation: Option<f32>,
+    /// `"minecraft:poison 100 0"`: id, ticks, amplifier.
+    effects: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MotionSet {
     sneaking: Option<bool>,
     on_ground: Option<bool>,
@@ -1165,6 +1186,8 @@ pub struct Step {
     player: Option<PlayerSet>,
     /// Server mods: what the player is doing, for `player-control`.
     motion: Option<MotionSet>,
+    /// Server mods (`player-control.get-state`): what the actor's body is doing, from now on.
+    state: Option<StateSet>,
     clock: Option<ClockSet>,
     #[serde(default)]
     ticks: u64,
@@ -1516,6 +1539,7 @@ impl Step {
             || self.press.is_some()
             || self.net.is_some()
             || self.motion.is_some()
+            || self.state.is_some()
             || self.chat.is_some()
             || self.command.is_some()
             || self.broken.is_some()
@@ -1544,6 +1568,42 @@ impl Step {
                     }
                 }
                 None => set.apply(game.player.get_or_insert_with(default_player)),
+            }
+        }
+        if let (Some(set), Some(i)) = (&self.state, actor) {
+            let id = game.players[i].id.clone();
+            let at = match game.states.iter().position(|(p, _)| *p == id) {
+                Some(at) => at,
+                None => {
+                    game.states.push((id, crate::PlayerState {
+                        velocity_x: 0.0, velocity_y: 0.0, velocity_z: 0.0, jumping: false, sprinting: false, flying: false, may_fly: false,
+                        fall_flying: false, swimming: false, in_water: false, eyes_in_water: false, in_lava: false, air: 300, max_air: 300,
+                        fire_ticks: 0, passenger: false, sleeping: false, food: 20, saturation: 5.0, effects: Vec::new(),
+                    }));
+                    game.states.len() - 1
+                }
+            };
+            let s = &mut game.states[at].1;
+            if let Some(v) = set.velocity {
+                (s.velocity_x, s.velocity_y, s.velocity_z) = (v[0], v[1], v[2]);
+            }
+            s.jumping = set.jumping.unwrap_or(s.jumping);
+            s.flying = set.flying.unwrap_or(s.flying);
+            s.fall_flying = set.fall_flying.unwrap_or(s.fall_flying);
+            s.in_water = set.in_water.unwrap_or(s.in_water);
+            s.in_lava = set.in_lava.unwrap_or(s.in_lava);
+            s.air = set.air.unwrap_or(s.air);
+            s.fire_ticks = set.fire_ticks.unwrap_or(s.fire_ticks);
+            s.food = set.food.unwrap_or(s.food);
+            s.saturation = set.saturation.unwrap_or(s.saturation);
+            if let Some(list) = &set.effects {
+                s.effects = list
+                    .iter()
+                    .filter_map(|t| {
+                        let mut p = t.split_whitespace();
+                        Some(crate::EffectState { id: p.next()?.into(), duration: p.next()?.parse().ok()?, amplifier: p.next()?.parse().ok()? })
+                    })
+                    .collect();
             }
         }
         if let (Some(set), Some(i)) = (&self.motion, actor) {
@@ -1923,6 +1983,7 @@ impl Step {
             let got: Vec<String> = out
                 .iter()
                 .filter_map(|o| match o {
+                    Output::SetFood { player, food, saturation, .. } => Some(format!("set-food {} {food} {saturation}", name(player))),
                     Output::SetMotion { player, velocity, .. } => {
                         Some(format!("set-motion {} {} {} {}", name(player), velocity[0], velocity[1], velocity[2]))
                     }
