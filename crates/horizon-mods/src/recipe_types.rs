@@ -18,6 +18,8 @@ pub struct RecipeData {
     pub items: HashSet<String>,
     /// The cooking recipes of the game's own kinds, in the game's order.
     pub cooking: Vec<Cooking>,
+    /// Item to the ticks it burns in a furnace (only the items that burn).
+    pub burn_times: HashMap<String, u32>,
 }
 
 /// One cooking recipe (`smelting`, `blasting`...).
@@ -137,6 +139,7 @@ mod tests {
                 ("c:empty".into(), vec![]),
             ]),
             cooking: Vec::new(),
+            burn_times: HashMap::new(),
             items: ["minecraft:redstone", "minecraft:stone", "mymod:redstone_dust"]
                 .iter()
                 .map(|s| s.to_string())

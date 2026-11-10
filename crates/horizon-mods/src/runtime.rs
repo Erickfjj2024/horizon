@@ -2913,6 +2913,10 @@ impl recipe_types::Host for State {
                 .collect()
         })
     }
+    fn burn_time(&mut self, item: String) -> Option<u32> {
+        let slot = self.recipe_data.lock().ok()?;
+        slot.as_ref()?.burn_times.get(&item).copied().filter(|t| *t > 0)
+    }
     fn cooking_recipes(&mut self, kind: String) -> Vec<recipe_types::CookingRecipe> {
         let Ok(slot) = self.recipe_data.lock() else {
             return Vec::new();

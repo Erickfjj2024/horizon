@@ -784,6 +784,9 @@ pub struct Script {
     pub tags: std::collections::BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub items: Vec<String>,
+    /// The ticks items burn in a furnace (`[burn_times]`, `"minecraft:coal" = 1600`).
+    #[serde(default)]
+    pub burn_times: std::collections::BTreeMap<String, u32>,
     #[serde(default, rename = "step")]
     pub steps: Vec<Step>,
 }
@@ -1276,6 +1279,7 @@ impl Script {
                 .collect();
             data.tags = self.tags.clone().into_iter().collect();
             data.items = self.items.iter().cloned().collect();
+            data.burn_times = self.burn_times.iter().map(|(k, v)| (k.clone(), *v)).collect();
             game.mods.set_recipe_data(std::sync::Arc::new(data));
         }
         for (i, step) in self.steps.iter().enumerate() {

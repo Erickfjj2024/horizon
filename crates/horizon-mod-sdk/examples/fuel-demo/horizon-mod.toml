@@ -1,0 +1,9 @@
+id = "fueldemo"
+name = "Fuel Demo"
+version = "0.1.0"
+description = "Test mod for the game's fuel registry: using fueldemo:probe tells the player how long coal and a stick burn."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "recipe-types"]
+experimental = ["recipe-types"]

@@ -885,6 +885,12 @@ interface recipe-types {
     /// `item`, a `tag` or `items`. A bare id is `minecraft:`; items the game
     /// doesn't know are left out.
     ingredient-items: func(ingredient: string) -> list<string>;
+    /// How many ticks `item` burns in a furnace, from the game's fuel
+    /// registry (`FuelValues`: the `furnace_fuels` data map, data packs and
+    /// the content mods' own, as a furnace reads them); none for an item that
+    /// does not burn or is not known. (A smoker or blast furnace burns it
+    /// the same ticks; those cook twice as fast.) API 27.
+    burn-time: func(item: string) -> option<u32>;
 }
 
 /// Capability `net`, server mods only (manifest `api = "0.3"`, experimental):

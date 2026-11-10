@@ -1,0 +1,11 @@
+items = ["minecraft:coal", "minecraft:stick", "minecraft:dirt"]
+
+[burn-times]
+"minecraft:coal" = 1600
+"minecraft:stick" = 100
+
+[[step]]
+join = "Alex"
+use-item = { stack = "fueldemo:probe*1" }
+expect.claimed = true
+expect.told = ["Alex: coal 1600 stick 100 dirt none"]

@@ -1063,6 +1063,15 @@ mod run {
                     .collect(),
                 tags: items.item_tag_order.clone(),
                 items: items.items.keys().map(|k| k.to_string()).collect(),
+                burn_times: items
+                    .items
+                    .keys()
+                    .filter_map(|k| {
+                        let stack = horizon_client::items::ItemStack::new(k, 1);
+                        let ticks = self.res.providers().burn_time(items, &stack, false);
+                        (ticks > 0).then(|| (k.to_string(), ticks as u32))
+                    })
+                    .collect(),
                 cooking: self
                     .recipes()
                     .cooking

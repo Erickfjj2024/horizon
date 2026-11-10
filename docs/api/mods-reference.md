@@ -798,6 +798,7 @@ A cooking recipe of the game's own kinds (`smelting`, `blasting`, `smoking`, `ca
 | `recipes-of-type` | `func(kind: string) -> list<custom-recipe>` | The recipes of type `kind` (`mymod:crushing`), in file order, from the content mods and the world's data packs. Empty for a type nobody uses. |
 | `cooking-recipes` | `func(kind: string) -> list<cooking-recipe>` | The cooking recipes of a kind (`smelting`, `blasting`...), in the game's order. |
 | `ingredient-items` | `func(ingredient: string) -> list<string>` | The items an ingredient names, in order, once each: `ingredient` is JSON, an item id, a `#tag`, a list of them, or an object with an `item`, a `tag` or `items`. A bare id is `minecraft:`; items the game doesn't know are left out. |
+| `burn-time` | `func(item: string) -> option<u32>` | How many ticks `item` burns in a furnace, from the game's fuel registry (`FuelValues`: the `furnace_fuels` data map, data packs and the content mods' own, as a furnace reads them); none for an item that does not burn or is not known. (A smoker or blast furnace burns it the same ticks; those cook twice as fast.) API 27. |
 
 ## `net`
 
