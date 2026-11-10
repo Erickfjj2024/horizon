@@ -30,6 +30,41 @@ pub(super) fn end_drag() {
     }
 }
 
+/// The strings of the mods' menus this client was sent (`world.set-menu-text`), by block position, and the block position of the
+/// screen being drawn.
+static MENU_TEXT: Mutex<Option<HashMap<[i32; 3], Vec<String>>>> = Mutex::new(None);
+static SCREEN_AT: Mutex<Option<[i32; 3]>> = Mutex::new(None);
+
+/// Most blocks whose strings a client keeps (the oldest are dropped).
+const MENU_TEXT_BLOCKS: usize = 64;
+
+/// A `horizon:menu_text` message arrived: the strings of the block at its position.
+pub(super) fn remember_menu_text(data: &[u8]) {
+    let Some((pos, texts)) = horizon_mods::screen::decode_menu_text(data) else {
+        return;
+    };
+    if let Ok(mut m) = MENU_TEXT.lock() {
+        let map = m.get_or_insert_with(HashMap::new);
+        if map.len() >= MENU_TEXT_BLOCKS && !map.contains_key(&pos) {
+            map.clear();
+        }
+        map.insert(pos, texts);
+    }
+}
+
+/// The screen drawn now is the one of the block at `pos`.
+pub(super) fn set_screen_at(pos: [i32; 3]) {
+    if let Ok(mut s) = SCREEN_AT.lock() {
+        *s = Some(pos);
+    }
+}
+
+/// String `n` of the open screen's block.
+fn menu_string(n: usize) -> Option<String> {
+    let at = (*SCREEN_AT.lock().ok()?)?;
+    MENU_TEXT.lock().ok()?.as_ref()?.get(&at)?.get(n).cloned()
+}
+
 /// The id a press that stays on this client gives `native_screen_click`'s `button`: not a menu button.
 pub(super) const LOCAL_PRESS: i32 = i32::MIN;
 
@@ -143,9 +178,12 @@ impl Game<'_> {
                         });
                     self.native_sprite_tinted(batch, texture, src, dst, tint);
                 }
-                Widget::Text { x, y, text, color, scale } => {
+                Widget::Text { x, y, text, color, scale, text_data } => {
                     let rgb = color.as_deref().and_then(parse_color).unwrap_or(0xFF40_4040);
-                    let text = fill_text(text, data);
+                    let text = match text_data {
+                        Some(n) => menu_string(usize::from(*n)).unwrap_or_default(),
+                        None => fill_text(text, data),
+                    };
                     let at = [ox + *x as f32, oy + *y as f32];
                     let start = batch.vertices.len();
                     self.native_text(batch, &text, at, rgb, false);

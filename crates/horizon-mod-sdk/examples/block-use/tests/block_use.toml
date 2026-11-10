@@ -58,3 +58,9 @@ expect.blocks = [{ x = 41, y = 73, z = 0, state = "minecraft:chest[facing=north]
 blocks = [{ x = 51, y = 74, z = 0, state = "minecraft:chest[facing=north]" }]
 use-block = { pos = [50, 74, 0] }
 expect.blocks = [{ x = 51, y = 74, z = 0, state = "blockuse:box" }]
+
+[[step]]
+# FORK-20: a click on the machine at y 75 sets the strings its menu carries.
+use-block = { pos = [1, 75, 1] }
+ticks = 1
+expect.menu-text = ["minecraft:overworld 1 75 1 forge:ores/iron|Alex"]

@@ -75,6 +75,12 @@ fn a_standalone_item_records_the_vanilla_item_it_behaves_as() {
     let _ = fs::remove_dir_all(&scratch);
     let base = scratch.join("base");
     fs::create_dir_all(&base).unwrap();
+    fs::write(
+        base.join("facts.json"),
+        r#"{"states": [["minecraft:iron_block"]], "defaults": {"minecraft:iron_block": 0}}"#,
+    )
+    .unwrap();
+    fs::write(base.join("gameplay-facts.json"), r#"{"states": [{"item": "minecraft:iron_block"}]}"#).unwrap();
     let mods = [folder_mod(
         &scratch.join("bows"),
         &[

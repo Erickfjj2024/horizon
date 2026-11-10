@@ -1338,6 +1338,8 @@ pub struct Expect {
     teleports: Option<Vec<String>>,
     xp_taken: Option<Vec<String>>,
     sounds: Option<Vec<String>>,
+    /// Server mods (FORK-20): every `set-menu-text`, as `"dimension x y z text|text"`.
+    menu_text: Option<Vec<String>>,
     /// Server mods (FORK-34): every `set-capabilities-enabled`, as `"dimension x y z items=true fluids=true energy=false"`.
     capabilities: Option<Vec<String>>,
     /// Server mods (FORK-30): every `spawn-particles`, as `"dimension particle x y z count"`.
@@ -2212,6 +2214,18 @@ impl Step {
                 })
                 .collect();
             same("particles", want, &got)?;
+        }
+        if let Some(want) = &e.menu_text {
+            let got: Vec<String> = out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::SetMenuText { dimension, pos, texts, .. } => {
+                        Some(format!("{dimension} {} {} {} {}", pos[0], pos[1], pos[2], texts.join("|")))
+                    }
+                    _ => None,
+                })
+                .collect();
+            same("menu-text", want, &got)?;
         }
         if let Some(want) = &e.capabilities {
             let got: Vec<String> = out

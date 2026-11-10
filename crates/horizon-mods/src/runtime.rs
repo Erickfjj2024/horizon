@@ -444,6 +444,8 @@ pub enum Output {
     PackBlock { name: String, dimension: String, pos: [i32; 3], into: [i32; 3], replacement: Option<String> },
     /// `world.unpack-block`: what the box at `box_pos` holds, back at `pos`.
     UnpackBlock { name: String, dimension: String, box_pos: [i32; 3], pos: [i32; 3] },
+    /// `world.set-menu-text`: the strings the menu of a block entity carries (FORK-20).
+    SetMenuText { name: String, dimension: String, pos: [i32; 3], texts: Vec<String> },
     /// `world.set-capabilities-enabled`: which of a block entity's capabilities the outside can use.
     SetCapabilitiesEnabled {
         name: String,
@@ -2536,6 +2538,17 @@ impl mod_world::Host for State {
         self.out.push(Output::UnpackBlock { name: self.name.clone(), dimension, box_pos: [box_x, box_y, box_z], pos: [x, y, z] });
         Ok(())
     }
+    fn set_menu_text(&mut self, dimension: String, x: i32, y: i32, z: i32, texts: Vec<String>) -> Result<(), String> {
+        if texts.len() > MENU_TEXTS || texts.iter().any(|t| t.len() > MENU_TEXT_BYTES) {
+            return Err(format!("at most {MENU_TEXTS} strings of {MENU_TEXT_BYTES} bytes"));
+        }
+        let made = self.out.iter().filter(|o| matches!(o, Output::SetMenuText { .. })).count();
+        if made >= BLOCKS_PER_CALL {
+            return Err(format!("at most {BLOCKS_PER_CALL} menu texts a call"));
+        }
+        self.out.push(Output::SetMenuText { name: self.name.clone(), dimension, pos: [x, y, z], texts });
+        Ok(())
+    }
     #[allow(clippy::too_many_arguments)]
     fn set_capabilities_enabled(
         &mut self,
@@ -2989,6 +3002,9 @@ impl entities::Host for State {
         self.entity_request(dimension, EntityCommand::SetFire { id, ticks: ticks.min(72_000) }, &[])
     }
 }
+/// Most strings a menu carries and bytes each holds (`world.set-menu-text`).
+pub const MENU_TEXTS: usize = 64;
+pub const MENU_TEXT_BYTES: usize = 256;
 /// Most bytes a mod message holds, and messages a call may send.
 const NET_BYTES: usize = 30_000;
 const NET_PER_CALL: usize = 32;

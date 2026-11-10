@@ -477,3 +477,53 @@ mod tests {
         assert_eq!(hovered(&s, &data, &l, [50.0, 5.0]), None);
     }
 }
+
+/// The channel a block entity's menu strings travel on, host to client (`world.set-menu-text`).
+pub const MENU_TEXT_CHANNEL: &str = "horizon:menu_text";
+
+/// A block's menu strings as the channel carries them: the position (three little-endian whole numbers), the count, then each string
+/// as its length (two bytes) and its UTF-8.
+pub fn encode_menu_text(pos: [i32; 3], texts: &[String]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for v in pos {
+        out.extend(v.to_le_bytes());
+    }
+    out.push(texts.len().min(255) as u8);
+    for t in texts.iter().take(255) {
+        let bytes = t.as_bytes();
+        let n = bytes.len().min(usize::from(u16::MAX));
+        out.extend((n as u16).to_le_bytes());
+        out.extend(&bytes[..n]);
+    }
+    out
+}
+
+/// The position and the strings of [`encode_menu_text`]; None for bytes that are cut short or not text.
+pub fn decode_menu_text(data: &[u8]) -> Option<([i32; 3], Vec<String>)> {
+    let int = |at: usize| data.get(at..at + 4).map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    let pos = [int(0)?, int(4)?, int(8)?];
+    let count = usize::from(*data.get(12)?);
+    let mut at = 13;
+    let mut texts = Vec::with_capacity(count);
+    for _ in 0..count {
+        let n = usize::from(u16::from_le_bytes([*data.get(at)?, *data.get(at + 1)?]));
+        at += 2;
+        texts.push(String::from_utf8(data.get(at..at + n)?.to_vec()).ok()?);
+        at += n;
+    }
+    Some((pos, texts))
+}
+
+#[cfg(test)]
+mod menu_text_tests {
+    use super::*;
+
+    #[test]
+    fn menu_text_round_trips_and_a_cut_message_is_refused() {
+        let texts = vec!["forge:ores/iron".to_owned(), String::new(), "ñandú ✓".to_owned()];
+        let bytes = encode_menu_text([-3, 64, 12], &texts);
+        assert_eq!(decode_menu_text(&bytes), Some(([-3, 64, 12], texts)));
+        assert_eq!(decode_menu_text(&bytes[..bytes.len() - 1]), None);
+        assert_eq!(decode_menu_text(&[0; 5]), None);
+    }
+}

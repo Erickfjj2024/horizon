@@ -913,6 +913,47 @@ mod run {
                 self.world.modified.insert((key.0 >> 4, key.2 >> 4));
             }
         }
+        /// A mod's `world.set-menu-text` (FORK-20): the strings are kept in the block entity (`menu_text` of its saved compound) and go
+        /// to the clients within reach, which show them in the menu's `text` widgets.
+        pub(in crate::game) fn native_set_menu_text(&mut self, pos: [i32; 3], texts: &[String]) {
+            let key = (pos[0], pos[1], pos[2]);
+            let bytes = horizon_mods::screen::encode_menu_text(pos, texts);
+            let Some(horizon_client_render::containers::BlockEntity::Mod(m)) = self.world.block_entities.get_mut(&key) else {
+                return;
+            };
+            m.nbt.insert(Self::jname("menu_text"), horizon_world::nbt::Tag::ByteArray(bytes.clone().into()));
+            self.world.modified.insert((key.0 >> 4, key.2 >> 4));
+            let near: Vec<u128> = self
+                .lan
+                .as_ref()
+                .map(|h| {
+                    h.hub
+                        .guests
+                        .iter()
+                        .filter(|g| g.placed && (0..3).map(|i| (g.position[i] - f64::from(pos[i])).powi(2)).sum::<f64>() < 16.0 * 16.0)
+                        .map(|g| g.uuid)
+                        .collect()
+                })
+                .unwrap_or_default();
+            for uuid in near {
+                let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
+            }
+        }
+
+        /// The strings of the mod block at `key`, to the acting player: its menu just opened.
+        pub(in crate::game) fn send_menu_text_to_actor(&mut self, key: (i32, i32, i32)) {
+            let bytes = match self.world.block_entities.get(&key) {
+                Some(horizon_client_render::containers::BlockEntity::Mod(m)) => match m.nbt.get(&Self::jname("menu_text")) {
+                    Some(horizon_world::nbt::Tag::ByteArray(b)) => b.iter().map(|v| *v as u8).collect::<Vec<u8>>(),
+                    _ => return,
+                },
+                _ => return,
+            };
+            let ints = self.acting_player_uuid();
+            let uuid = ints.iter().fold(0u128, |acc, i| (acc << 32) | u128::from(*i as u32));
+            let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
+        }
+
         /// A mod's `world.set-capabilities-enabled` (FORK-34): which of the entity's capabilities the outside can use, kept in it.
         pub(in crate::game) fn native_set_capabilities_enabled(&mut self, pos: [i32; 3], items: bool, fluids: bool, energy: bool) {
             let key = (pos[0], pos[1], pos[2]);
@@ -2449,6 +2490,13 @@ mod run {
                 Output::SpawnParticles { name, dimension, particle, pos, spread, speed, count, color, scale, max_distance } => {
                     if !self.lan_send_mod_particles(&dimension, &particle, pos, spread, speed, count, color, scale, max_distance) {
                         log::debug!("Horizon: mod {name} asked for the particle {particle}, which was not shown");
+                    }
+                }
+                Output::SetMenuText { name, dimension, pos, texts } => {
+                    if dimension == self.dim.id() {
+                        self.native_set_menu_text(pos, &texts);
+                    } else {
+                        log::debug!("Horizon: mod {name} set menu text in another level");
                     }
                 }
                 Output::SetCapabilitiesEnabled { name, dimension, pos, items, fluids, energy } => {

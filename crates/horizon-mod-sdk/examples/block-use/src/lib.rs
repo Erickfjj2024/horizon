@@ -31,6 +31,10 @@ impl ServerMod for Gate {
         } else if pos.y == 73 {
             let _ = world::unpack_block(&player.dimension, pos.x, 72, pos.z, pos.x + 1, pos.y, pos.z);
         }
+        // FORK-20: the machine at y 75 shows two strings in its menu (a filter's tag and the player's name), `text_data` 0 and 1.
+        if pos.y == 75 {
+            let _ = world::set_menu_text(&player.dimension, pos.x, pos.y, pos.z, &["forge:ores/iron".to_owned(), player.name.clone()]);
+        }
         match stack {
             Some(s) if s.item == "minecraft:stone" => BlockUse::Pass,
             None if !sneaking => BlockUse::Consume,

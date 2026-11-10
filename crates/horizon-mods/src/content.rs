@@ -518,11 +518,15 @@ pub enum Widget {
         #[serde(default)]
         tint_by: Option<Value>,
     },
-    /// A line of text; `{0}`, `{1}`... are data slots.
+    /// A line of text; `{0}`, `{1}`... are data slots. With `text_data: n` it shows string `n` of the block entity's menu text
+    /// (`world.set-menu-text`) instead, nothing while there is none (FORK-20).
     Text {
         x: i32,
         y: i32,
+        #[serde(default)]
         text: String,
+        #[serde(default)]
+        text_data: Option<u16>,
         #[serde(default)]
         color: Option<String>,
         /// Percent of the usual size, drawn from `x`, `y` (60 is the small print of an upgrade's description); 100 when unset.
@@ -741,7 +745,10 @@ fn check_widget(
                 return Err(format!("{name}: a sprite's src is x, y, w, h with w and h over 0"));
             }
         }
-        Widget::Text { x, y, text, color, scale } => {
+        Widget::Text { x, y, text, color, scale, text_data } => {
+            if text_data.is_some_and(|n| usize::from(n) >= crate::runtime::MENU_TEXTS) {
+                return Err(format!("{name}: text_data is a string of the menu, 0 to {}", crate::runtime::MENU_TEXTS - 1));
+            }
             if scale.is_some_and(|s| !(10..=400).contains(&s)) {
                 return Err(format!("{name}: a text's scale is 10 to 400 percent"));
             }

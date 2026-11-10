@@ -763,6 +763,11 @@ interface %world {
     /// with the entity. Made after this call returns; nothing happens for a
     /// block that is not a mod's block entity. API 24.
     set-capabilities-enabled: func(dimension: string, x: s32, y: s32, z: s32, items: bool, fluids: bool, energy: bool) -> result<_, string>;
+    /// Sets the strings the menu of the block entity at the position carries (FORK-20): up to 64, each up to 256 bytes of text, kept
+    /// with the entity. A screen's `text` widget with `text_data: n` shows string `n`; the clients that have the menu open get them
+    /// when they change and when they open it. Made after this call returns; nothing happens for a block that is not a mod's block
+    /// entity. An error for more than 64 strings or one over 256 bytes. API 34.
+    set-menu-text: func(dimension: string, x: s32, y: s32, z: s32, texts: list<string>) -> result<_, string>;
     /// Shows a particle to the players of `dimension` within `max-distance`
     /// blocks (at most 128) of `x y z`, as `/particle` does:
     /// `ServerLevel.sendParticles`. `particle` is a vanilla particle type

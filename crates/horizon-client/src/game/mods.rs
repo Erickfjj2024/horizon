@@ -888,6 +888,7 @@ impl Game<'_> {
                 | Output::PullItems { .. }
                 | Output::MineBlock { .. }
                 | Output::SetCapabilitiesEnabled { .. }
+                | Output::SetMenuText { .. }
                 | Output::SpawnParticles { .. }
                 | Output::SetTankFilter { .. }
                 | Output::SetEnergyCapacity { .. }) => {

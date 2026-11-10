@@ -4098,6 +4098,8 @@ impl Game<'_> {
         if m.items.len() < slots {
             m.items.resize(slots, None);
         }
+        #[cfg(feature = "mods")]
+        self.send_menu_text_to_actor(key);
         true
     }
     /// Why the mod block at `key` has no menu to open, for the message the
@@ -4338,6 +4340,7 @@ impl Game<'_> {
                 rgba(139, 139, 139, 255),
             );
         }
+        super::menu_screens::set_screen_at([s.at.0, s.at.1, s.at.2]);
         self.native_screen_draw(&s.block, &s.data, batch, [ox, oy]);
         if s.screen.own_labels {
             return true;

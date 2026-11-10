@@ -294,6 +294,7 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
             Output::SetCapabilitiesEnabled { items, fluids, energy, .. } => {
                 format!("capabilities items {items} fluids {fluids} energy {energy}")
             }
+            Output::SetMenuText { texts, .. } => format!("set {} menu text(s)", texts.len()),
             Output::MineBlock { tool, .. } => format!("mined a block with {tool}"),
             Output::PullItems { face, max, .. } => format!("pulled up to {max} item(s) through face {face}"),
             Output::SetTankFilter { tank, accepts, .. } => format!("tank {tank} takes {accepts:?}"),

@@ -98,6 +98,7 @@ impl Game<'_> {
     /// A `horizon:mod_net` payload the server sent the window.
     pub(super) fn remote_native_net(&mut self, data: &[u8]) {
         match mod_net::decode(data) {
+            Ok(m) if m.channel == horizon_mods::screen::MENU_TEXT_CHANNEL => super::menu_screens::remember_menu_text(&m.data),
             Ok(m) => self.native_net_from_server(&m.channel, &m.data),
             Err(e) => log::debug!("Horizon: a bad mod message: {e}"),
         }
