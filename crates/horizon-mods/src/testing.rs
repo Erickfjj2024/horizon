@@ -1230,6 +1230,8 @@ pub struct Expect {
     sounds: Option<Vec<String>>,
     /// Server mods (FORK-34): every `set-capabilities-enabled`, as `"dimension x y z items=true fluids=true energy=false"`.
     capabilities: Option<Vec<String>>,
+    /// Server mods (FORK-30): every `spawn-particles`, as `"dimension particle x y z count"`.
+    particles: Option<Vec<String>>,
     /// The mod is turned off during this step, for a reason holding this text.
     /// Without it, a mod that stops fails the test.
     stopped: Option<String>,
@@ -1986,6 +1988,18 @@ impl Step {
                 })
                 .collect();
             same("sounds", want, &got)?;
+        }
+        if let Some(want) = &e.particles {
+            let got: Vec<String> = out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::SpawnParticles { dimension, particle, pos, count, .. } => {
+                        Some(format!("{dimension} {particle} {} {} {} {count}", pos[0], pos[1], pos[2]))
+                    }
+                    _ => None,
+                })
+                .collect();
+            same("particles", want, &got)?;
         }
         if let Some(want) = &e.capabilities {
             let got: Vec<String> = out

@@ -2082,6 +2082,11 @@ mod run {
                         log::debug!("Horizon: mod {name} set item faces in another level");
                     }
                 }
+                Output::SpawnParticles { name, dimension, particle, pos, spread, speed, count, color, scale, max_distance } => {
+                    if !self.lan_send_mod_particles(&dimension, &particle, pos, spread, speed, count, color, scale, max_distance) {
+                        log::debug!("Horizon: mod {name} asked for the particle {particle}, which was not shown");
+                    }
+                }
                 Output::SetCapabilitiesEnabled { name, dimension, pos, items, fluids, energy } => {
                     if dimension == self.dim.id() {
                         self.native_set_capabilities_enabled(pos, items, fluids, energy);

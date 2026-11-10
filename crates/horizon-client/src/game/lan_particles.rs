@@ -485,6 +485,59 @@ impl Game<'_> {
         });
     }
 
+    /// A server mod's `world.spawn-particles` (FORK-30): `particle` to the players of `dimension` within `max_distance` blocks.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn lan_send_mod_particles(
+        &mut self,
+        dimension: &str,
+        particle: &str,
+        at: [f64; 3],
+        spread: [f32; 3],
+        speed: f32,
+        count: u32,
+        color: Option<u32>,
+        scale: f32,
+        max_distance: f32,
+    ) -> bool {
+        let Some(host) = self.lan.as_ref() else {
+            return false;
+        };
+        let mut options = match ParticleType::from_name(particle) {
+            Some(ty) => ParticleOptions::simple(ty),
+            None if !particle.starts_with("minecraft:") => ParticleOptions::named(particle),
+            None => return false,
+        };
+        if let Some(c) = color {
+            options.color = [
+                ((c >> 16) & 255) as f32 / 255.0,
+                ((c >> 8) & 255) as f32 / 255.0,
+                (c & 255) as f32 / 255.0,
+                1.0,
+            ];
+        }
+        options.scale = scale.clamp(0.01, 4.0);
+        let Some(packet_particle) = Self::hub_particle(&host.hub, &options, None) else {
+            return false;
+        };
+        let horizon_only = mod_particle_only_for_horizon(&packet_particle);
+        let body = C::LevelParticles(play::LevelParticles {
+            particle: packet_particle,
+            override_limiter: true,
+            always_show: false,
+            pos: at,
+            dist: spread,
+            max_speed: [speed; 3],
+            count: count as i32,
+            randomization: 0,
+        })
+        .encode();
+        let range = f64::from(max_distance);
+        send_native_nearby(host, dimension, body, horizon_only, |position| {
+            (0..3).map(|k| (position[k] - at[k]).powi(2)).sum::<f64>() <= range * range
+        });
+        true
+    }
+
     /// Native sounds wait until the server host is available. An unknown
     /// `minecraft:` event is dropped; a mod's goes by name (`sound_packet`).
     pub(super) fn flush_native_sounds(&mut self) {

@@ -393,6 +393,19 @@ pub enum Output {
         pos: [i32; 3],
         faces: Vec<Vec<u32>>,
     },
+    /// `world.spawn-particles`: a particle shown to the players near a position.
+    SpawnParticles {
+        name: String,
+        dimension: String,
+        particle: String,
+        pos: [f64; 3],
+        spread: [f32; 3],
+        speed: f32,
+        count: u32,
+        color: Option<u32>,
+        scale: f32,
+        max_distance: f32,
+    },
     /// `world.set-capabilities-enabled`: which of a block entity's capabilities the outside can use.
     SetCapabilitiesEnabled {
         name: String,
@@ -2338,6 +2351,49 @@ impl mod_world::Host for State {
             return Err(format!("at most {BLOCKS_PER_CALL} container changes a call"));
         }
         self.out.push(Output::SetItemFaces { name: self.name.clone(), dimension, pos: [x, y, z], faces });
+        Ok(())
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_particles(
+        &mut self,
+        dimension: String,
+        particle: String,
+        x: f64,
+        y: f64,
+        z: f64,
+        spread_x: f32,
+        spread_y: f32,
+        spread_z: f32,
+        speed: f32,
+        count: u32,
+        color: Option<u32>,
+        scale: f32,
+        max_distance: f32,
+    ) -> Result<(), String> {
+        let numbers = [x, y, z].iter().all(|v| v.is_finite() && v.abs() < TP_XZ)
+            && [spread_x, spread_y, spread_z, speed, scale, max_distance].iter().all(|v| v.is_finite());
+        if !numbers || !kind_ok(&particle) {
+            return Err("a particle id and finite numbers".into());
+        }
+        if count == 0 || count > 512 || !(0.0..=128.0).contains(&max_distance) || !(0.0..=4.0).contains(&scale) {
+            return Err("1 to 512 particles, a distance of 0 to 128 blocks and a scale of 0 to 4".into());
+        }
+        let made = self.out.iter().filter(|o| matches!(o, Output::SpawnParticles { .. })).count();
+        if made >= 1024 {
+            return Err("at most 1024 particle requests a call".into());
+        }
+        self.out.push(Output::SpawnParticles {
+            name: self.name.clone(),
+            dimension,
+            particle,
+            pos: [x, y, z],
+            spread: [spread_x, spread_y, spread_z],
+            speed,
+            count,
+            color,
+            scale,
+            max_distance,
+        });
         Ok(())
     }
     #[allow(clippy::too_many_arguments)]

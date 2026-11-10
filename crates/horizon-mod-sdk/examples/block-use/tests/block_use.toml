@@ -22,3 +22,8 @@ expect.block-use = "default"
 # FORK-34: a click on the closed gate closes every capability of its entity to the outside...
 use-block = { pos = [1, 70, 1] }
 expect.capabilities = ["minecraft:overworld 1 70 1 items=false fluids=false energy=false"]
+
+[[step]]
+# FORK-30: a structure that has formed sparkles.
+use-block = { pos = [1, 71, 1] }
+expect.particles = ["minecraft:overworld minecraft:dust 1.5 71.5 1.5 8"]

@@ -882,6 +882,7 @@ impl Game<'_> {
                 | Output::PullItems { .. }
                 | Output::MineBlock { .. }
                 | Output::SetCapabilitiesEnabled { .. }
+                | Output::SpawnParticles { .. }
                 | Output::SetTankFilter { .. }
                 | Output::SetEnergyCapacity { .. }) => {
                     self.route_server_output(host.as_deref_mut(), server);

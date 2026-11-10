@@ -14,6 +14,10 @@ impl ServerMod for Gate {
         if pos.y == 70 {
             let _ = world::set_capabilities_enabled(&player.dimension, pos.x, pos.y, pos.z, false, false, false);
         }
+        // FORK-30: the gate at y 71 is a structure that has just formed: it sparkles for the players within 40 blocks.
+        if pos.y == 71 {
+            let _ = world::spawn_particles(&player.dimension, "minecraft:dust", f64::from(pos.x) + 0.5, f64::from(pos.y) + 0.5, f64::from(pos.z) + 0.5, 0.3, 0.3, 0.3, 0.0, 8, Some(0x5555FF), 1.0, 40.0);
+        }
         match stack {
             Some(s) if s.item == "minecraft:stone" => BlockUse::Pass,
             None if !sneaking => BlockUse::Consume,
