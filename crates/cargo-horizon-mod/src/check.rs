@@ -279,6 +279,8 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
                 format!("teleported a player to {} {} {} in {dimension}", pos[0], pos[1], pos[2])
             }
             Output::SpawnParticles { particle, count, .. } => format!("{count} {particle} particle(s)"),
+            Output::TellOverlay { text, .. } => format!("action bar: {text}"),
+            Output::PlayerBody { change, .. } => format!("body: {change:?}"),
             Output::SetFood { food, saturation, .. } => format!("set food to {food} and saturation to {saturation}"),
             Output::SetMotion { velocity, .. } => format!("set a player's motion to {velocity:?}"),
             Output::SetAllowFlight { allowed, .. } => format!("allowed flight: {allowed}"),

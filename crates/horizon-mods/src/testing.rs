@@ -1835,6 +1835,7 @@ impl Step {
                 .iter()
                 .filter_map(|o| match o {
                     Output::Tell { player, text, .. } => Some(format!("{}: {text}", name(player))),
+                    Output::TellOverlay { player, text, .. } => Some(format!("{} (action bar): {text}", name(player))),
                     _ => None,
                 })
                 .collect();
@@ -1983,6 +1984,18 @@ impl Step {
             let got: Vec<String> = out
                 .iter()
                 .filter_map(|o| match o {
+                    Output::PlayerBody { player, change, .. } => {
+                        use crate::BodyChange as B;
+                        Some(match change {
+                            B::Air(a) => format!("set-air {} {a}", name(player)),
+                            B::ResetFall => format!("reset-fall {}", name(player)),
+                            B::ReduceEffect { effect, ticks } => format!("reduce-effect {} {effect} {ticks}", name(player)),
+                            B::Modifier { attribute, id, amount, operation, present: true } => {
+                                format!("modifier {} {attribute} {id} {amount} {operation}", name(player))
+                            }
+                            B::Modifier { attribute, id, present: false, .. } => format!("remove-modifier {} {attribute} {id}", name(player)),
+                        })
+                    }
                     Output::SetFood { player, food, saturation, .. } => Some(format!("set-food {} {food} {saturation}", name(player))),
                     Output::SetMotion { player, velocity, .. } => {
                         Some(format!("set-motion {} {} {} {}", name(player), velocity[0], velocity[1], velocity[2]))

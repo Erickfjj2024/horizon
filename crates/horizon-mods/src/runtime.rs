@@ -158,6 +158,15 @@ pub struct MobInfo {
     pub max_health: f32,
 }
 
+/// What a mod changed in a player's body (`player-control`), made after its call.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BodyChange {
+    Air(i32),
+    ReduceEffect { effect: String, ticks: i32 },
+    ResetFall,
+    Modifier { attribute: String, id: String, amount: f64, operation: String, present: bool },
+}
+
 /// What a mod asked of a player (capability `player-items`), made after its call.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlayerItemsCommand {
@@ -327,8 +336,20 @@ pub enum Output {
         player: String,
         text: String,
     },
+    /// `players.tell-overlay`: a line over the hotbar, to the player with this id.
+    TellOverlay {
+        name: String,
+        player: String,
+        text: String,
+    },
     /// `players.broadcast`: a line after the mod's name, to every player.
     Broadcast { name: String, text: String },
+    /// `player-control.set-air`, `reduce-effect`, `reset-fall-distance` and the attribute modifiers.
+    PlayerBody {
+        name: String,
+        player: String,
+        change: BodyChange,
+    },
     /// A server mod command's feedback, to the player who typed it.
     Reply {
         player: String,
@@ -2321,7 +2342,7 @@ impl State {
             .filter(|o| {
                 matches!(
                     o,
-                    Output::Chat { .. } | Output::Tell { .. } | Output::Broadcast { .. }
+                    Output::Chat { .. } | Output::Tell { .. } | Output::TellOverlay { .. } | Output::Broadcast { .. }
                 )
             })
             .count();
@@ -2686,6 +2707,17 @@ impl player_items::Host for State {
     }
 }
 impl State {
+    fn body_request(&mut self, player: String, change: BodyChange) -> Result<(), String> {
+        if !self.snapshot.players.iter().any(|p| p.id == player) {
+            return Err(format!("no player {player} is online"));
+        }
+        let made = self.out.iter().filter(|o| matches!(o, Output::PlayerBody { .. })).count();
+        if made >= CONTROL_PER_CALL * 4 {
+            return Err("too many body changes in one call".into());
+        }
+        self.out.push(Output::PlayerBody { name: self.name.clone(), player, change });
+        Ok(())
+    }
     fn player_request(&mut self, player: String, command: PlayerItemsCommand) -> Result<(), String> {
         if !self.snapshot.players.iter().any(|p| p.id == player) {
             return Err(format!("no player {player} is online"));
@@ -3035,6 +3067,30 @@ impl player_control::Host for State {
     fn get_state(&mut self, player: String) -> Option<PlayerState> {
         self.snapshot.states.iter().find(|(id, _)| *id == player).map(|(_, s)| s.clone())
     }
+    fn set_air(&mut self, player: String, air: i32) -> Result<(), String> {
+        self.body_request(player, BodyChange::Air(air.clamp(0, 300)))
+    }
+    fn reduce_effect(&mut self, player: String, effect: String, ticks: i32) -> Result<(), String> {
+        if ticks < 1 || !kind_ok(&effect) {
+            return Err("an effect id and at least 1 tick".into());
+        }
+        self.body_request(player, BodyChange::ReduceEffect { effect, ticks })
+    }
+    fn reset_fall_distance(&mut self, player: String) -> Result<(), String> {
+        self.body_request(player, BodyChange::ResetFall)
+    }
+    fn set_attribute_modifier(&mut self, player: String, attribute: String, id: String, amount: f64, operation: String) -> Result<(), String> {
+        if !amount.is_finite() || !kind_ok(&attribute) || !kind_ok(&id) || !matches!(operation.as_str(), "add_value" | "add_multiplied_base" | "add_multiplied_total") {
+            return Err("an attribute id, a modifier id, a finite amount and add_value, add_multiplied_base or add_multiplied_total".into());
+        }
+        self.body_request(player, BodyChange::Modifier { attribute, id, amount, operation, present: true })
+    }
+    fn remove_attribute_modifier(&mut self, player: String, attribute: String, id: String) -> Result<(), String> {
+        if !kind_ok(&attribute) || !kind_ok(&id) {
+            return Err("an attribute id and a modifier id".into());
+        }
+        self.body_request(player, BodyChange::Modifier { attribute, id, amount: 0.0, operation: "add_value".into(), present: false })
+    }
     fn set_food(&mut self, player: String, food: u32, saturation: f32) -> Result<(), String> {
         if food > 20 || !saturation.is_finite() || saturation < 0.0 {
             return Err("a food level of 0 to 20 and a saturation of 0 or more".into());
@@ -3192,6 +3248,10 @@ impl players::Host for State {
                 player,
                 text: clip(text),
             })
+    }
+    fn tell_overlay(&mut self, player: String, text: String) -> bool {
+        self.snapshot.players.iter().any(|p| p.id == player)
+            && self.say(|name| Output::TellOverlay { name, player, text: clip(text) })
     }
     fn broadcast(&mut self, text: String) {
         self.say(|name| Output::Broadcast {

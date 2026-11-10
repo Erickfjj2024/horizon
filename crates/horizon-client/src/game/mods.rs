@@ -871,6 +871,8 @@ impl Game<'_> {
                 | Output::TakeXp { .. }
                 | Output::SetMotion { .. }
                 | Output::SetFood { .. }
+                | Output::TellOverlay { .. }
+                | Output::PlayerBody { .. }
                 | Output::SetAllowFlight { .. }
                 | Output::PlaySound { .. }
                 | Output::NetSend { .. }

@@ -200,6 +200,21 @@ impl PlayerEffects {
     pub fn clear(&mut self) {
         self.list.clear();
     }
+    /// Shortens effect `id` by `ticks`, removing it when that leaves nothing (an infinite one is removed whatever `ticks` is): true when
+    /// the player had it. A server mod's `player-control.reduce-effect`.
+    pub fn reduce(&mut self, id: &str, ticks: i32) -> bool {
+        let Some(i) = self.list.iter().position(|e| e.id == id) else {
+            return false;
+        };
+        let left = self.list[i].duration;
+        if left < 0 || left <= ticks {
+            self.list.remove(i);
+        } else {
+            self.list[i].duration = left - ticks;
+        }
+        self.changes = self.changes.wrapping_add(1);
+        true
+    }
     /// The effects of a saved player (`Player.active_effects`: id,
     /// duration, amplifier, ambient, particles visible).
     pub fn from_saved(saved: &[(String, i32, i32, bool, bool)]) -> Self {
@@ -492,6 +507,19 @@ pub fn effect_modifier(effect: &str) -> Option<(&'static str, &'static str, f64,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_effect_is_shortened_then_removed() {
+        let mut e = PlayerEffects::default();
+        e.add(EffectInstance::new("poison", 100, 0));
+        e.add(EffectInstance::new("glowing", -1, 0));
+        // Shortened by 40, kept; then what is left (60) goes with 60; an unknown effect is not there.
+        assert!(e.reduce("poison", 40) && e.get("poison").unwrap().duration == 60);
+        assert!(e.reduce("poison", 60) && e.get("poison").is_none());
+        assert!(!e.reduce("poison", 1));
+        // An infinite effect is removed whatever the ticks are.
+        assert!(e.reduce("glowing", 1) && e.get("glowing").is_none());
+    }
 
     #[test]
     fn adding_counts_a_change_only_when_the_effect_changed() {

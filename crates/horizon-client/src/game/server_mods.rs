@@ -2065,6 +2065,17 @@ mod run {
             id: &str,
             line: Text,
         ) {
+            self.tell_server_player_as(host, id, line, false);
+        }
+
+        /// `tell_server_player`, over the hotbar (the action bar) when `overlay`.
+        pub(in crate::game) fn tell_server_player_as(
+            &mut self,
+            host: Option<&mut LanHost>,
+            id: &str,
+            line: Text,
+            overlay: bool,
+        ) {
             let local = self.options.execution_role.is_client()
                 && self.remote.is_none()
                 && self.player.is_some();
@@ -2085,7 +2096,7 @@ mod run {
                     conn,
                     &C::SystemChat(play::SystemChat {
                         content: component_nbt(&line.component()),
-                        overlay: false,
+                        overlay,
                     }),
                 );
             }
@@ -2119,6 +2130,43 @@ mod run {
                         line
                     };
                     self.tell_server_player(host, &player, line);
+                }
+                Output::TellOverlay { name: _, player, text } => {
+                    self.tell_server_player_as(host, &player, Text::literal(text), true);
+                }
+                Output::PlayerBody { name, player, change } => {
+                    use horizon_mods::BodyChange as B;
+                    let Some((target, _)) = self.mod_player(&player) else {
+                        return;
+                    };
+                    let done = self
+                        .for_player(target, |g| match change {
+                            B::Air(air) => {
+                                if let Some(p) = g.player.as_mut() {
+                                    p.air = air;
+                                }
+                            }
+                            B::ResetFall => {
+                                if let Some(p) = g.player.as_mut() {
+                                    p.fall_distance = 0.0;
+                                }
+                            }
+                            B::ReduceEffect { effect, ticks } => {
+                                let id = effect.strip_prefix("minecraft:").unwrap_or(&effect).to_owned();
+                                if g.potions.effects.reduce(&id, ticks) {
+                                    g.apply_effect_status();
+                                }
+                            }
+                            B::Modifier { attribute, id, amount, operation, present } => {
+                                if let Some(p) = g.player.as_mut() {
+                                    let _ = p.set_modifier(&attribute, &id, amount, &operation, present);
+                                }
+                            }
+                        })
+                        .is_some();
+                    if !done {
+                        log::debug!("Horizon: mod {name} changed the body of a player that is not here");
+                    }
                 }
                 Output::Broadcast { name, text } => {
                     let plain = format!("[{name}] {text}");

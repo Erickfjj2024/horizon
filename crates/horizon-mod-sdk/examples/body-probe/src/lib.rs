@@ -22,6 +22,13 @@ impl ServerMod for Probe {
             ),
         );
         let _ = player_control::set_food(&player.id, 20, 5.0);
+        // The small things a suit does: breathe for the player, ease a poison, stop a fall, run faster, and say so over the hotbar.
+        let _ = player_control::set_air(&player.id, 300);
+        let _ = player_control::reduce_effect(&player.id, "minecraft:poison", 40);
+        let _ = player_control::reset_fall_distance(&player.id);
+        let _ = player_control::set_attribute_modifier(&player.id, "minecraft:movement_speed", "bodyprobe:speed", 0.5, "add_multiplied_base");
+        let _ = player_control::remove_attribute_modifier(&player.id, "minecraft:step_height", "bodyprobe:step");
+        let _ = players::tell_overlay(&player.id, "Suit on");
         true
     }
 }
