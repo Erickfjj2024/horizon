@@ -1945,6 +1945,24 @@ mod run {
                     });
                     self.teleport_to_in_level(target, pos, rotation);
                 }
+                Output::SetMotion { name, player, velocity } => {
+                    let Some((Target::Guest(conn), _)) = self.mod_player(&player) else {
+                        log::debug!("Horizon: mod {name} set the motion of a player that is not a guest");
+                        return;
+                    };
+                    if let Some(host) = self.lan.as_mut() {
+                        host.hub.set_motion(conn, velocity);
+                    }
+                }
+                Output::SetAllowFlight { name, player, allowed } => {
+                    let Some((Target::Guest(conn), _)) = self.mod_player(&player) else {
+                        log::debug!("Horizon: mod {name} changed the flight of a player that is not a guest");
+                        return;
+                    };
+                    if let Some(host) = self.lan.as_mut() {
+                        host.hub.set_may_fly(conn, allowed);
+                    }
+                }
                 Output::TakeXp {
                     name,
                     player,
@@ -2111,6 +2129,20 @@ mod run {
                             .for_player(target, |g| {
                                 let made = stack.as_ref().and_then(|s| g.game_stack(s));
                                 if stack.is_some() && made.is_none() {
+                                    return false;
+                                }
+                                g.put_slot_for_mods(slot, made);
+                                true
+                            })
+                            .unwrap_or(false),
+                        P::CompareAndSet { slot, expected, replacement } => self
+                            .for_player(target, |g| {
+                                let now = g.inventory_for_mods();
+                                if now.get(slot as usize).cloned().flatten() != expected {
+                                    return false;
+                                }
+                                let made = replacement.as_ref().and_then(|s| g.game_stack(s));
+                                if replacement.is_some() && made.is_none() {
                                     return false;
                                 }
                                 g.put_slot_for_mods(slot, made);

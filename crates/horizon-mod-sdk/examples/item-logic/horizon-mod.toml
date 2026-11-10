@@ -5,5 +5,5 @@ description = "Test mod for items with logic: itemlogic:wand hurts its user for 
 authors = ["Rust port"]
 api = "0.3"
 side = "server"
-capabilities = ["players", "player-items"]
-experimental = ["player-items"]
+capabilities = ["players", "player-items", "player-control"]
+experimental = ["player-items", "player-control"]

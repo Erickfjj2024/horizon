@@ -1776,11 +1776,21 @@ impl Step {
             let got: Vec<String> = out
                 .iter()
                 .filter_map(|o| match o {
+                    Output::SetMotion { player, velocity, .. } => {
+                        Some(format!("set-motion {} {} {} {}", name(player), velocity[0], velocity[1], velocity[2]))
+                    }
+                    Output::SetAllowFlight { player, allowed, .. } => Some(format!("allow-flight {} {allowed}", name(player))),
                     Output::PlayerItems { player, command, .. } => Some(match command {
                         P::SetSlot { slot, stack } => format!(
                             "set-slot {} {slot} {}",
                             name(player),
                             stack.as_ref().map_or("-".to_owned(), |s| show_stack(&Some(s.clone())))
+                        ),
+                        P::CompareAndSet { slot, expected, replacement } => format!(
+                            "compare-and-set {} {slot} {} {}",
+                            name(player),
+                            show_stack(expected),
+                            show_stack(replacement)
                         ),
                         P::Hurt { damage_type, amount } => {
                             format!("hurt {} {damage_type} {amount}", name(player))

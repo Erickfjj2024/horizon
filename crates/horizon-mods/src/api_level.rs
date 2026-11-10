@@ -7,13 +7,13 @@
 //! version's level so the launcher can tell before it installs.
 
 /// The newest level this Horizon serves.
-pub const LEVEL: u32 = 24;
+pub const LEVEL: u32 = 25;
 
 /// Every function the game offers mods, as `interface.function`, with its
 /// level. Level 0 is the contract of Horizon 0.2.67 to 0.2.69. A new
 /// function takes the next level and raises [`LEVEL`] (the `api_reference`
 /// test fails until it is listed here).
-pub const FUNCTIONS: [(&str, u32); 83] = [
+pub const FUNCTIONS: [(&str, u32); 86] = [
     ("log.write", 0),
     ("game.get-player", 0),
     ("game.get-clock", 0),
@@ -97,6 +97,9 @@ pub const FUNCTIONS: [(&str, u32); 83] = [
     ("world.pull-items", 22),
     ("world.mine-block", 23),
     ("world.set-capabilities-enabled", 24),
+    ("player-items.compare-and-set-slot", 25),
+    ("player-control.set-motion", 25),
+    ("player-control.set-allow-flight", 25),
 ];
 
 /// What the game's program carries so the launcher can read its level

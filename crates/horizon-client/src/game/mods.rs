@@ -868,6 +868,8 @@ impl Game<'_> {
                 | Output::SetBlocks { .. }
                 | Output::Teleport { .. }
                 | Output::TakeXp { .. }
+                | Output::SetMotion { .. }
+                | Output::SetAllowFlight { .. }
                 | Output::PlaySound { .. }
                 | Output::NetSend { .. }
                 | Output::NetToServer { .. }

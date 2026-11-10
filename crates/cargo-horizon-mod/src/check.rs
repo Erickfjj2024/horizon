@@ -278,6 +278,8 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
             Output::Teleport { dimension, pos, .. } => {
                 format!("teleported a player to {} {} {} in {dimension}", pos[0], pos[1], pos[2])
             }
+            Output::SetMotion { velocity, .. } => format!("set a player's motion to {velocity:?}"),
+            Output::SetAllowFlight { allowed, .. } => format!("allowed flight: {allowed}"),
             Output::TakeXp { points, .. } => format!("took {points} experience point(s)"),
             Output::PlaySound { sound, .. } => format!("played {sound}"),
             Output::SetBlockProperty { property, value, .. } => format!("set {property}={value}"),

@@ -412,7 +412,7 @@ impl Game<'_> {
         motion.yaw = g.yaw;
         motion.pitch = g.pitch;
         motion.sprinting = g.sprinting;
-        motion.may_fly = g.creative() || g.game_mode == SPECTATOR;
+        motion.may_fly = g.creative() || g.game_mode == SPECTATOR || g.mod_may_fly;
         motion.flying = g.flying;
         motion.flying_speed = g.flying_speed;
         // FireworkRocketItem.use boosts only a gliding player.

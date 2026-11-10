@@ -822,6 +822,17 @@ interface player-control {
     /// the level's points run out; never below level 0. Made after this call
     /// returns. An error (nothing queued) for a player not online or 0 points.
     take-xp: func(player: string, points: u32) -> result<_, string>;
+    /// Sets the player's velocity in blocks a tick (each component within -10
+    /// and 10), as vanilla's `setDeltaMovement` followed by the motion packet
+    /// does: the player's client moves with it from the next tick. Made after
+    /// this call returns. An error for a player not online or a value that is
+    /// not a number. API 25.
+    set-motion: func(player: string, x: f64, y: f64, z: f64) -> result<_, string>;
+    /// Lets the player fly (`Abilities.mayfly`) whatever their game mode is,
+    /// or takes it away (a creative or spectator player keeps theirs); the
+    /// player's client gets the abilities. Kept until the player leaves. An
+    /// error for a player not online. API 25.
+    set-allow-flight: func(player: string, allowed: bool) -> result<_, string>;
     /// Plays a sound event for the players near a position, as `/playsound`
     /// does at the `block` category. `sound` is vanilla's (`minecraft:...`)
     /// or the mod's own, from its `assets/<id>/sounds.json`.
@@ -1015,6 +1026,12 @@ interface player-items {
     /// `mymod:radiation`) for `duration-ticks` (-1 is infinite), at
     /// `amplifier` (0 is level I).
     add-effect: func(player: string, effect: string, duration-ticks: s32, amplifier: s32) -> result<_, string>;
+    /// Puts `replacement` in a slot only if the slot holds `expected` (item,
+    /// count and components equal; none for an empty slot) at the moment the
+    /// request is made, after the call returns; otherwise nothing changes.
+    /// Lets two mods or a mod and the player swap a stack without losing it.
+    /// Same errors as `set-slot`. API 25.
+    compare-and-set-slot: func(player: string, slot: u32, expected: option<item-stack>, replacement: option<item-stack>) -> result<_, string>;
 }
 
 /// What the server calls in a server mod (manifest `api = "0.3"`,

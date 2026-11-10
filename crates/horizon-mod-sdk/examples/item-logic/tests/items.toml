@@ -2,7 +2,13 @@
 join = "Alex"
 use-item = { stack = "itemlogic:wand*1" }
 expect.claimed = true
-expect.player-items = ["hurt Alex minecraft:magic 2", "effect Alex minecraft:speed 100 1"]
+expect.player-items = [
+    "hurt Alex minecraft:magic 2",
+    "effect Alex minecraft:speed 100 1",
+    "set-motion Alex 0 1.5 0",
+    "allow-flight Alex true",
+    "compare-and-set Alex 0 itemlogic:wand*1 minecraft:stick*1",
+]
 
 [[step]]
 # Another item is left to the game.

@@ -3290,6 +3290,40 @@ impl Hub {
     /// Set a guest's flying speed and tell it (`Abilities.setFlyingSpeed`, then
     /// `onUpdateAbilities`). The abilities packets after carry it too, so a
     /// respawn or a game mode change keeps it.
+    /// A server mod lets the guest fly (or not) whatever their game mode is (`player-control.set-allow-flight`); a creative or
+    /// spectator player keeps theirs. The abilities go to their client.
+    pub fn set_may_fly(&mut self, conn: u32, allowed: bool) {
+        let Some(g) = self.guest_mut(conn) else {
+            return;
+        };
+        g.mod_may_fly = allowed;
+        let may = g.creative() || g.spectator() || allowed;
+        if !may {
+            g.flying = false;
+        }
+        // The server's copy of the body, which the movement replay reads.
+        if let Some(motion) = g.motion.as_mut() {
+            motion.may_fly = may;
+            if !may {
+                motion.flying = false;
+            }
+        }
+        g.send(&g.abilities());
+    }
+
+    /// A server mod sets the guest's velocity (`player-control.set-motion`), in blocks a tick: `ServerPlayer.setDeltaMovement`
+    /// followed by the `hurtMarked` packet, `ClientboundSetEntityMotionPacket`.
+    pub fn set_motion(&mut self, conn: u32, velocity: [f64; 3]) {
+        let Some(g) = self.guest_mut(conn) else {
+            return;
+        };
+        if let Some(motion) = g.motion.as_mut() {
+            motion.velocity = horizon_core::geometry::Vec3::new(velocity[0], velocity[1], velocity[2]);
+        }
+        let id = g.entity_id;
+        g.send(&play::Clientbound::SetEntityMotion(play::SetEntityMotion { id, velocity }));
+    }
+
     pub fn set_flying_speed(&mut self, conn: u32, speed: f32) {
         let Some(g) = self.guest_mut(conn) else {
             return;

@@ -281,6 +281,8 @@ pub struct Guest {
     /// `Abilities.flyingSpeed`: vanilla's 0.05, unless a server mod set
     /// another (`native_set_flying_speed`). Saved with the player.
     pub flying_speed: f32,
+    /// A server mod allowed this player to fly (`player-control.set-allow-flight`), whatever their game mode.
+    pub mod_may_fly: bool,
     /// The level the player is in (`ServerPlayer.level().dimension()`): the
     /// hub's level passes only reach the players in theirs.
     pub dimension: String,
@@ -431,6 +433,7 @@ impl Guest {
             death_time: 0,
             placed: false,
             flying_speed: 0.05,
+            mod_may_fly: false,
             dimension: "minecraft:overworld".into(),
             menu: None,
             next_window: 0,
@@ -549,7 +552,7 @@ impl Guest {
         if self.flying || self.spectator() {
             f |= 2;
         }
-        if self.creative() || self.spectator() {
+        if self.creative() || self.spectator() || self.mod_may_fly {
             f |= 4;
         }
         if self.creative() {
@@ -1259,6 +1262,17 @@ mod tests {
             position,
             10,
         )
+    }
+
+    #[test]
+    fn a_mod_can_let_a_survival_player_fly() {
+        let mut g = guest_at([0.0; 3]);
+        // Survival: no ability. With the mod's leave: may fly (bit 4), not flying yet, and nothing else.
+        assert_eq!(g.ability_flags() & 4, 0);
+        g.mod_may_fly = true;
+        assert_eq!(g.ability_flags(), 4);
+        let play::Clientbound::PlayerAbilities(p) = g.abilities() else { panic!("abilities") };
+        assert_eq!(p.flags, 4);
     }
 
     #[test]

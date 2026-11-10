@@ -5,7 +5,7 @@
 //! `itemlogic:energy` component each tick until it has none.
 use horizon_mod_sdk::components::Components;
 use horizon_mod_sdk::server::{
-    BlockPos, ItemStack, Player, Registration, ServerMod, player_items, players,
+    BlockPos, ItemStack, Player, Registration, ServerMod, player_control, player_items, players,
 };
 
 struct Logic;
@@ -24,6 +24,15 @@ impl ServerMod for Logic {
         }
         let _ = player_items::hurt(&player.id, "minecraft:magic", 2.0);
         let _ = player_items::add_effect(&player.id, "minecraft:speed", 100, 1);
+        // The wand also launches its user and lets them fly, and swaps itself for a stick only if still in slot 0.
+        let _ = player_control::set_motion(&player.id, 0.0, 1.5, 0.0);
+        let _ = player_control::set_allow_flight(&player.id, true);
+        let _ = player_items::compare_and_set_slot(
+            &player.id,
+            0,
+            Some(&stack),
+            Some(&ItemStack { item: "minecraft:stick".into(), count: 1, components: String::new() }),
+        );
         true
     }
     fn item_hit(&mut self, player: &Player, stack: ItemStack, _entity: u32, _kind: &str) {

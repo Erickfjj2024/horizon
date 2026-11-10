@@ -169,6 +169,12 @@ pub enum PlayerItemsCommand {
         damage_type: String,
         amount: f32,
     },
+    /// `compare-and-set-slot`: the slot changes only if it holds `expected` when this is made.
+    CompareAndSet {
+        slot: u32,
+        expected: Option<ModItemStack>,
+        replacement: Option<ModItemStack>,
+    },
     Effect {
         effect: String,
         duration: i32,
@@ -343,6 +349,18 @@ pub enum Output {
         pos: [f64; 3],
         yaw: Option<f32>,
         pitch: Option<f32>,
+    },
+    /// `player-control.set-motion`: the player's velocity, in blocks a tick.
+    SetMotion {
+        name: String,
+        player: String,
+        velocity: [f64; 3],
+    },
+    /// `player-control.set-allow-flight`: `Abilities.mayfly` whatever the game mode.
+    SetAllowFlight {
+        name: String,
+        player: String,
+        allowed: bool,
     },
     /// `player-control.take-xp`: `Player.giveExperiencePoints(-points)`.
     TakeXp {
@@ -2478,6 +2496,23 @@ impl player_items::Host for State {
         }
         self.player_request(player, PlayerItemsCommand::SetSlot { slot, stack })
     }
+    fn compare_and_set_slot(
+        &mut self,
+        player: String,
+        slot: u32,
+        expected: Option<ModItemStack>,
+        replacement: Option<ModItemStack>,
+    ) -> Result<(), String> {
+        if slot > 40 {
+            return Err(format!("slot {slot}: 0 to 40"));
+        }
+        for s in [&expected, &replacement].into_iter().flatten() {
+            if s.item.is_empty() || s.count == 0 || s.components.len() > SUMMON_BYTES {
+                return Err("a stack has an item, a count over 0 and small components".into());
+            }
+        }
+        self.player_request(player, PlayerItemsCommand::CompareAndSet { slot, expected, replacement })
+    }
     fn hurt(&mut self, player: String, damage_type: String, amount: f32) -> Result<(), String> {
         if !amount.is_finite() || amount <= 0.0 || !kind_ok(&damage_type) {
             return Err("an amount over 0 and a damage type id".into());
@@ -2871,6 +2906,31 @@ impl player_control::Host for State {
             yaw,
             pitch,
         });
+        Ok(())
+    }
+    fn set_motion(&mut self, player: String, x: f64, y: f64, z: f64) -> Result<(), String> {
+        if ![x, y, z].iter().all(|v| v.is_finite() && v.abs() <= 10.0) {
+            return Err("each component is a number from -10 to 10".into());
+        }
+        if !self.snapshot.players.iter().any(|p| p.id == player) {
+            return Err(format!("no player {player} is online"));
+        }
+        let queued = self.out.iter().filter(|o| matches!(o, Output::SetMotion { .. })).count();
+        if queued >= CONTROL_PER_CALL {
+            return Err(format!("at most {CONTROL_PER_CALL} motions per call"));
+        }
+        self.out.push(Output::SetMotion { name: self.name.clone(), player, velocity: [x, y, z] });
+        Ok(())
+    }
+    fn set_allow_flight(&mut self, player: String, allowed: bool) -> Result<(), String> {
+        if !self.snapshot.players.iter().any(|p| p.id == player) {
+            return Err(format!("no player {player} is online"));
+        }
+        let queued = self.out.iter().filter(|o| matches!(o, Output::SetAllowFlight { .. })).count();
+        if queued >= CONTROL_PER_CALL {
+            return Err(format!("at most {CONTROL_PER_CALL} flight changes per call"));
+        }
+        self.out.push(Output::SetAllowFlight { name: self.name.clone(), player, allowed });
         Ok(())
     }
     fn take_xp(&mut self, player: String, points: u32) -> Result<(), String> {
