@@ -17,3 +17,8 @@ expect.block-use = "default"
 [[step]]
 use-block = { pos = [1, 64, 1], stack = "minecraft:stick*1" }
 expect.block-use = "default"
+
+[[step]]
+# FORK-34: a click on the closed gate closes every capability of its entity to the outside...
+use-block = { pos = [1, 70, 1] }
+expect.capabilities = ["minecraft:overworld 1 70 1 items=false fluids=false energy=false"]

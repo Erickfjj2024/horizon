@@ -138,6 +138,14 @@ fn offset(p: Pos, d: Direction) -> Pos {
     (p.0 + s[0], p.1 + s[1], p.2 + s[2])
 }
 /// State-level container queries shared by the game and comparator signals.
+/// The capabilities a mod closed in an entity: bit 0 items, bit 1 fluids, bit 2 energy (FORK-34, `world.set-capabilities-enabled`).
+pub(in crate::game) fn closed_capabilities(m: &horizon_client_render::containers::ModBlockEntity) -> u8 {
+    match m.nbt.get(&horizon_world::nbt::JavaString::from("closed")) {
+        Some(horizon_world::nbt::Tag::Byte(b)) => *b as u8,
+        _ => 0,
+    }
+}
+
 struct Containers<'a> {
     world: &'a World,
     behaviours: &'a Behaviours,
@@ -215,6 +223,12 @@ impl Containers<'_> {
                 for (face, mask) in own.faces.iter_mut().zip(masks.iter()) {
                     *face = (0..32).filter(|s| *mask as u32 & (1 << s) != 0).filter(|s| *s < own_slots(container.slots)).collect();
                 }
+                container = Arc::new(own);
+            }
+            // FORK-34: a mod closed the items of this entity (a structure that is not formed): nothing goes in or out.
+            if closed_capabilities(m) & 1 != 0 {
+                let mut own = (*container).clone();
+                own.faces.iter_mut().for_each(Vec::clear);
                 container = Arc::new(own);
             }
             return Some(View {

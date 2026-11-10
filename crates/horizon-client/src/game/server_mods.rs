@@ -784,6 +784,21 @@ mod run {
                 self.world.modified.insert((key.0 >> 4, key.2 >> 4));
             }
         }
+        /// A mod's `world.set-capabilities-enabled` (FORK-34): which of the entity's capabilities the outside can use, kept in it.
+        pub(in crate::game) fn native_set_capabilities_enabled(&mut self, pos: [i32; 3], items: bool, fluids: bool, energy: bool) {
+            let key = (pos[0], pos[1], pos[2]);
+            if let Some(horizon_client_render::containers::BlockEntity::Mod(m)) =
+                self.world.block_entities.get_mut(&key)
+            {
+                let closed = u8::from(!items) | u8::from(!fluids) << 1 | u8::from(!energy) << 2;
+                if closed == 0 {
+                    m.nbt.remove(&Self::jname("closed"));
+                } else {
+                    m.nbt.insert(Self::jname("closed"), horizon_world::nbt::Tag::Byte(closed as i8));
+                }
+                self.world.modified.insert((key.0 >> 4, key.2 >> 4));
+            }
+        }
         /// A mod's `world.set-item-eject`: whether the entity pushes its output items out.
         pub(in crate::game) fn native_set_item_eject(&mut self, pos: [i32; 3], on: bool) {
             let key = (pos[0], pos[1], pos[2]);
@@ -1386,7 +1401,7 @@ mod run {
                         capacity: Self::energy_capacity(m, spec),
                         max_receive: spec.max_receive,
                         max_extract: spec.max_extract,
-                        faces: Self::energy_faces(m, spec),
+                        faces: if crate::game::machines::closed_capabilities(m) & 4 != 0 { [horizon_mods::FlowSide::None; 6] } else { Self::energy_faces(m, spec) },
                     })
                 })
                 .collect();
@@ -1504,7 +1519,11 @@ mod run {
                         return None;
                     }
                     let held = Self::stored_tanks(m, specs);
-                    let sides = Self::tank_sides(m, specs);
+                    let sides = if crate::game::machines::closed_capabilities(m) & 2 != 0 {
+                        vec![[horizon_mods::FlowSide::None; 6]; specs.len()]
+                    } else {
+                        Self::tank_sides(m, specs)
+                    };
                     let accepts = Self::tank_accepts(m, specs.len());
                     let tanks = specs
                         .iter()
@@ -1987,6 +2006,13 @@ mod run {
                         self.native_set_item_faces(pos, &faces);
                     } else {
                         log::debug!("Horizon: mod {name} set item faces in another level");
+                    }
+                }
+                Output::SetCapabilitiesEnabled { name, dimension, pos, items, fluids, energy } => {
+                    if dimension == self.dim.id() {
+                        self.native_set_capabilities_enabled(pos, items, fluids, energy);
+                    } else {
+                        log::debug!("Horizon: mod {name} changed capabilities in another level");
                     }
                 }
                 Output::SetEnergyCapacity { name, dimension, pos, capacity } => {

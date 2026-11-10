@@ -375,6 +375,15 @@ pub enum Output {
         pos: [i32; 3],
         faces: Vec<Vec<u32>>,
     },
+    /// `world.set-capabilities-enabled`: which of a block entity's capabilities the outside can use.
+    SetCapabilitiesEnabled {
+        name: String,
+        dimension: String,
+        pos: [i32; 3],
+        items: bool,
+        fluids: bool,
+        energy: bool,
+    },
     /// `world.mine-block`: a block broken with a tool, its drops into a container.
     MineBlock {
         name: String,
@@ -2268,6 +2277,24 @@ impl mod_world::Host for State {
             return Err(format!("at most {BLOCKS_PER_CALL} container changes a call"));
         }
         self.out.push(Output::SetItemFaces { name: self.name.clone(), dimension, pos: [x, y, z], faces });
+        Ok(())
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn set_capabilities_enabled(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        items: bool,
+        fluids: bool,
+        energy: bool,
+    ) -> Result<(), String> {
+        let made = self.out.iter().filter(|o| matches!(o, Output::SetCapabilitiesEnabled { .. })).count();
+        if made >= BLOCKS_PER_CALL {
+            return Err(format!("at most {BLOCKS_PER_CALL} capability changes a call"));
+        }
+        self.out.push(Output::SetCapabilitiesEnabled { name: self.name.clone(), dimension, pos: [x, y, z], items, fluids, energy });
         Ok(())
     }
     #[allow(clippy::too_many_arguments)]

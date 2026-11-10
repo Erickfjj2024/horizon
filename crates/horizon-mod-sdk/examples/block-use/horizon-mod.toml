@@ -5,4 +5,4 @@ description = "Test mod for mod-decided block use (FORK-29): a click on a block 
 authors = ["Rust port"]
 api = "0.3"
 side = "server"
-capabilities = ["players"]
+capabilities = ["players", "world"]

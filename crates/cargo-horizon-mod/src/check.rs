@@ -283,6 +283,9 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
             Output::SetBlockProperty { property, value, .. } => format!("set {property}={value}"),
             Output::SetItemFaces { faces, .. } => format!("item faces {faces:?}"),
             Output::SetItemEject { on, .. } => format!("item eject {on}"),
+            Output::SetCapabilitiesEnabled { items, fluids, energy, .. } => {
+                format!("capabilities items {items} fluids {fluids} energy {energy}")
+            }
             Output::MineBlock { tool, .. } => format!("mined a block with {tool}"),
             Output::PullItems { face, max, .. } => format!("pulled up to {max} item(s) through face {face}"),
             Output::SetTankFilter { tank, accepts, .. } => format!("tank {tank} takes {accepts:?}"),

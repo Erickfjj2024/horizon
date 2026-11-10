@@ -1196,6 +1196,8 @@ pub struct Expect {
     teleports: Option<Vec<String>>,
     xp_taken: Option<Vec<String>>,
     sounds: Option<Vec<String>>,
+    /// Server mods (FORK-34): every `set-capabilities-enabled`, as `"dimension x y z items=true fluids=true energy=false"`.
+    capabilities: Option<Vec<String>>,
     /// The mod is turned off during this step, for a reason holding this text.
     /// Without it, a mod that stops fails the test.
     stopped: Option<String>,
@@ -1910,6 +1912,19 @@ impl Step {
                 })
                 .collect();
             same("sounds", want, &got)?;
+        }
+        if let Some(want) = &e.capabilities {
+            let got: Vec<String> = out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::SetCapabilitiesEnabled { dimension, pos, items, fluids, energy, .. } => Some(format!(
+                        "{dimension} {} {} {} items={items} fluids={fluids} energy={energy}",
+                        pos[0], pos[1], pos[2]
+                    )),
+                    _ => None,
+                })
+                .collect();
+            same("capabilities", want, &got)?;
         }
         if let Some(want) = &e.corner {
             let got = game.panel().map(|p| corner_name(p.corner).to_string());

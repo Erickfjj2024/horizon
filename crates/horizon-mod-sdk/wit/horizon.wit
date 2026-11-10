@@ -747,6 +747,16 @@ interface %world {
     /// (kept with it). Made after this call returns; nothing happens for a
     /// block with no mod container. API 17.
     set-item-faces: func(dimension: string, x: s32, y: s32, z: s32, faces: list<list<u32>>) -> result<_, string>;
+    /// Closes or opens, for everything outside the block entity (hoppers and
+    /// droppers, pipes, tubes and cables, other machines), the three kinds of
+    /// capability it carries: its `items` container, its `fluids` (tanks) and
+    /// its `energy`. A closed capability gives and takes nothing through any
+    /// face, whatever the faces say; the contents, the faces and the mod's own
+    /// reads and writes are untouched, so a structure that becomes valid again
+    /// finds everything where it was. All three are open until closed. Kept
+    /// with the entity. Made after this call returns; nothing happens for a
+    /// block that is not a mod's block entity. API 24.
+    set-capabilities-enabled: func(dimension: string, x: s32, y: s32, z: s32, items: bool, fluids: bool, energy: bool) -> result<_, string>;
     /// Pulls items out of the container beside the block entity, on its face
     /// `face` (0 to 5: down, up, north, south, west, east), into the block
     /// entity's own container through that same face: up to `max` items of the
