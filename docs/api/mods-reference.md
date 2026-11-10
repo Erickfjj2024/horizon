@@ -38,7 +38,7 @@ A client mod: runs in the player's game.
 
 A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs where the world is simulated, on the dedicated server, a LAN host and single player's own server.
 
-- Imports (what the game offers): `log`, `storage`, `players`, `player-control`, `recipe-types`, `net`, `entities`, `item-types`, `player-items`, `chunks`, `world`
+- Imports (what the game offers): `log`, `storage`, `players`, `player-control`, `item-types`, `recipe-types`, `net`, `entities`, `player-items`, `chunks`, `world`
 - Exports (what the mod provides): `server-events`
 
 ## World `horizon-ui-mod`
@@ -768,38 +768,6 @@ What a player is doing as of the last server tick.
 | `set-allow-flight` | `func(player: string, allowed: bool) -> result<_, string>` | Lets the player fly (`Abilities.mayfly`) whatever their game mode is, or takes it away (a creative or spectator player keeps theirs); the player's client gets the abilities. Kept until the player leaves. An error for a player not online. API 25. |
 | `play-sound` | `func(dimension: string, sound: string, x: f64, y: f64, z: f64, volume: f32, pitch: f32)` | Plays a sound event for the players near a position, as `/playsound` does at the `block` category. `sound` is vanilla's (`minecraft:...`) or the mod's own, from its `assets/<id>/sounds.json`. |
 
-## `recipe-types`
-
-Access: capability `recipe-types`.
-
-Capability `recipe-types`, server mods only (manifest `api = "0.3"`, experimental): the recipes of types the mod brings. A recipe file `data/<namespace>/recipe/<path>.json` whose `type` is outside `minecraft` is kept as it is written; the mod reads it as it likes, and asks the game which items an ingredient of it names (the game knows the item tags).
-
-### record `custom-recipe`
-
-| Field | Type | |
-| --- | --- | --- |
-| `id` | `string` | `<namespace>:<path>`, its place under `data/<namespace>/recipe/`. |
-| `json` | `string` | The file's JSON. |
-
-### record `cooking-recipe`
-
-A cooking recipe of the game's own kinds (`smelting`, `blasting`, `smoking`, `campfire_cooking`), vanilla's and the mods', as a furnace reads it.
-
-| Field | Type | |
-| --- | --- | --- |
-| `inputs` | `list<string>` | The items that cook, as `minecraft:iron_ore`. |
-| `output` | `string` | What it makes. |
-| `count` | `u32` |  |
-| `experience` | `f32` |  |
-| `time` | `u32` | Ticks a furnace takes (`cookingtime`). |
-
-| Function | Signature | What it does |
-| --- | --- | --- |
-| `recipes-of-type` | `func(kind: string) -> list<custom-recipe>` | The recipes of type `kind` (`mymod:crushing`), in file order, from the content mods and the world's data packs. Empty for a type nobody uses. |
-| `cooking-recipes` | `func(kind: string) -> list<cooking-recipe>` | The cooking recipes of a kind (`smelting`, `blasting`...), in the game's order. |
-| `ingredient-items` | `func(ingredient: string) -> list<string>` | The items an ingredient names, in order, once each: `ingredient` is JSON, an item id, a `#tag`, a list of them, or an object with an `item`, a `tag` or `items`. A bare id is `minecraft:`; items the game doesn't know are left out. |
-| `burn-time` | `func(item: string) -> option<u32>` | How many ticks `item` burns in a furnace, from the game's fuel registry (`FuelValues`: the `furnace_fuels` data map, data packs and the content mods' own, as a furnace reads them); none for an item that does not burn or is not known. (A smoker or blast furnace burns it the same ticks; those cook twice as fast.) API 27. |
-
 ## `net`
 
 Access: capability `net`.
@@ -906,6 +874,55 @@ An item stack. `components` is the SNBT of its data components (`{"minecraft:dam
 | `count` | `u32` |  |
 | `components` | `string` |  |
 
+
+## `recipe-types`
+
+Access: capability `recipe-types`.
+
+Capability `recipe-types`, server mods only (manifest `api = "0.3"`, experimental): the recipes of types the mod brings. A recipe file `data/<namespace>/recipe/<path>.json` whose `type` is outside `minecraft` is kept as it is written; the mod reads it as it likes, and asks the game which items an ingredient of it names (the game knows the item tags).
+
+### type `item-stack`
+
+`type item-stack = item-stack`
+
+### record `craft-match`
+
+A crafting recipe that a 3 by 3 grid makes.
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | `string` | `minecraft:iron_pickaxe`, `mymod:crushing_kit`: the recipe's id. |
+| `output` | `item-stack` | What it makes. |
+| `remaining` | `list<option<item-stack>>` | What stays in each of the nine cells after a craft (`Recipe.getRemainingItems`: a bucket, a bottle, the patterned banner a copy keeps); none for a cell that keeps nothing. |
+
+### record `custom-recipe`
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | `string` | `<namespace>:<path>`, its place under `data/<namespace>/recipe/`. |
+| `json` | `string` | The file's JSON. |
+
+### record `cooking-recipe`
+
+A cooking recipe of the game's own kinds (`smelting`, `blasting`, `smoking`, `campfire_cooking`), vanilla's and the mods', as a furnace reads it.
+
+| Field | Type | |
+| --- | --- | --- |
+| `inputs` | `list<string>` | The items that cook, as `minecraft:iron_ore`. |
+| `output` | `string` | What it makes. |
+| `count` | `u32` |  |
+| `experience` | `f32` |  |
+| `time` | `u32` | Ticks a furnace takes (`cookingtime`). |
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `recipes-of-type` | `func(kind: string) -> list<custom-recipe>` | The recipes of type `kind` (`mymod:crushing`), in file order, from the content mods and the world's data packs. Empty for a type nobody uses. |
+| `cooking-recipes` | `func(kind: string) -> list<cooking-recipe>` | The cooking recipes of a kind (`smelting`, `blasting`...), in the game's order. |
+| `ingredient-items` | `func(ingredient: string) -> list<string>` | The items an ingredient names, in order, once each: `ingredient` is JSON, an item id, a `#tag`, a list of them, or an object with an `item`, a `tag` or `items`. A bare id is `minecraft:`; items the game doesn't know are left out. |
+| `burn-time` | `func(item: string) -> option<u32>` | How many ticks `item` burns in a furnace, from the game's fuel registry (`FuelValues`: the `furnace_fuels` data map, data packs and the content mods' own, as a furnace reads them); none for an item that does not burn or is not known. (A smoker or blast furnace burns it the same ticks; those cook twice as fast.) API 27. |
+| `crafting-find` | `func(grid: list<option<item-stack>>) -> option<craft-match>` | The first crafting recipe the 3 by 3 `grid` makes, in the game's order, vanilla, data packs and content mods alike (`RecipeManager.getRecipeFor(CRAFTING, ...)`): nine cells, row by row, none for an empty one. None when it makes nothing, or when the grid is not nine cells or has an item the game does not know. Asked while the world is lent (in a tick, a command or a hook of the server). API 28. |
+| `crafting-matches` | `func(id: string, grid: list<option<item-stack>>) -> bool` | Whether the crafting recipe `id` accepts the 3 by 3 `grid` (`Recipe.matches`). False for an id the game does not know. API 28. |
+| `item-max-stack-size` | `func(item: string) -> option<u32>` | How many of `item` fit a stack (`Item.getMaxStackSize`, the `max_stack_size` component); none for an item the game does not know. API 28. |
 
 ## `chunks`
 

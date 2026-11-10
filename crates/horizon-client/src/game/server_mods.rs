@@ -120,8 +120,55 @@ mod run {
         /// The redstone signal at each mod block entity of the dimension in place, read as the tick began.
         signals: std::collections::HashMap<[i32; 3], u8>,
         dimension: &'static str,
+        /// The game's recipes and items, for `crafting-find`, `crafting-matches` and `item-max-stack-size`.
+        res: Arc<crate::game::Resources>,
+    }
+    impl LentWorld {
+        /// A mod's stack as the game's (`game_stack` without the game): none for an item it does not know.
+        fn stack(&self, s: &horizon_mods::ModItemStack) -> Option<horizon_client::items::ItemStack> {
+            let max = self.res.items().get(&s.item).map(|i| i.max_stack)?;
+            if s.count == 0 {
+                return None;
+            }
+            let mut entries = vec![
+                ("id", horizon_world::nbt::Tag::String(s.item.as_str().into())),
+                ("count", horizon_world::nbt::Tag::Int(s.count.min(max) as i32)),
+            ];
+            if !s.components.is_empty() {
+                let (components, _) = horizon_world::nbt::parse_snbt(&s.components).ok()?;
+                entries.push(("components", components));
+            }
+            horizon_client::save::item_from_nbt(&horizon_world::nbt::Tag::compound(entries))
+        }
+        /// The grid as the game's stacks: none when a cell holds an item the game does not know.
+        fn grid(&self, grid: &[Option<horizon_mods::ModItemStack>]) -> Option<Vec<Option<horizon_client::items::ItemStack>>> {
+            grid.iter()
+                .map(|c| match c {
+                    None => Some(None),
+                    Some(s) => self.stack(s).map(Some),
+                })
+                .collect()
+        }
     }
     impl WorldView for LentWorld {
+        fn crafting_find(&self, grid: &[Option<horizon_mods::ModItemStack>]) -> Option<horizon_mods::CraftMatch> {
+            let stacks = self.grid(grid)?;
+            let recipes = self.res.recipes();
+            let (id, output) = recipes.find_with(&stacks, 3, &|_| None)?;
+            let remaining = recipes
+                .remainders(id, &stacks, 3)
+                .iter()
+                .map(|s| s.as_ref().map(Game::mod_stack))
+                .collect();
+            Some(horizon_mods::CraftMatch { id: id.to_owned(), output: Game::mod_stack(&output), remaining })
+        }
+        fn crafting_matches(&self, id: &str, grid: &[Option<horizon_mods::ModItemStack>]) -> bool {
+            let Some(stacks) = self.grid(grid) else { return false };
+            self.res.recipes().matches_recipe(id, &stacks, 3, &|_| None)
+        }
+        fn item_max_stack(&self, item: &str) -> Option<u32> {
+            self.res.items().get(item).map(|i| i.max_stack)
+        }
         fn redstone(&self, dimension: &str, x: i32, y: i32, z: i32) -> u8 {
             if dimension != self.dimension {
                 return 0;
@@ -547,6 +594,7 @@ mod run {
                 thunder,
                 signals,
                 dimension,
+                res: Arc::clone(&self.res),
             }));
         }
 

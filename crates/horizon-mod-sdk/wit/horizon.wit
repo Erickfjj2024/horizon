@@ -856,6 +856,17 @@ interface player-control {
 /// is kept as it is written; the mod reads it as it likes, and asks the game
 /// which items an ingredient of it names (the game knows the item tags).
 interface recipe-types {
+    use item-types.{item-stack};
+    /// A crafting recipe that a 3 by 3 grid makes.
+    record craft-match {
+        /// `minecraft:iron_pickaxe`, `mymod:crushing_kit`: the recipe's id.
+        id: string,
+        /// What it makes.
+        output: item-stack,
+        /// What stays in each of the nine cells after a craft (`Recipe.getRemainingItems`: a
+        /// bucket, a bottle, the patterned banner a copy keeps); none for a cell that keeps nothing.
+        remaining: list<option<item-stack>>,
+    }
     record custom-recipe {
         /// `<namespace>:<path>`, its place under `data/<namespace>/recipe/`.
         id: string,
@@ -891,6 +902,19 @@ interface recipe-types {
     /// does not burn or is not known. (A smoker or blast furnace burns it
     /// the same ticks; those cook twice as fast.) API 27.
     burn-time: func(item: string) -> option<u32>;
+    /// The first crafting recipe the 3 by 3 `grid` makes, in the game's
+    /// order, vanilla, data packs and content mods alike
+    /// (`RecipeManager.getRecipeFor(CRAFTING, ...)`): nine cells, row by row,
+    /// none for an empty one. None when it makes nothing, or when the grid is
+    /// not nine cells or has an item the game does not know. Asked while the
+    /// world is lent (in a tick, a command or a hook of the server). API 28.
+    crafting-find: func(grid: list<option<item-stack>>) -> option<craft-match>;
+    /// Whether the crafting recipe `id` accepts the 3 by 3 `grid`
+    /// (`Recipe.matches`). False for an id the game does not know. API 28.
+    crafting-matches: func(id: string, grid: list<option<item-stack>>) -> bool;
+    /// How many of `item` fit a stack (`Item.getMaxStackSize`, the
+    /// `max_stack_size` component); none for an item the game does not know. API 28.
+    item-max-stack-size: func(item: string) -> option<u32>;
 }
 
 /// Capability `net`, server mods only (manifest `api = "0.3"`, experimental):

@@ -1,0 +1,9 @@
+id = "craftprobe"
+name = "Crafting Probe"
+version = "0.1.0"
+description = "Test mod for the game's crafting recipes: using craftprobe:probe tells what a stick over a stick makes, whether a recipe matches and the stack size of a stick."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "recipe-types"]
+experimental = ["recipe-types"]

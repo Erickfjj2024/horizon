@@ -67,6 +67,9 @@ pub struct TestGame {
     pub hit_damage_result: Option<f32>,
     /// What the last `can_place` answered.
     pub can_place_result: Option<bool>,
+    /// The crafting recipes and stack sizes a script gave.
+    pub crafts: Vec<CraftSet>,
+    pub stack_sizes: std::collections::BTreeMap<String, u32>,
     /// The mobs of the Overworld a script set, for capability `entities`.
     pub mobs: Vec<crate::MobInfo>,
     /// The structures last told to the mod, by dimension and group.
@@ -74,9 +77,43 @@ pub struct TestGame {
 }
 
 /// The world a script's mod reads: [`TestGame::world`], copied for a step.
-struct ScriptWorld(std::collections::BTreeMap<(i32, i32, i32), String>, std::collections::BTreeMap<(i32, i32, i32), u8>);
+struct ScriptWorld(
+    std::collections::BTreeMap<(i32, i32, i32), String>,
+    std::collections::BTreeMap<(i32, i32, i32), u8>,
+    Vec<CraftSet>,
+    std::collections::BTreeMap<String, u32>,
+);
+
+/// A crafting recipe of a script (`[[craft]]`): the nine cells it takes, what it makes, what stays in the cells.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CraftSet {
+    id: String,
+    grid: Vec<String>,
+    output: String,
+    #[serde(default)]
+    remaining: Vec<String>,
+}
+
+impl ScriptWorld {
+    fn cells(list: &[String]) -> Vec<Option<crate::ModItemStack>> {
+        list.iter().map(|t| parse_stack(t)).collect()
+    }
+}
 
 impl crate::WorldView for ScriptWorld {
+    fn crafting_find(&self, grid: &[Option<crate::ModItemStack>]) -> Option<crate::CraftMatch> {
+        let r = self.2.iter().find(|c| Self::cells(&c.grid) == grid)?;
+        let mut remaining = Self::cells(&r.remaining);
+        remaining.resize(9, None);
+        Some(crate::CraftMatch { id: r.id.clone(), output: parse_stack(&r.output)?, remaining })
+    }
+    fn crafting_matches(&self, id: &str, grid: &[Option<crate::ModItemStack>]) -> bool {
+        self.2.iter().any(|c| c.id == id && Self::cells(&c.grid) == grid)
+    }
+    fn item_max_stack(&self, item: &str) -> Option<u32> {
+        self.3.get(item).copied()
+    }
     fn block(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<String> {
         let here = (dimension == "minecraft:overworld")
             .then(|| self.0.get(&(x, y, z)).cloned())
@@ -220,6 +257,8 @@ impl TestGame {
             damage_result: None,
             hit_damage_result: None,
             can_place_result: None,
+            crafts: Vec::new(),
+            stack_sizes: Default::default(),
         };
         copy_mod(hmod, &copy)?;
         game.start()?;
@@ -790,6 +829,12 @@ pub struct Script {
     /// The ticks items burn in a furnace (`[burn_times]`, `"minecraft:coal" = 1600`).
     #[serde(default)]
     pub burn_times: std::collections::BTreeMap<String, u32>,
+    /// Crafting recipes (`[[craft]]`: `id`, the nine cells of `grid`, `output`, `remaining`) the world's crafting answers from.
+    #[serde(default, rename = "craft")]
+    pub crafts: Vec<CraftSet>,
+    /// Stack sizes (`[stack-sizes]`, `"minecraft:stick" = 64`).
+    #[serde(default)]
+    pub stack_sizes: std::collections::BTreeMap<String, u32>,
     #[serde(default, rename = "step")]
     pub steps: Vec<Step>,
 }
@@ -1263,6 +1308,8 @@ impl Script {
 
     /// Runs every step on `game`; the error names the first step that failed.
     pub fn run(&self, game: &mut TestGame) -> Result<(), String> {
+        game.crafts = self.crafts.clone();
+        game.stack_sizes = self.stack_sizes.clone();
         if let Some(p) = &mut game.player {
             self.player.apply(p);
         }
@@ -1443,7 +1490,7 @@ impl Step {
             game.block_items.insert((s.x, s.y, s.z), s.slots.clone());
         }
         game.mods
-            .lend_world(Box::new(ScriptWorld(game.world.clone(), game.power.clone())));
+            .lend_world(Box::new(ScriptWorld(game.world.clone(), game.power.clone(), game.crafts.clone(), game.stack_sizes.clone())));
         if let Some(name) = &self.join {
             game.join(name);
         }

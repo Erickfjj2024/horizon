@@ -527,7 +527,22 @@ pub trait WorldView: std::any::Any + Send {
     fn has_dimension(&self, dimension: &str) -> bool;
     /// `Err` (why) for a state string that names no block state.
     fn check_state(&self, state: &str) -> Result<(), String>;
+    /// The first crafting recipe the 3 by 3 grid makes (`crafting-find`).
+    fn crafting_find(&self, _grid: &[Option<ModItemStack>]) -> Option<CraftMatch> {
+        None
+    }
+    /// Whether crafting recipe `id` accepts the grid (`crafting-matches`).
+    fn crafting_matches(&self, _id: &str, _grid: &[Option<ModItemStack>]) -> bool {
+        false
+    }
+    /// An item's stack size (`item-max-stack-size`).
+    fn item_max_stack(&self, _item: &str) -> Option<u32> {
+        None
+    }
 }
+
+/// A crafting recipe a grid makes (`recipe-types.craft-match`).
+pub use server_bindings::horizon::mods::recipe_types::CraftMatch;
 
 /// The view lent for the current calls, shared by every mod's store.
 type WorldSlot = Arc<Mutex<Option<Box<dyn WorldView>>>>;
@@ -2937,6 +2952,24 @@ impl recipe_types::Host for State {
                 })
                 .collect()
         })
+    }
+    fn crafting_find(&mut self, grid: Vec<Option<ModItemStack>>) -> Option<recipe_types::CraftMatch> {
+        if grid.len() != 9 {
+            return None;
+        }
+        let slot = self.world.lock().ok()?;
+        slot.as_ref()?.crafting_find(&grid)
+    }
+    fn crafting_matches(&mut self, id: String, grid: Vec<Option<ModItemStack>>) -> bool {
+        if grid.len() != 9 {
+            return false;
+        }
+        let Ok(slot) = self.world.lock() else { return false };
+        slot.as_ref().is_some_and(|v| v.crafting_matches(&id, &grid))
+    }
+    fn item_max_stack_size(&mut self, item: String) -> Option<u32> {
+        let slot = self.world.lock().ok()?;
+        slot.as_ref()?.item_max_stack(&item)
     }
     fn burn_time(&mut self, item: String) -> Option<u32> {
         let slot = self.recipe_data.lock().ok()?;

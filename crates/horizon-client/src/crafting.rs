@@ -1628,6 +1628,26 @@ impl Recipes {
         }
         None
     }
+    /// `Recipe.matches` of the crafting recipe `id` for the `size`x`size` grid: false for an id that is not one.
+    pub fn matches_recipe(
+        &self,
+        id: &str,
+        grid: &[Option<ItemStack>],
+        size: usize,
+        map_scale: &dyn Fn(i32) -> Option<u8>,
+    ) -> bool {
+        let Some(input) = Input::of(grid, size) else {
+            return false;
+        };
+        let ctx = Context {
+            recipes: self,
+            map_scale,
+        };
+        self.crafting
+            .iter()
+            .find(|(name, _)| name == id)
+            .is_some_and(|(_, recipe)| Self::assemble_if_matches(&ctx, &input, recipe).is_some())
+    }
     /// `Recipe.matches` then `assemble` for one recipe: None when it does
     /// not match, Some(None) when it matches with nothing to make.
     fn assemble_if_matches(

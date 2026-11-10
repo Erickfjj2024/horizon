@@ -754,6 +754,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "crafting-probe"
+version = "0.1.0"
+dependencies = [
+ "horizon-mod-sdk",
+]
+
+[[package]]
 name = "cranelift-assembler-x64"
 version = "0.135.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
