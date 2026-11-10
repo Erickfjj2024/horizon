@@ -33,7 +33,8 @@ impl ServerMod for Probe {
         let matches = recipe_types::crafting_matches("minecraft:stick", &grid);
         let other = recipe_types::crafting_matches("minecraft:torch", &grid);
         let size = recipe_types::item_max_stack_size("minecraft:stick").map_or("none".to_owned(), |n| n.to_string());
-        let _ = players::tell(&player.id, &format!("{text}; stick {matches}; torch {other}; size {size}"));
+        let tags = recipe_types::item_tags("minecraft:oak_planks").join(",");
+        let _ = players::tell(&player.id, &format!("{text}; stick {matches}; torch {other}; size {size}; tags {tags}"));
         true
     }
 }

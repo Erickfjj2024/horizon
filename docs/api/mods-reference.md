@@ -962,6 +962,7 @@ A cooking recipe of the game's own kinds (`smelting`, `blasting`, `smoking`, `ca
 | `crafting-find` | `func(grid: list<option<item-stack>>) -> option<craft-match>` | The first crafting recipe the 3 by 3 `grid` makes, in the game's order, vanilla, data packs and content mods alike (`RecipeManager.getRecipeFor(CRAFTING, ...)`): nine cells, row by row, none for an empty one. None when it makes nothing, or when the grid is not nine cells or has an item the game does not know. Asked while the world is lent (in a tick, a command or a hook of the server). API 28. |
 | `crafting-matches` | `func(id: string, grid: list<option<item-stack>>) -> bool` | Whether the crafting recipe `id` accepts the 3 by 3 `grid` (`Recipe.matches`). False for an id the game does not know. API 28. |
 | `item-max-stack-size` | `func(item: string) -> option<u32>` | How many of `item` fit a stack (`Item.getMaxStackSize`, the `max_stack_size` component); none for an item the game does not know. API 28. |
+| `item-tags` | `func(item: string) -> list<string>` | The item tags `item` is in (`c:ores/iron`, `minecraft:logs`, without the `#`), sorted; empty for an item in none or one the game does not know. The reverse of `ingredient-items` for a tag. API 30. |
 
 ## `chunks`
 

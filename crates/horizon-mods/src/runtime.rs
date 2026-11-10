@@ -2980,6 +2980,13 @@ impl recipe_types::Host for State {
         let slot = self.world.lock().ok()?;
         slot.as_ref()?.item_max_stack(&item)
     }
+    fn item_tags(&mut self, item: String) -> Vec<String> {
+        let Ok(slot) = self.recipe_data.lock() else { return Vec::new() };
+        let Some(data) = slot.as_ref() else { return Vec::new() };
+        let mut tags: Vec<String> = data.tags.iter().filter(|(_, items)| items.contains(&item)).map(|(t, _)| t.clone()).collect();
+        tags.sort();
+        tags
+    }
     fn burn_time(&mut self, item: String) -> Option<u32> {
         let slot = self.recipe_data.lock().ok()?;
         slot.as_ref()?.burn_times.get(&item).copied().filter(|t| *t > 0)

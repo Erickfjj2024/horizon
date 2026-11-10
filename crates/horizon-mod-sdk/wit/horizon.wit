@@ -966,6 +966,10 @@ interface recipe-types {
     /// How many of `item` fit a stack (`Item.getMaxStackSize`, the
     /// `max_stack_size` component); none for an item the game does not know. API 28.
     item-max-stack-size: func(item: string) -> option<u32>;
+    /// The item tags `item` is in (`c:ores/iron`, `minecraft:logs`, without
+    /// the `#`), sorted; empty for an item in none or one the game does not
+    /// know. The reverse of `ingredient-items` for a tag. API 30.
+    item-tags: func(item: string) -> list<string>;
 }
 
 /// Capability `net`, server mods only (manifest `api = "0.3"`, experimental):

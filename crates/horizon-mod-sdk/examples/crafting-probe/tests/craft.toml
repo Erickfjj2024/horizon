@@ -1,7 +1,13 @@
+items = ["minecraft:oak_planks"]
+
 [[craft]]
 id = "minecraft:stick"
 grid = ["", "minecraft:oak_planks*1", "", "", "minecraft:oak_planks*1", "", "", "", ""]
 output = "minecraft:stick*4"
+
+[tags]
+"minecraft:planks" = ["minecraft:oak_planks"]
+"c:planks" = ["minecraft:oak_planks"]
 
 [stack-sizes]
 "minecraft:stick" = 64
@@ -10,4 +16,4 @@ output = "minecraft:stick*4"
 join = "Alex"
 use-item = { stack = "craftprobe:probe*1" }
 expect.claimed = true
-expect.told = ["Alex: minecraft:stick makes minecraft:stick*4 keeps 0; stick true; torch false; size 64"]
+expect.told = ["Alex: minecraft:stick makes minecraft:stick*4 keeps 0; stick true; torch false; size 64; tags c:planks,minecraft:planks"]
