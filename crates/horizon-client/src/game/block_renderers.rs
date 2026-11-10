@@ -7,7 +7,7 @@
 use super::{Game, native_block_entity_draw::{BlockEntityDraw, CubeFace}};
 use horizon_client::containers::ModBlockEntity;
 use horizon_mods::{
-    block_render::{bounce_offset, fluid_box, fluid_sprite, fluid_tint, sixteenths, spin_degrees, turn_degrees},
+    block_render::{bounce_offset, fluid_box, fluid_sprite, fluid_tint, sixteenths, spin_degrees, turn_degrees, volume_fluid_box},
     content::{BlockRenderer, RenderElement, parse_color},
 };
 use horizon_world::nbt::{JavaString, Tag};
@@ -128,6 +128,25 @@ impl Game<'_> {
                     };
                     let fraction = t.amount as f32 / t.capacity as f32;
                     let Some((lo, hi)) = fluid_box(*from, *to, fraction) else {
+                        continue;
+                    };
+                    let Some(sprite) = fluid_sprite(sprites, default_sprite.as_ref(), &t.substance) else {
+                        continue;
+                    };
+                    let tint = fluid_tint(tints, &t.substance);
+                    self.native_draw_cube(draw, lo, hi, all(sprite), tint);
+                }
+                RenderElement::FluidVolume { tank, box_at, draw_at, fill_at, sprites, default_sprite, tints } => {
+                    let Some(t) = tanks.get(usize::from(*tank)).filter(|t| t.amount > 0) else {
+                        continue;
+                    };
+                    let Some((lo, hi)) = volume_fluid_box(
+                        data_of(entity),
+                        usize::from(*box_at),
+                        usize::from(*draw_at),
+                        usize::from(*fill_at),
+                        draw.block_pos(),
+                    ) else {
                         continue;
                     };
                     let Some(sprite) = fluid_sprite(sprites, default_sprite.as_ref(), &t.substance) else {

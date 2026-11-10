@@ -17,6 +17,30 @@ pub fn fluid_box(from: [f32; 3], to: [f32; 3], fraction: f32) -> Option<([f32; 3
     Some((from, top))
 }
 
+/// FORK-31: the box (in texels from the block at `block`) a structure's fluid fills, read from the block's `data`: the casing's
+/// corners at `box_at` (24 bytes), the draw flag at `draw_at` and how full it is (0 to 255) at `fill_at`. The fluid fills the
+/// casing's inside (one block in from each wall) and rises from its floor. None when this block does not draw it, when it is
+/// empty, or when the data does not say.
+pub fn volume_fluid_box(data: &[u8], box_at: usize, draw_at: usize, fill_at: usize, block: [i32; 3]) -> Option<([f32; 3], [f32; 3])> {
+    if data.get(draw_at) != Some(&1) || data.len() < box_at + 24 {
+        return None;
+    }
+    let fill = *data.get(fill_at)?;
+    let int = |i: usize| {
+        let at = box_at + 4 * i;
+        i32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]])
+    };
+    let min = [int(0), int(1), int(2)];
+    let max = [int(3), int(4), int(5)];
+    if (0..3).any(|a| max[a] - min[a] < 2) {
+        return None;
+    }
+    // From the first interior block to the end of the last, as texels from the block drawn.
+    let lo: [f32; 3] = std::array::from_fn(|a| (min[a] + 1 - block[a]) as f32 * 16.0);
+    let hi: [f32; 3] = std::array::from_fn(|a| (max[a] - block[a]) as f32 * 16.0);
+    fluid_box(lo, hi, f32::from(fill) / 255.0)
+}
+
 /// The sprite of `substance`: the renderer's own, else vanilla's for water
 /// and lava, else the default.
 pub fn fluid_sprite<'a>(
@@ -82,6 +106,29 @@ mod tests {
         assert_eq!(fluid_box(from, to, 0.0), None);
         assert_eq!(fluid_box(from, to, 0.5), Some((from, [14.0, 8.0, 14.0])));
         assert_eq!(fluid_box(from, to, 2.0), Some((from, to)));
+    }
+    #[test]
+    fn a_structures_fluid_fills_its_inside_from_the_floor() {
+        // A casing from (10, 64, 20) to (13, 67, 23): inside it is 2 by 2 by 2 blocks, from (11, 65, 21).
+        let mut data = vec![0u8; 8];
+        for v in [10i32, 64, 20, 13, 67, 23] {
+            data.extend(v.to_le_bytes());
+        }
+        data.extend([1, 255]);
+        let (box_at, draw_at, fill_at) = (8, 32, 33);
+        // Drawn from the block at (11, 64, 21): the inside starts one block east of it and one up.
+        let full = volume_fluid_box(&data, box_at, draw_at, fill_at, [10, 64, 20]).unwrap();
+        assert_eq!(full, ([16.0, 16.0, 16.0], [48.0, 48.0, 48.0]));
+        data[fill_at] = 128;
+        let half = volume_fluid_box(&data, box_at, draw_at, fill_at, [10, 64, 20]).unwrap();
+        assert!((half.1[1] - (16.0 + 32.0 * 128.0 / 255.0)).abs() < 1e-4 && half.0 == [16.0, 16.0, 16.0]);
+        // Empty, not the drawing block, or no data: nothing.
+        data[fill_at] = 0;
+        assert_eq!(volume_fluid_box(&data, box_at, draw_at, fill_at, [10, 64, 20]), None);
+        data[fill_at] = 255;
+        data[draw_at] = 0;
+        assert_eq!(volume_fluid_box(&data, box_at, draw_at, fill_at, [10, 64, 20]), None);
+        assert_eq!(volume_fluid_box(&[], box_at, draw_at, fill_at, [0; 3]), None);
     }
     #[test]
     fn substances_have_sprites_and_tints() {

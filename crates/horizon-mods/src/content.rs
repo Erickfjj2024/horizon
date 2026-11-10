@@ -887,6 +887,24 @@ pub enum RenderElement {
         #[serde(default)]
         tints: std::collections::BTreeMap<String, String>,
     },
+    /// FORK-31: the fluid of a whole structure (a multiblock tank), drawn inside its casing as a box that rises with how full
+    /// it is. The block's data (what the mod saved with its updates, the first 64 bytes) says where: 24 bytes at `box_at` are
+    /// the least and greatest corners of the casing (six little-endian whole numbers, absolute block coordinates), the byte at
+    /// `draw_at` is 1 on the one block of the structure that draws it (so the others do not draw it again) and the byte at
+    /// `fill_at` is how full it is, 0 to 255. The interior is the casing's box less its walls; the substance is the block's
+    /// tank `tank`; `sprites`, `default_sprite` and `tints` are as for `fluid`.
+    FluidVolume {
+        tank: u16,
+        box_at: u16,
+        draw_at: u16,
+        fill_at: u16,
+        #[serde(default)]
+        sprites: std::collections::BTreeMap<String, String>,
+        #[serde(default)]
+        default_sprite: Option<String>,
+        #[serde(default)]
+        tints: std::collections::BTreeMap<String, String>,
+    },
     /// The model of another block (never placed: a mod's own part, with `item = false`), drawn in this
     /// block's place when a byte of the block entity's data (what the mod saved with its updates)
     /// is one of `values`: what the original does with the data of a block entity, as Mekanism's energy
@@ -956,7 +974,7 @@ impl BlockRenderer {
     pub fn uses_data(&self) -> bool {
         self.elements
             .iter()
-            .any(|e| matches!(e, RenderElement::Part { when: Some(_), .. }))
+            .any(|e| matches!(e, RenderElement::Part { when: Some(_), .. } | RenderElement::FluidVolume { .. }))
     }
 }
 
@@ -1020,6 +1038,17 @@ impl BlockRenderer {
                 }
                 RenderElement::Fluid { from, to, sprites, default_sprite, tints, .. } => {
                     boxed(from, to)?;
+                    for s in sprites.values().chain(default_sprite) {
+                        sprite(s)?;
+                    }
+                    for c in tints.values() {
+                        colour(c)?;
+                    }
+                }
+                RenderElement::FluidVolume { box_at, draw_at, fill_at, sprites, default_sprite, tints, .. } => {
+                    if u32::from(*box_at) + 24 > 64 || *draw_at >= 64 || *fill_at >= 64 {
+                        return Err(format!("{name}: a fluid volume reads the first 64 bytes of the data"));
+                    }
                     for s in sprites.values().chain(default_sprite) {
                         sprite(s)?;
                     }
@@ -1975,6 +2004,27 @@ capabilities = ["registries"]
             ("r-speed", r#"{"elements":[{"type":"spin","from":[0,0,0],"to":[1,1,1],"sprite":"a:b","axis":"x","degrees_per_tick":900}]}"#, "within 360"),
             ("r-tint", r#"{"elements":[{"type":"cube","from":[0,0,0],"to":[1,1,1],"sprite":"a:b","tint":"red"}]}"#, "is #RRGGBB"),
             ("r-kind", r#"{"elements":[{"type":"ring"}]}"#, "unknown variant"),
+        ] {
+            let files: &[(&str, &[u8])] = &[("data/ruby/horizon/renderer/a.json", file.as_bytes())];
+            let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();
+            assert!(e.contains(why), "{case}: {e}");
+        }
+    }
+
+    #[test]
+    fn a_block_renderer_can_draw_the_fluid_of_a_whole_structure() {
+        let file = br##"{"elements": [
+            {"type": "fluid_volume", "tank": 0, "box_at": 20, "draw_at": 44, "fill_at": 45,
+             "sprites": {"ruby:steam": "ruby:block/steam"}, "default_sprite": "ruby:block/gas",
+             "tints": {"ruby:steam": "#CCCCCC"}}
+        ]}"##;
+        let files: &[(&str, &[u8])] = &[("data/ruby/horizon/renderer/tank.json", file)];
+        let content = hmod("volume", MANIFEST_TEXT, files).unwrap();
+        // The clients are sent the data of a block that draws by it.
+        assert!(content.renderers[0].uses_data());
+        for (case, file, why) in [
+            ("v-box", r#"{"elements":[{"type":"fluid_volume","tank":0,"box_at":41,"draw_at":0,"fill_at":1}]}"#, "first 64 bytes"),
+            ("v-fill", r#"{"elements":[{"type":"fluid_volume","tank":0,"box_at":0,"draw_at":0,"fill_at":64}]}"#, "first 64 bytes"),
         ] {
             let files: &[(&str, &[u8])] = &[("data/ruby/horizon/renderer/a.json", file.as_bytes())];
             let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();

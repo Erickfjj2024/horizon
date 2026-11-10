@@ -63,6 +63,10 @@ pub struct BlockEntityDraw {
 
 #[allow(dead_code)]
 impl BlockEntityDraw {
+    /// The block being drawn.
+    pub fn block_pos(&self) -> [i32; 3] {
+        self.block
+    }
     /// `PoseStack.pushPose`: `pop` comes back to the pose as it is now.
     pub fn push(&mut self) {
         let pose = self.pose();
