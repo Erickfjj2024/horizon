@@ -1,0 +1,9 @@
+id = "oregen"
+name = "Ore Gen"
+version = "0.1.0"
+description = "Test mod for world generation and chunk loading: every new chunk gets a vein of oregen:ore in its stone, and chunk 0,0 is kept loaded."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "world", "chunks", "storage"]
+experimental = ["chunks"]

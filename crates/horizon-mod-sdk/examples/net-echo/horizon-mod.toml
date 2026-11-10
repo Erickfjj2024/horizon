@@ -1,0 +1,9 @@
+id = "netecho"
+name = "Net Echo"
+version = "0.1.0"
+description = "Test mod for mod messages (server half): answers netecho:ping with the bytes reversed on netecho:pong."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "net"]
+experimental = ["net"]

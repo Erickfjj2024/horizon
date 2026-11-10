@@ -1,0 +1,8 @@
+{
+  "elements": [
+    { "type": "cube", "from": [1, 0, 1], "to": [15, 1, 15], "sprite": "block/iron_block" },
+    { "type": "fluid", "tank": 0, "from": [2, 1, 2], "to": [14, 15, 14],
+      "sprites": { "mymod:steam": "mymod:block/steam" }, "default_sprite": "block/water_still",
+      "tints": { "mymod:steam": "#CCCCCC" } }
+  ]
+}

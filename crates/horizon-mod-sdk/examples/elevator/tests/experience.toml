@@ -1,0 +1,50 @@
+# With useXP on, a ride costs XPPointsAmount points, as in the Java mod: the player needs
+# round(progress * XP of the level) - cost >= 0, or any level above 0.
+
+[[step]]
+join = "Alex"
+motion = { jumps = 0, xp-level = 0, xp-progress = 0.0 }
+blocks = [
+    { x = 0, y = 63, z = 0, state = "elevatorid:elevator_white[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 68, z = 0, state = "elevatorid:elevator_red[directional=false,facing=north,show_arrow=true]" },
+]
+command = "elevator watch off"
+ticks = 1
+
+[[step]]
+command = "elevator set useXP true"
+expect.feedback = "useXP = true"
+
+[[step]]
+command = "elevator set XPPointsAmount 3"
+expect.feedback = "XPPointsAmount = 3"
+
+# No experience at all.
+[[step]]
+motion = { jumps = 1 }
+ticks = 1
+expect.teleports = []
+expect.xp-taken = []
+expect.told = ["Alex: You do not have enough XP to use elevators"]
+
+# 2 points (0.2857143 of level 0's 7) is one short of 3.
+[[step]]
+motion = { jumps = 2, xp-progress = 0.2857143 }
+ticks = 1
+expect.teleports = []
+expect.told = ["Alex: You do not have enough XP to use elevators"]
+
+# 3 points are enough: 0.4285714 * 7 = 3.0000000, and the Java mod rounds.
+[[step]]
+motion = { jumps = 3, xp-progress = 0.4285714 }
+ticks = 1
+expect.xp-taken = ["Alex: 3"]
+expect.teleports = ["Alex: minecraft:overworld 0.5 69 0.5 ~ ~"]
+
+# Nothing left: back to the start, and the rest of the level (4 points) is spent.
+[[step]]
+player = { y = 64.0 }
+motion = { jumps = 4, xp-progress = 0.0 }
+ticks = 1
+expect.teleports = []
+expect.told = ["Alex: You do not have enough XP to use elevators"]

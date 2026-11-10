@@ -1,0 +1,28 @@
+# The crusher reads recipes of its own type and resolves their ingredient tags.
+
+items = ["minecraft:iron_ore", "minecraft:deepslate_iron_ore", "minecraft:raw_iron", "minecraft:stone"]
+
+[tags]
+"c:ores/iron" = ["minecraft:iron_ore", "minecraft:deepslate_iron_ore"]
+
+[[recipe]]
+id = "recipecrusher:crushing/iron"
+json = '''{"type":"recipecrusher:crushing","input":{"ingredient":"#c:ores/iron","count":1},"output":{"id":"minecraft:raw_iron","count":2}}'''
+
+[[step]]
+join = "Alex"
+blocks = [{ x = 0, y = 64, z = 0, state = "recipecrusher:crusher" }]
+set-items = [{ x = 0, y = 64, z = 0, slots = ["minecraft:deepslate_iron_ore*2", ""] }]
+ticks = 1
+expect.block-items = [{ x = 0, y = 64, z = 0, slots = ["minecraft:deepslate_iron_ore*1", "minecraft:raw_iron*2"] }]
+
+[[step]]
+ticks = 5
+# The second ore is crushed; then nothing is left to crush.
+expect.block-items = [{ x = 0, y = 64, z = 0, slots = ["", "minecraft:raw_iron*4"] }]
+
+[[step]]
+set-items = [{ x = 0, y = 64, z = 0, slots = ["minecraft:stone*3", ""] }]
+ticks = 2
+# No recipe takes stone.
+expect.block-items = [{ x = 0, y = 64, z = 0, slots = ["minecraft:stone*3", ""] }]

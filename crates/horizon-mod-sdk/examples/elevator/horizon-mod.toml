@@ -1,0 +1,9 @@
+id = "elevator"
+name = "Elevator"
+version = "0.1.4"
+description = "Jump on an elevator block to go up to the next one above, sneak to go down. Rust port of ElevatorMod (VsnGamer, MIT). Needs the Elevator blocks mod (elevatorid)."
+authors = ["VsnGamer (ElevatorMod, MIT)", "Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "world", "player-control", "storage"]
+experimental = ["player-control"]

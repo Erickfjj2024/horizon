@@ -1,0 +1,51 @@
+# /elevator shows the settings and sets them when you are alone.
+
+[[step]]
+join = "Alex"
+command = "elevator show"
+expect.feedback = "sameColor=false range=384 activationRange=6 precisionTarget=true resetPitchNormal=false resetPitchDirectional=true useXP=false XPPointsAmount=1"
+
+[[step]]
+command = "elevator set range 10"
+expect.feedback = "range = 10"
+
+[[step]]
+command = "elevator set bogus 1"
+expect.error = "Unknown setting bogus. Settings: sameColor, range, activationRange, precisionTarget, mobSpawn, resetPitchNormal, resetPitchDirectional, useXP, XPPointsAmount"
+
+[[step]]
+command = "elevator set useXP maybe"
+expect.error = "useXP takes true or false"
+
+# Not with company.
+[[step]]
+join = "Sam"
+as = "Alex"
+command = "elevator set range 20"
+expect.error = "Settings can only be changed when you are alone on the server"
+
+# /elevator debug says what the mod sees of you.
+[[step]]
+as = "Alex"
+motion = { sneaking = false, on-ground = true, jumps = 0 }
+ticks = 1
+command = "elevator debug"
+expect.feedback = "sneaking=false onGround=true jumps=0 y=64.000 origin=none up=none down=none cooldown=0"
+
+# /elevator watch says what the mod sees of your movement.
+[[step]]
+command = "elevator watch on"
+expect.feedback = "watch on"
+
+# The first tick only learns what you are doing; the next one tells what changed.
+[[step]]
+as = "Alex"
+motion = { on-ground = true }
+ticks = 1
+expect.told = []
+
+[[step]]
+as = "Alex"
+motion = { on-ground = false }
+ticks = 1
+expect.told = ["Alex: tick 3 (+1): y=64.000 rise=+0.000 onGround=false jumps=0 sneaking=false onElevator=false"]

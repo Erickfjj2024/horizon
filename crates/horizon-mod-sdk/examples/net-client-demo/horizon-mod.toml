@@ -1,0 +1,9 @@
+id = "netclientdemo"
+name = "Net Client Demo"
+version = "0.1.0"
+description = "Test mod for mod messages (client half): answers the server's netclientdemo:hello with netclientdemo:ack."
+authors = ["Rust port"]
+api = "0.1"
+side = "client"
+capabilities = ["chat", "net-client"]
+experimental = ["net-client"]

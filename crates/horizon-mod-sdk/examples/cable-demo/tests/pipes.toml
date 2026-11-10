@@ -1,0 +1,22 @@
+# pump - pipe x2 - tank: 20 a tick made, 15 a tick carried.
+
+[[step]]
+join = "Alex"
+blocks = [
+    { x = 0, y = 64, z = 0, state = "cabledemo:pump" },
+    { x = 1, y = 64, z = 0, state = "cabledemo:pipe" },
+    { x = 2, y = 64, z = 0, state = "cabledemo:pipe" },
+    { x = 3, y = 64, z = 0, state = "cabledemo:tank" },
+]
+ticks = 1
+expect.block-tanks = [
+    { x = 0, y = 64, z = 0, tanks = ["minecraft:water*5"] },
+    { x = 3, y = 64, z = 0, tanks = ["minecraft:water*15"] },
+]
+
+[[step]]
+ticks = 2
+expect.block-tanks = [
+    { x = 0, y = 64, z = 0, tanks = ["minecraft:water*15"] },
+    { x = 3, y = 64, z = 0, tanks = ["minecraft:water*45"] },
+]

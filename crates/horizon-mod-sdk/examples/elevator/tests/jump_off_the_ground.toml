@@ -1,0 +1,20 @@
+# Leaving the ground going up, with the count still at 0, is a jump too, even when the feet are
+# not on the elevator itself: here a carpet lies on it (a carpet does not suffocate).
+
+[[step]]
+join = "Alex"
+motion = { jumps = 0, on-ground = true }
+blocks = [
+    { x = 0, y = 63, z = 0, state = "elevatorid:elevator_white[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 64, z = 0, state = "minecraft:white_carpet" },
+    { x = 0, y = 69, z = 0, state = "elevatorid:elevator_red[directional=false,facing=north,show_arrow=true]" },
+]
+player = { y = 64.0625 }
+ticks = 1
+
+# The ground flag goes off as they rise by a jump's height.
+[[step]]
+player = { y = 64.4825 }
+motion = { on-ground = false }
+ticks = 1
+expect.teleports = ["Alex: minecraft:overworld 0.5 70 0.5 ~ ~"]

@@ -1,0 +1,12 @@
+[[step]]
+join = "Alex"
+net = { channel = "netecho:ping", data = [1, 2, 3] }
+expect.net-sent = [
+    "Alex: netecho:pong [3, 2, 1]",
+    "Alex: netecho:refused [116, 104, 101, 32, 99, 104, 97, 110, 110, 101, 108, 32, 34, 111, 116, 104, 101, 114, 58, 112, 111, 110, 103, 34, 32, 105, 115, 32, 110, 111, 116, 32, 110, 101, 116, 101, 99, 104, 111, 58, 60, 110, 97, 109, 101, 62]",
+]
+
+[[step]]
+# Another channel is not the mod's: nothing happens.
+net = { channel = "netecho:other", data = [9] }
+expect.net-sent = []

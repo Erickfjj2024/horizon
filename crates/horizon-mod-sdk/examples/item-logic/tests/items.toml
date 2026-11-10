@@ -1,0 +1,24 @@
+[[step]]
+join = "Alex"
+use-item = { stack = "itemlogic:wand*1" }
+expect.claimed = true
+expect.player-items = ["hurt Alex minecraft:magic 2", "effect Alex minecraft:speed 100 1"]
+
+[[step]]
+# Another item is left to the game.
+use-item = { stack = "minecraft:stick*1", pos = [1, 64, 1] }
+expect.claimed = false
+expect.player-items = []
+
+[[step]]
+hit-with = { stack = "itemlogic:wand*1", entity = 9, kind = "minecraft:zombie" }
+expect.player-items = ["effect Alex minecraft:strength 60 0"]
+
+[[step]]
+# A worn jetpack with energy burns it.
+inventory = [
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "", 'itemlogic:jetpack*1{"itemlogic:energy":10L}',
+]
+ticks = 1
+expect.player-items = ['set-slot Alex 38 itemlogic:jetpack*1{"itemlogic:energy":9L}']

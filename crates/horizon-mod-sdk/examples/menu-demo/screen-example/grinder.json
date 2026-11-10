@@ -1,0 +1,13 @@
+{
+  "slots": 2,
+  "data_slots": 2,
+  "screen": {
+    "slots": [[56, 17], [116, 35]],
+    "widgets": [
+      { "type": "text", "x": 8, "y": 6, "text": "Grinder" },
+      { "type": "bar", "x": 8, "y": 20, "w": 6, "h": 40, "value": { "data": 0 }, "max": { "const": 100 },
+        "color": "#33AA33", "direction": "up", "tooltip": "Progress: {value}%" },
+      { "type": "button", "x": 150, "y": 6, "w": 18, "h": 18, "id": 1, "tooltip": "Pause / resume" }
+    ]
+  }
+}

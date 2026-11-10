@@ -1,0 +1,35 @@
+# Jump on an elevator to go up to the next one above; sneak to go down.
+
+[[step]]
+join = "Alex"
+motion = { jumps = 0 }
+blocks = [
+    { x = 0, y = 63, z = 0, state = "elevatorid:elevator_white[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 68, z = 0, state = "elevatorid:elevator_red[directional=false,facing=north,show_arrow=true]" },
+]
+# The first tick only learns what the player is doing.
+ticks = 1
+expect.teleports = []
+
+# A jump: the player lands on top of the elevator above (a full cube, so at y 69).
+[[step]]
+motion = { jumps = 1 }
+ticks = 1
+expect.teleports = ["Alex: minecraft:overworld 0.5 69 0.5 ~ ~"]
+expect.sounds = ["minecraft:overworld elevatorid:teleport 0.5 68.5 0.5"]
+
+# Standing still does nothing: the jump counter did not move.
+[[step]]
+ticks = 3
+expect.teleports = []
+
+# Sneaking takes them back down.
+[[step]]
+motion = { sneaking = true }
+ticks = 1
+expect.teleports = ["Alex: minecraft:overworld 0.5 64 0.5 ~ ~"]
+
+# Holding the key is not a new press.
+[[step]]
+ticks = 5
+expect.teleports = []

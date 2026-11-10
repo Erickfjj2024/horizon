@@ -1,0 +1,31 @@
+# An elevator with a solid block above it is skipped (isValidPos), and so is one with none.
+
+[[step]]
+join = "Alex"
+motion = { jumps = 0 }
+blocks = [
+    { x = 0, y = 63, z = 0, state = "elevatorid:elevator_white[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 68, z = 0, state = "elevatorid:elevator_red[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 69, z = 0, state = "minecraft:stone" },
+]
+ticks = 1
+
+# The only elevator above has stone over it: nowhere to go.
+[[step]]
+motion = { jumps = 1 }
+ticks = 1
+expect.teleports = []
+
+# A carpet above does not suffocate: the elevator works again.
+[[step]]
+blocks = [{ x = 0, y = 69, z = 0, state = "minecraft:white_carpet" }]
+motion = { jumps = 2 }
+ticks = 1
+expect.teleports = ["Alex: minecraft:overworld 0.5 69.0625 0.5 ~ ~"]
+
+# Away from any elevator, a jump does nothing.
+[[step]]
+player = { x = 50.5, y = 64.0, z = 50.5 }
+motion = { jumps = 3 }
+ticks = 1
+expect.teleports = []

@@ -1,0 +1,45 @@
+# A carpet on an elevator does not block it, going up or down (isValidPos only refuses a full cube).
+
+[[step]]
+join = "Alex"
+motion = { jumps = 0, on-ground = true }
+blocks = [
+    { x = 0, y = 63, z = 0, state = "elevatorid:elevator_white[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 68, z = 0, state = "elevatorid:elevator_red[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 69, z = 0, state = "minecraft:white_carpet" },
+]
+command = "elevator watch off"
+ticks = 1
+
+# Up, onto the elevator that has a carpet on it: they land on top of the carpet (a sixteenth up),
+# not inside it, where the game would crawl them and not see a sneak.
+[[step]]
+motion = { jumps = 1 }
+ticks = 1
+expect.teleports = ["Alex: minecraft:overworld 0.5 69.0625 0.5 ~ ~"]
+
+# Standing on that carpet (feet at 69.0625), sneak: down to the white elevator.
+[[step]]
+player = { y = 69.0625 }
+motion = { sneaking = true }
+ticks = 5
+expect.teleports = ["Alex: minecraft:overworld 0.5 64 0.5 ~ ~"]
+
+# A carpet on the white elevator too: up works from it, and down from the red one.
+[[step]]
+blocks = [{ x = 0, y = 64, z = 0, state = "minecraft:white_carpet" }]
+player = { y = 64.0625 }
+motion = { sneaking = false }
+ticks = 5
+expect.teleports = []
+
+[[step]]
+motion = { jumps = 2 }
+ticks = 1
+expect.teleports = ["Alex: minecraft:overworld 0.5 69.0625 0.5 ~ ~"]
+
+[[step]]
+player = { y = 69.0625 }
+motion = { sneaking = true }
+ticks = 5
+expect.teleports = ["Alex: minecraft:overworld 0.5 64.0625 0.5 ~ ~"]

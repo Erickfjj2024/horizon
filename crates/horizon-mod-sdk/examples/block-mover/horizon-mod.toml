@@ -1,0 +1,8 @@
+id = "blockmover"
+name = "Block Mover"
+version = "0.1.0"
+description = "Test mod for block entity slots: every blockmover:mover block moves one item a tick from its first slot to its second."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players"]

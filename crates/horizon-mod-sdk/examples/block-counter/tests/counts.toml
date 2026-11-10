@@ -1,0 +1,24 @@
+# A counter block gets a block entity and counts every tick; a stone block gets none;
+# a counter that is replaced loses its bytes.
+
+[[step]]
+join = "Alex"
+blocks = [
+    { x = 0, y = 64, z = 0, state = "blockcounter:counter" },
+    { x = 2, y = 64, z = 0, state = "minecraft:stone" },
+]
+ticks = 3
+expect.block-entities = [{ x = 0, y = 64, z = 0, data = [3, 0, 0, 0] }]
+
+[[step]]
+ticks = 2
+expect.block-entities = [{ x = 0, y = 64, z = 0, data = [5, 0, 0, 0] }]
+
+[[step]]
+blocks = [{ x = 0, y = 64, z = 0, state = "minecraft:stone" }]
+ticks = 1
+
+[[step]]
+blocks = [{ x = 0, y = 64, z = 0, state = "blockcounter:counter" }]
+ticks = 1
+expect.block-entities = [{ x = 0, y = 64, z = 0, data = [1, 0, 0, 0] }]

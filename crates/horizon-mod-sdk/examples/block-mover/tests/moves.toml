@@ -1,0 +1,27 @@
+# The mover takes one item a tick from slot 0 to slot 1, until slot 0 is empty;
+# a different item in slot 1 blocks it; replacing the block drops the slots.
+
+[[step]]
+join = "Alex"
+blocks = [{ x = 0, y = 64, z = 0, state = "blockmover:mover" }]
+set-items = [{ x = 0, y = 64, z = 0, slots = ["minecraft:stone*3", ""] }]
+ticks = 1
+expect.block-items = [{ x = 0, y = 64, z = 0, slots = ["minecraft:stone*2", "minecraft:stone*1"] }]
+
+[[step]]
+ticks = 5
+expect.block-items = [{ x = 0, y = 64, z = 0, slots = ["", "minecraft:stone*3"] }]
+
+[[step]]
+set-items = [{ x = 0, y = 64, z = 0, slots = ["minecraft:dirt*2", "minecraft:stone*3"] }]
+ticks = 2
+expect.block-items = [{ x = 0, y = 64, z = 0, slots = ["minecraft:dirt*2", "minecraft:stone*3"] }]
+
+[[step]]
+blocks = [{ x = 0, y = 64, z = 0, state = "minecraft:air" }]
+ticks = 1
+
+[[step]]
+blocks = [{ x = 0, y = 64, z = 0, state = "blockmover:mover" }]
+ticks = 1
+expect.block-items = [{ x = 0, y = 64, z = 0, slots = ["", ""] }]

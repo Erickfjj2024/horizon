@@ -1,0 +1,36 @@
+//! Horizon's mods (`docs/mods.md`): WebAssembly components written against
+//! `crates/horizon-mod-sdk/wit/horizon.wit`, each in its own sandbox with
+//! no file, network or clock access, a memory cap and a time budget per
+//! call. A mod that traps or overruns is turned off; the game goes on.
+//!
+//! Nothing here runs unless a mod is installed and turned on: an empty
+//! [`Mods`] makes no engine and every hook returns at once.
+pub mod api_level;
+pub mod block_render;
+#[cfg(feature = "runtime")]
+pub mod commands;
+#[cfg(feature = "runtime")]
+pub mod energy;
+#[cfg(feature = "runtime")]
+pub mod flow;
+#[cfg(feature = "runtime")]
+pub mod multiblock;
+#[cfg(feature = "runtime")]
+pub mod network;
+pub mod content;
+#[cfg(feature = "index")]
+pub mod index;
+pub mod manifest;
+pub mod modpack;
+pub mod screen;
+#[cfg(feature = "runtime")]
+pub mod recipe_types;
+#[cfg(feature = "runtime")]
+mod runtime;
+#[cfg(feature = "runtime")]
+pub mod testing;
+
+pub use content::Content;
+pub use manifest::{Capability, Manifest, Package, Side, find};
+#[cfg(feature = "runtime")]
+pub use runtime::*;

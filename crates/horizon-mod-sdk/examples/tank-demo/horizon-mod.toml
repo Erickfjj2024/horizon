@@ -1,0 +1,8 @@
+id = "tankdemo"
+name = "Tank Demo"
+version = "0.1.0"
+description = "Test mod for block tanks: a pump makes 20 mB of water a tick, tanks pass it along; a gas tank takes nothing else."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players"]

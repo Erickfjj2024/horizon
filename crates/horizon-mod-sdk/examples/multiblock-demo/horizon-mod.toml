@@ -1,0 +1,8 @@
+id = "mbdemo"
+name = "Multiblock Demo"
+version = "0.1.0"
+description = "Test mod for multiblocks: mbdemo:casing blocks that touch are a structure, valid when eight make a solid 2x2x2 cube."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players"]

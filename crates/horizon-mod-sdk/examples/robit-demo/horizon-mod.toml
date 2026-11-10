@@ -1,0 +1,9 @@
+id = "robitdemo"
+name = "Robit Demo"
+version = "0.1.0"
+description = "Test mod for entities: /robit summons a floating stone that follows you and hurts mobs within 4 blocks."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "entities"]
+experimental = ["entities"]

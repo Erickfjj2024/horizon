@@ -1,0 +1,25 @@
+[[step]]
+join = "Alex"
+player = { x = 10.0, y = 64.0, z = 10.0 }
+command = "robit"
+expect.feedback = "Robit coming"
+expect.entity-commands = ['summon minecraft:item_display 11 65 10 #1 {item:{id:"minecraft:stone",count:1},teleport_duration:3}']
+
+[[step]]
+# The game answers (a step's ticks come before its answer): the robit now follows.
+spawned = { ticket = 1, id = 77 }
+
+[[step]]
+# A zombie near it is hurt, a far one is not, and a creeper with 2 health is killed.
+mobs = [
+    { id = 5, kind = "minecraft:zombie", x = 22.0, y = 65.0, z = 10.0, health = 20.0 },
+    { id = 6, kind = "minecraft:zombie", x = 40.0, y = 65.0, z = 10.0, health = 20.0 },
+    { id = 7, kind = "minecraft:creeper", x = 21.0, y = 65.0, z = 11.0, health = 2.0 },
+]
+player = { x = 20.0 }
+ticks = 1
+expect.entity-commands = [
+    "move 77 21 65 10 0 0",
+    "health 5 18",
+    "kill-mob 7",
+]

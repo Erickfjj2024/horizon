@@ -1,0 +1,23 @@
+[[step]]
+join = "Alex"
+blocks = [
+    { x = 24, y = 12, z = 8, state = "minecraft:stone" },
+    { x = 25, y = 12, z = 8, state = "minecraft:stone" },
+    { x = 26, y = 12, z = 8, state = "minecraft:dirt" },
+    { x = 27, y = 12, z = 8, state = "minecraft:stone" },
+]
+# A new chunk (1, 0): stone along y = 12 becomes ore, dirt stays.
+chunk = { x = 1, z = 0, new = true }
+expect.blocks = [
+    { x = 24, y = 12, z = 8, state = "oregen:ore" },
+    { x = 25, y = 12, z = 8, state = "oregen:ore" },
+    { x = 26, y = 12, z = 8, state = "minecraft:dirt" },
+    { x = 27, y = 12, z = 8, state = "oregen:ore" },
+]
+
+[[step]]
+# A chunk read from the save is not generated again.
+blocks = [{ x = 8, y = 12, z = 8, state = "minecraft:stone" }]
+chunk = { x = 0, z = 0, new = false }
+expect.chunk-forced = ["minecraft:overworld 0 0 true"]
+expect.blocks = [{ x = 8, y = 12, z = 8, state = "minecraft:stone" }]

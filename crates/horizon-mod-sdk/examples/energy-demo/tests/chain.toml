@@ -1,0 +1,29 @@
+# generator -> battery -> consumer in a row: energy flows along, the generator
+# stops at its capacity, and a battery given away to stone does not leak.
+
+[[step]]
+join = "Alex"
+blocks = [
+    { x = 0, y = 64, z = 0, state = "energydemo:generator" },
+    { x = 1, y = 64, z = 0, state = "energydemo:battery" },
+    { x = 2, y = 64, z = 0, state = "energydemo:consumer" },
+]
+ticks = 1
+# Tick 1: generator 0+10 -> gives 10 to the battery; the battery gives 10 to the
+# consumer; the consumer has 10 (it burns on the next tick).
+expect.block-energy = [
+    { x = 0, y = 64, z = 0, energy = 0 },
+    { x = 1, y = 64, z = 0, energy = 0 },
+    { x = 2, y = 64, z = 0, energy = 10 },
+]
+
+[[step]]
+ticks = 3
+# Each tick the consumer burns 5 and gets 10: +5 net, so 10 -> 15 -> 20 -> 25.
+expect.block-energy = [{ x = 2, y = 64, z = 0, energy = 25 }]
+
+[[step]]
+blocks = [{ x = 2, y = 64, z = 0, state = "minecraft:stone" }]
+ticks = 5
+# The battery has nowhere to give now and fills up.
+expect.block-energy = [{ x = 1, y = 64, z = 0, energy = 50 }]

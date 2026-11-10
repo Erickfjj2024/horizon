@@ -1,0 +1,32 @@
+[[step]]
+join = "Alex"
+blocks = [
+    { x = 0, y = 64, z = 0, state = "mbdemo:casing" },
+    { x = 1, y = 64, z = 0, state = "mbdemo:casing" },
+    { x = 0, y = 65, z = 0, state = "mbdemo:casing" },
+    { x = 1, y = 65, z = 0, state = "mbdemo:casing" },
+    { x = 0, y = 64, z = 1, state = "mbdemo:casing" },
+    { x = 1, y = 64, z = 1, state = "mbdemo:casing" },
+    { x = 0, y = 65, z = 1, state = "mbdemo:casing" },
+]
+ticks = 1
+# Seven blocks: a candidate, not a cube.
+expect.block-entities = [{ x = 0, y = 64, z = 0, data = [0, 7] }, { x = 0, y = 65, z = 1, data = [0, 7] }]
+
+[[step]]
+blocks = [{ x = 1, y = 65, z = 1, state = "mbdemo:casing" }]
+ticks = 1
+# The eighth makes it a cube; every member knows.
+expect.block-entities = [{ x = 0, y = 64, z = 0, data = [1, 8] }, { x = 1, y = 65, z = 1, data = [1, 8] }]
+
+[[step]]
+blocks = [{ x = 5, y = 64, z = 5, state = "mbdemo:casing" }]
+ticks = 1
+# A lone block is its own candidate; the cube is unchanged and not told again.
+expect.block-entities = [{ x = 5, y = 64, z = 5, data = [0, 1] }, { x = 0, y = 64, z = 0, data = [1, 8] }]
+
+[[step]]
+blocks = [{ x = 1, y = 64, z = 0, state = "minecraft:air" }]
+ticks = 1
+# One taken out: seven left, no longer valid.
+expect.block-entities = [{ x = 0, y = 64, z = 0, data = [0, 7] }]

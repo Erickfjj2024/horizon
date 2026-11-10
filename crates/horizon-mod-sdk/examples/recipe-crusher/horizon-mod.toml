@@ -1,0 +1,9 @@
+id = "recipecrusher"
+name = "Recipe Crusher"
+version = "0.1.0"
+description = "Test mod for recipe types: a crusher with an input and an output slot that crushes by the recipes of type recipecrusher:crushing."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "recipe-types"]
+experimental = ["recipe-types"]

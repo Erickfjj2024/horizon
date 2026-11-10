@@ -1,0 +1,8 @@
+id = "blockcounter"
+name = "Block Counter"
+version = "0.1.0"
+description = "Test mod for block entities: every blockcounter:counter block counts the ticks it was loaded, saved with its chunk."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players"]

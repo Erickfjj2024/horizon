@@ -1,0 +1,23 @@
+# A level above 0 always pays: the charge takes the level down, the way
+# Player.giveExperiencePoints does.
+
+[[step]]
+join = "Alex"
+motion = { jumps = 0, xp-level = 1, xp-progress = 0.0 }
+blocks = [
+    { x = 0, y = 63, z = 0, state = "elevatorid:elevator_white[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 68, z = 0, state = "elevatorid:elevator_red[directional=false,facing=north,show_arrow=true]" },
+]
+command = "elevator set useXP true"
+expect.feedback = "useXP = true"
+ticks = 1
+
+[[step]]
+command = "elevator set XPPointsAmount 3"
+expect.feedback = "XPPointsAmount = 3"
+
+[[step]]
+motion = { jumps = 1 }
+ticks = 1
+expect.xp-taken = ["Alex: 3"]
+expect.teleports = ["Alex: minecraft:overworld 0.5 69 0.5 ~ ~"]

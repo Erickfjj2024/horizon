@@ -1,0 +1,19 @@
+# pump -> tank -> gas tank: the water goes into the tank and stays out of the gas tank.
+
+[[step]]
+join = "Alex"
+blocks = [
+    { x = 0, y = 64, z = 0, state = "tankdemo:pump" },
+    { x = 1, y = 64, z = 0, state = "tankdemo:tank" },
+    { x = 2, y = 64, z = 0, state = "tankdemo:gas_tank" },
+]
+ticks = 1
+expect.block-tanks = [
+    { x = 0, y = 64, z = 0, tanks = [""] },
+    { x = 1, y = 64, z = 0, tanks = ["minecraft:water*20"] },
+    { x = 2, y = 64, z = 0, tanks = [""] },
+]
+
+[[step]]
+ticks = 4
+expect.block-tanks = [{ x = 1, y = 64, z = 0, tanks = ["minecraft:water*100"] }]

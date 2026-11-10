@@ -1,0 +1,16 @@
+[package]
+name = "block-mover"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Example Horizon server mod: a block entity with two slots that moves items from the first to the second"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+horizon-mod-sdk = { path = "../.." }
+
+[lints]
+workspace = true

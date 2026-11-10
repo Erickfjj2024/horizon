@@ -1,0 +1,8 @@
+id = "cabledemo"
+name = "Cable Demo"
+version = "0.1.0"
+description = "Test mod for transmitter networks: a generator, cables, machines, and a pump, pipes and a tank."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players"]

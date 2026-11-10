@@ -1,0 +1,25 @@
+# The menu's data counts up; the button pauses it and resumes it.
+
+[[step]]
+join = "Alex"
+blocks = [{ x = 0, y = 64, z = 0, state = "menudemo:grinder" }]
+ticks = 3
+expect.block-menu-data = [{ x = 0, y = 64, z = 0, data = [3, 0] }]
+
+[[step]]
+press = { x = 0, y = 64, z = 0, id = 1 }
+ticks = 2
+# A step's ticks come before its press: 2 more ticks count, then it pauses.
+expect.block-menu-data = [{ x = 0, y = 64, z = 0, data = [5, 1] }]
+
+[[step]]
+press = { x = 0, y = 64, z = 0, id = 1 }
+ticks = 2
+# Paused during its ticks, resumed by the press.
+expect.block-menu-data = [{ x = 0, y = 64, z = 0, data = [5, 0] }]
+
+[[step]]
+# A button the mod doesn't know does nothing.
+press = { x = 0, y = 64, z = 0, id = 9 }
+ticks = 1
+expect.block-menu-data = [{ x = 0, y = 64, z = 0, data = [6, 0] }]

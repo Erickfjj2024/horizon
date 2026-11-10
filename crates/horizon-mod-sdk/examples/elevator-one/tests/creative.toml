@@ -1,0 +1,19 @@
+# Creative players ride for free, whatever the cost.
+
+[[step]]
+join = "Alex"
+player = { game-mode = "creative" }
+motion = { jumps = 0 }
+blocks = [
+    { x = 0, y = 63, z = 0, state = "elevatorid:elevator_white[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 68, z = 0, state = "elevatorid:elevator_red[directional=false,facing=north,show_arrow=true]" },
+]
+command = "elevator set useXP true"
+expect.feedback = "useXP = true"
+ticks = 1
+
+[[step]]
+motion = { jumps = 1 }
+ticks = 1
+expect.xp-taken = []
+expect.teleports = ["Alex: minecraft:overworld 0.5 69 0.5 ~ ~"]

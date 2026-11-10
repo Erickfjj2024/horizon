@@ -1,0 +1,12 @@
+# The stack gains energy tick by tick, keeping its other components, and stops at 100.
+
+[[step]]
+join = "Alex"
+blocks = [{ x = 0, y = 64, z = 0, state = "itemcharger:charger" }]
+set-items = [{ x = 0, y = 64, z = 0, slots = ['minecraft:stick*1{"minecraft:damage":3}'] }]
+ticks = 1
+expect.block-items = [{ x = 0, y = 64, z = 0, slots = ['minecraft:stick*1{"minecraft:damage":3,"itemcharger:energy":10L}'] }]
+
+[[step]]
+ticks = 20
+expect.block-items = [{ x = 0, y = 64, z = 0, slots = ['minecraft:stick*1{"minecraft:damage":3,"itemcharger:energy":100L}'] }]

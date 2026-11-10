@@ -1,0 +1,21 @@
+# Rising in the air with no elevator under the feet is not a jump, and neither is falling.
+
+[[step]]
+join = "Alex"
+motion = { jumps = 0, on-ground = false }
+blocks = [
+    { x = 0, y = 63, z = 0, state = "elevatorid:elevator_white[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 68, z = 0, state = "elevatorid:elevator_red[directional=false,facing=north,show_arrow=true]" },
+]
+player = { y = 66.0 }
+ticks = 1
+
+[[step]]
+player = { y = 66.5 }
+ticks = 1
+expect.teleports = []
+
+[[step]]
+player = { y = 65.5 }
+ticks = 1
+expect.teleports = []

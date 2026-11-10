@@ -1,0 +1,29 @@
+{
+  "template": "minecraft:white_wool",
+  "properties": {
+    "hardness": 0.8
+  },
+  "state_properties": {
+    "facing": {
+      "type": "enum",
+      "values": [
+        "north",
+        "south",
+        "east",
+        "west"
+      ]
+    },
+    "directional": {
+      "type": "boolean"
+    },
+    "show_arrow": {
+      "type": "boolean"
+    }
+  },
+  "default_state": {
+    "facing": "north",
+    "directional": "false",
+    "show_arrow": "true"
+  },
+  "item": true
+}

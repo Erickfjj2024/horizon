@@ -1,0 +1,18 @@
+# With sameColor on, only an elevator of the same colour will do.
+
+[[step]]
+join = "Alex"
+motion = { jumps = 0 }
+blocks = [
+    { x = 0, y = 63, z = 0, state = "elevatorid:elevator_white[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 68, z = 0, state = "elevatorid:elevator_red[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 72, z = 0, state = "elevatorid:elevator_white[directional=false,facing=north,show_arrow=true]" },
+]
+command = "elevator set sameColor true"
+expect.feedback = "sameColor = true"
+ticks = 1
+
+[[step]]
+motion = { jumps = 1 }
+ticks = 1
+expect.teleports = ["Alex: minecraft:overworld 0.5 73 0.5 ~ ~"]

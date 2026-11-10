@@ -1,0 +1,8 @@
+id = "menudemo"
+name = "Menu Demo"
+version = "0.1.0"
+description = "Test mod for menus: menudemo:grinder has two slots, a progress that counts to 100 and a button that pauses it."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players"]

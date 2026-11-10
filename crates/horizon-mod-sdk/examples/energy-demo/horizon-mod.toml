@@ -1,0 +1,8 @@
+id = "energydemo"
+name = "Energy Demo"
+version = "0.1.0"
+description = "Test mod for block energy: a generator makes 10 a tick, a battery stores it, a consumer burns 5 a tick."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players"]

@@ -1,0 +1,9 @@
+id = "itemlogic"
+name = "Item Logic"
+version = "0.1.0"
+description = "Test mod for items with logic: itemlogic:wand hurts its user for speed when used and strengthens its holder when it hits; itemlogic:jetpack in the chest slot burns its itemlogic:energy."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "player-items"]
+experimental = ["player-items"]

@@ -1,0 +1,8 @@
+id = "itemcharger"
+name = "Item Charger"
+version = "0.1.0"
+description = "Test mod for data components: a block with one slot adds 10 to the itemcharger:energy component of the stack in it, up to 100."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players"]

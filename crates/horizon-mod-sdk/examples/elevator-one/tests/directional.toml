@@ -1,0 +1,15 @@
+# A directional elevator turns the player to its facing and puts their pitch to 0.
+
+[[step]]
+join = "Alex"
+motion = { jumps = 0 }
+blocks = [
+    { x = 0, y = 63, z = 0, state = "elevatorid:elevator_white[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 68, z = 0, state = "elevatorid:elevator_blue[directional=true,facing=east,show_arrow=true]" },
+]
+ticks = 1
+
+[[step]]
+motion = { jumps = 1 }
+ticks = 1
+expect.teleports = ["Alex: minecraft:overworld 0.5 69 0.5 270 0"]

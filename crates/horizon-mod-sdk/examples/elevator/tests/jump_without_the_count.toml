@@ -1,0 +1,22 @@
+# A jump is also seen from the player's own movement, for a world whose jump count does not move:
+# the count stays 0 here, and the player rises by a jump's height from the top of an elevator.
+
+[[step]]
+join = "Alex"
+motion = { jumps = 0, on-ground = true }
+blocks = [
+    { x = 0, y = 63, z = 0, state = "elevatorid:elevator_white[directional=false,facing=north,show_arrow=true]" },
+    { x = 0, y = 68, z = 0, state = "elevatorid:elevator_red[directional=false,facing=north,show_arrow=true]" },
+]
+ticks = 1
+
+# Rising 0.42 from the elevator, with the ground flag still set: a jump.
+[[step]]
+player = { y = 64.42 }
+ticks = 1
+expect.teleports = ["Alex: minecraft:overworld 0.5 69 0.5 ~ ~"]
+
+# The ride moved them up by 4.58: not a jump, and the cooldown holds anyway.
+[[step]]
+ticks = 4
+expect.teleports = []
