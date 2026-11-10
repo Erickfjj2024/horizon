@@ -52,3 +52,9 @@ expect.blocks = [{ x = 41, y = 72, z = 0, state = "minecraft:air" }]
 blocks = [{ x = 41, y = 73, z = 0, state = "minecraft:air" }]
 use-block = { pos = [40, 73, 0] }
 expect.blocks = [{ x = 41, y = 73, z = 0, state = "minecraft:chest[facing=north]" }]
+
+[[step]]
+# In place, as the real box does: the box takes the place of the block it packs.
+blocks = [{ x = 51, y = 74, z = 0, state = "minecraft:chest[facing=north]" }]
+use-block = { pos = [50, 74, 0] }
+expect.blocks = [{ x = 51, y = 74, z = 0, state = "blockuse:box" }]

@@ -1748,8 +1748,9 @@ impl Step {
         // A block packed goes into its box (the scripts keep its state), and comes out at the place it is unpacked.
         for o in &out {
             match o {
-                Output::PackBlock { dimension, pos, into, .. } if dimension == "minecraft:overworld" => {
-                    if let Some(state) = game.world.insert((pos[0], pos[1], pos[2]), "minecraft:air".to_owned()) {
+                Output::PackBlock { dimension, pos, into, replacement, .. } if dimension == "minecraft:overworld" => {
+                    let put = replacement.clone().unwrap_or_else(|| "minecraft:air".to_owned());
+                    if let Some(state) = game.world.insert((pos[0], pos[1], pos[2]), put) {
                         game.packed.insert((into[0], into[1], into[2]), state);
                     }
                 }

@@ -930,17 +930,34 @@ mod run {
         }
         /// A mod's `world.pack-block` (FORK-23 of the cardboard box): the block at `pos`, with its block entity, kept in the mod's block
         /// entity at `into` (under `captured`) and taken away without a drop or a spill. False when it cannot.
-        pub(in crate::game) fn native_pack_block(&mut self, pos: [i32; 3], into: [i32; 3]) -> bool {
+        pub(in crate::game) fn native_pack_block(&mut self, pos: [i32; 3], into: [i32; 3], replacement: Option<&str>) -> bool {
             use horizon_world::nbt::{Compound, Tag};
             let (key, into_key) = ((pos[0], pos[1], pos[2]), (into[0], into[1], into[2]));
             let state = self.world.block(pos[0], pos[1], pos[2]);
             let name = self.res.facts().get(state).name.clone();
             let air = matches!(&*name, "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air");
-            let holds = match self.world.block_entities.get(&into_key) {
-                Some(horizon_client_render::containers::BlockEntity::Mod(m)) => m.nbt.get(&Self::jname("captured")).is_some(),
-                _ => return false,
+            // The box may be the replacement itself, at the packed block's own place.
+            let in_place = key == into_key;
+            let replacement_state = match replacement {
+                Some(text) => match crate::game::render_control::parse_state(self.pack.assets.registry, text) {
+                    Ok(s) => Some(s),
+                    Err(_) => return false,
+                },
+                None => None,
             };
-            if air || holds || key == into_key {
+            if in_place && replacement_state.is_none() {
+                return false;
+            }
+            if !in_place {
+                let holds = match self.world.block_entities.get(&into_key) {
+                    Some(horizon_client_render::containers::BlockEntity::Mod(m)) => m.nbt.get(&Self::jname("captured")).is_some(),
+                    _ => return false,
+                };
+                if holds {
+                    return false;
+                }
+            }
+            if air {
                 return false;
             }
             let mut captured = Compound::default();
@@ -951,12 +968,21 @@ mod run {
             // Taken away as `removeBlockEntity` then `removeBlock`: no drop, no spill.
             self.world.block_entities.remove(&key);
             self.world.block_names.remove(&key);
-            let _ = self.place_state(pos, BlockStateId(0), false);
-            if let Some(horizon_client_render::containers::BlockEntity::Mod(m)) = self.world.block_entities.get_mut(&into_key) {
-                m.nbt.insert(Self::jname("captured"), Tag::Compound(captured));
-                self.world.modified.insert((into[0] >> 4, into[2] >> 4));
+            let _ = self.place_state(pos, replacement_state.unwrap_or(BlockStateId(0)), false);
+            if let Some(state) = replacement_state {
+                let name = self.res.facts().get(state).name.clone();
+                if let Some(entity) = self.new_block_entity(&name) {
+                    self.world.block_entities.insert(key, entity);
+                }
             }
-            true
+            match self.world.block_entities.get_mut(&into_key) {
+                Some(horizon_client_render::containers::BlockEntity::Mod(m)) => {
+                    m.nbt.insert(Self::jname("captured"), Tag::Compound(captured));
+                    self.world.modified.insert((into[0] >> 4, into[2] >> 4));
+                    true
+                }
+                _ => false,
+            }
         }
         /// A mod's `world.unpack-block`: what the box at `box_pos` holds, put back at `pos`. False when it holds nothing.
         pub(in crate::game) fn native_unpack_block(&mut self, box_pos: [i32; 3], pos: [i32; 3]) -> bool {
@@ -2197,8 +2223,8 @@ mod run {
                     };
                     self.tell_server_player(host, &player, line);
                 }
-                Output::PackBlock { name, dimension, pos, into } => {
-                    if dimension != self.dim.id() || !self.native_pack_block(pos, into) {
+                Output::PackBlock { name, dimension, pos, into, replacement } => {
+                    if dimension != self.dim.id() || !self.native_pack_block(pos, into, replacement.as_deref()) {
                         log::debug!("Horizon: mod {name} could not pack the block at {pos:?}");
                     }
                 }

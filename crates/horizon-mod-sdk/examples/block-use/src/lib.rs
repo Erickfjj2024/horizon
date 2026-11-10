@@ -24,7 +24,10 @@ impl ServerMod for Gate {
         }
         // FORK-23 (cardboard box): the gate at y 72 packs the block beside it into itself; the one at y 73 puts it back where it stands.
         if pos.y == 72 {
-            let _ = world::pack_block(&player.dimension, pos.x + 1, pos.y, pos.z, pos.x, pos.y, pos.z);
+            let _ = world::pack_block(&player.dimension, pos.x + 1, pos.y, pos.z, pos.x, pos.y, pos.z, None);
+            // (In place: the box takes the packed block's own place with `Some("blockuse:box")` and `into` the same position.)
+        } else if pos.y == 74 {
+            let _ = world::pack_block(&player.dimension, pos.x + 1, pos.y, pos.z, pos.x + 1, pos.y, pos.z, Some("blockuse:box"));
         } else if pos.y == 73 {
             let _ = world::unpack_block(&player.dimension, pos.x, 72, pos.z, pos.x + 1, pos.y, pos.z);
         }

@@ -797,8 +797,12 @@ interface %world {
     /// with its own data, so an item of the box that keeps its data
     /// (`keep-data`) carries it. Nothing happens (an error) for air, a block
     /// the game cannot take away, or when `into` is not a block entity of a
-    /// mod, or already holds one. Once, after this call returns. API 32.
-    pack-block: func(dimension: string, x: s32, y: s32, z: s32, into-x: s32, into-y: s32, into-z: s32) -> result<_, string>;
+    /// mod, or already holds one. `replacement` is the state (`mymod:box`) put
+    /// where the block was, as Mekanism's box takes the place of what it packs;
+    /// `into` may then be the same position (the replacement's own block
+    /// entity keeps it), or none leaves air there. Once, after this call
+    /// returns. API 32.
+    pack-block: func(dimension: string, x: s32, y: s32, z: s32, into-x: s32, into-y: s32, into-z: s32, replacement: option<string>) -> result<_, string>;
     /// Puts back what the box at `box-x box-y box-z` holds, at `x y z`: the
     /// block's state and its block entity as they were packed, replacing
     /// whatever is there; the box is empty again. Once, after this call
