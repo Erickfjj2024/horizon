@@ -928,6 +928,72 @@ mod run {
                 self.world.modified.insert((key.0 >> 4, key.2 >> 4));
             }
         }
+        /// A mod's `world.pack-block` (FORK-23 of the cardboard box): the block at `pos`, with its block entity, kept in the mod's block
+        /// entity at `into` (under `captured`) and taken away without a drop or a spill. False when it cannot.
+        pub(in crate::game) fn native_pack_block(&mut self, pos: [i32; 3], into: [i32; 3]) -> bool {
+            use horizon_world::nbt::{Compound, Tag};
+            let (key, into_key) = ((pos[0], pos[1], pos[2]), (into[0], into[1], into[2]));
+            let state = self.world.block(pos[0], pos[1], pos[2]);
+            let name = self.res.facts().get(state).name.clone();
+            let air = matches!(&*name, "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air");
+            let holds = match self.world.block_entities.get(&into_key) {
+                Some(horizon_client_render::containers::BlockEntity::Mod(m)) => m.nbt.get(&Self::jname("captured")).is_some(),
+                _ => return false,
+            };
+            if air || holds || key == into_key {
+                return false;
+            }
+            let mut captured = Compound::default();
+            captured.insert(Self::jname("state"), Tag::String(state_string(self.pack.assets.registry, state).as_str().into()));
+            if let Some(entity) = self.saved_block_entity(key) {
+                captured.insert(Self::jname("entity"), entity);
+            }
+            // Taken away as `removeBlockEntity` then `removeBlock`: no drop, no spill.
+            self.world.block_entities.remove(&key);
+            self.world.block_names.remove(&key);
+            let _ = self.place_state(pos, BlockStateId(0), false);
+            if let Some(horizon_client_render::containers::BlockEntity::Mod(m)) = self.world.block_entities.get_mut(&into_key) {
+                m.nbt.insert(Self::jname("captured"), Tag::Compound(captured));
+                self.world.modified.insert((into[0] >> 4, into[2] >> 4));
+            }
+            true
+        }
+        /// A mod's `world.unpack-block`: what the box at `box_pos` holds, put back at `pos`. False when it holds nothing.
+        pub(in crate::game) fn native_unpack_block(&mut self, box_pos: [i32; 3], pos: [i32; 3]) -> bool {
+            use horizon_world::nbt::Tag;
+            let box_key = (box_pos[0], box_pos[1], box_pos[2]);
+            let captured = match self.world.block_entities.get(&box_key) {
+                Some(horizon_client_render::containers::BlockEntity::Mod(m)) => match m.nbt.get(&Self::jname("captured")) {
+                    Some(Tag::Compound(c)) => c.clone(),
+                    _ => return false,
+                },
+                _ => return false,
+            };
+            let Some(Tag::String(text)) = captured.get(&Self::jname("state")) else { return false };
+            let Ok(state) = crate::game::render_control::parse_state(self.pack.assets.registry, &text.to_string_lossy()) else {
+                return false;
+            };
+            let key = (pos[0], pos[1], pos[2]);
+            let _ = self.place_state(pos, state, false);
+            if let Some(Tag::Compound(entity)) = captured.get(&Self::jname("entity")) {
+                let mut tag = entity.clone();
+                tag.insert(Self::jname("x"), Tag::Int(pos[0]));
+                tag.insert(Self::jname("y"), Tag::Int(pos[1]));
+                tag.insert(Self::jname("z"), Tag::Int(pos[2]));
+                let tag = Tag::Compound(tag);
+                if let Some((_, entity)) = horizon_client::save::decode_block_entity(&tag) {
+                    if let Some(name) = horizon_client::save::text(tag.get("CustomName")) {
+                        self.world.block_names.insert(key, name);
+                    }
+                    self.world.block_entities.insert(key, entity);
+                }
+            }
+            if let Some(horizon_client_render::containers::BlockEntity::Mod(m)) = self.world.block_entities.get_mut(&box_key) {
+                m.nbt.remove(&Self::jname("captured"));
+            }
+            self.world.modified.insert((pos[0] >> 4, pos[2] >> 4));
+            true
+        }
         /// A mod's `world.set-item-eject`: whether the entity pushes its output items out.
         pub(in crate::game) fn native_set_item_eject(&mut self, pos: [i32; 3], on: bool) {
             let key = (pos[0], pos[1], pos[2]);
@@ -2130,6 +2196,16 @@ mod run {
                         line
                     };
                     self.tell_server_player(host, &player, line);
+                }
+                Output::PackBlock { name, dimension, pos, into } => {
+                    if dimension != self.dim.id() || !self.native_pack_block(pos, into) {
+                        log::debug!("Horizon: mod {name} could not pack the block at {pos:?}");
+                    }
+                }
+                Output::UnpackBlock { name, dimension, box_pos, pos } => {
+                    if dimension != self.dim.id() || !self.native_unpack_block(box_pos, pos) {
+                        log::debug!("Horizon: mod {name} could not unpack into {pos:?}");
+                    }
                 }
                 Output::TellOverlay { name: _, player, text } => {
                     self.tell_server_player_as(host, &player, Text::literal(text), true);

@@ -789,6 +789,21 @@ interface %world {
     /// was. Nothing happens for air, liquids and unbreakable blocks.
     /// Once, after this call returns; at most 64 a call. API 23.
     mine-block: func(dimension: string, x: s32, y: s32, z: s32, tool: string, silk-touch: bool, to-x: s32, to-y: s32, to-z: s32, face: u32) -> result<_, string>;
+    /// Packs the block at `x y z`, whatever it is (its state and its block
+    /// entity as the game saves it: slots, energy, a custom name, a mod's
+    /// bytes), into the block entity of the mod at `into-x into-y into-z`
+    /// (Mekanism's cardboard box), and takes it away without a drop or a
+    /// spill, as `removeBlockEntity` then `removeBlock` do. The box keeps it
+    /// with its own data, so an item of the box that keeps its data
+    /// (`keep-data`) carries it. Nothing happens (an error) for air, a block
+    /// the game cannot take away, or when `into` is not a block entity of a
+    /// mod, or already holds one. Once, after this call returns. API 32.
+    pack-block: func(dimension: string, x: s32, y: s32, z: s32, into-x: s32, into-y: s32, into-z: s32) -> result<_, string>;
+    /// Puts back what the box at `box-x box-y box-z` holds, at `x y z`: the
+    /// block's state and its block entity as they were packed, replacing
+    /// whatever is there; the box is empty again. Once, after this call
+    /// returns. An error for a box that holds nothing or a position not loaded. API 32.
+    unpack-block: func(dimension: string, box-x: s32, box-y: s32, box-z: s32, x: s32, y: s32, z: s32) -> result<_, string>;
     /// Turns on or off the block entity pushing items out: every 10 ticks, from
     /// the slots of the kind's `outputs` that a face reaches, into the
     /// container beside that face (a chest, a hopper, another machine), as

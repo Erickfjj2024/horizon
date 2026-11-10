@@ -34,7 +34,7 @@ fn clone_item<'a>(name: &str, block_item: &'a str) -> &'a str {
 
 impl Game<'_> {
     /// The block entity at `key` as vanilla saves it, with its custom name.
-    fn saved_block_entity(&self, key: (i32, i32, i32)) -> Option<Tag> {
+    pub(in crate::game) fn saved_block_entity(&self, key: (i32, i32, i32)) -> Option<Tag> {
         let entity = self.world.block_entities.get(&key)?;
         let block = &self
             .res

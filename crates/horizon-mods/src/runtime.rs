@@ -436,6 +436,10 @@ pub enum Output {
         scale: f32,
         max_distance: f32,
     },
+    /// `world.pack-block`: the block at `pos` into the mod's block entity at `into`.
+    PackBlock { name: String, dimension: String, pos: [i32; 3], into: [i32; 3] },
+    /// `world.unpack-block`: what the box at `box_pos` holds, back at `pos`.
+    UnpackBlock { name: String, dimension: String, box_pos: [i32; 3], pos: [i32; 3] },
     /// `world.set-capabilities-enabled`: which of a block entity's capabilities the outside can use.
     SetCapabilitiesEnabled {
         name: String,
@@ -2464,6 +2468,24 @@ impl mod_world::Host for State {
             scale,
             max_distance,
         });
+        Ok(())
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn pack_block(&mut self, dimension: String, x: i32, y: i32, z: i32, into_x: i32, into_y: i32, into_z: i32) -> Result<(), String> {
+        let made = self.out.iter().filter(|o| matches!(o, Output::PackBlock { .. } | Output::UnpackBlock { .. })).count();
+        if made >= BLOCKS_PER_CALL {
+            return Err(format!("at most {BLOCKS_PER_CALL} packs a call"));
+        }
+        self.out.push(Output::PackBlock { name: self.name.clone(), dimension, pos: [x, y, z], into: [into_x, into_y, into_z] });
+        Ok(())
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn unpack_block(&mut self, dimension: String, box_x: i32, box_y: i32, box_z: i32, x: i32, y: i32, z: i32) -> Result<(), String> {
+        let made = self.out.iter().filter(|o| matches!(o, Output::PackBlock { .. } | Output::UnpackBlock { .. })).count();
+        if made >= BLOCKS_PER_CALL {
+            return Err(format!("at most {BLOCKS_PER_CALL} packs a call"));
+        }
+        self.out.push(Output::UnpackBlock { name: self.name.clone(), dimension, box_pos: [box_x, box_y, box_z], pos: [x, y, z] });
         Ok(())
     }
     #[allow(clippy::too_many_arguments)]

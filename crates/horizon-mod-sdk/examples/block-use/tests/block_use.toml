@@ -40,3 +40,15 @@ expect.redirects = ["blockuse:bound 0 1"]
 blocks = [{ x = 30, y = 65, z = 0, state = "minecraft:air" }]
 place-mod-block = { pos = [30, 64, 0], state = "blockuse:machine" }
 expect.can-place = true
+
+[[step]]
+# The cardboard box: a chest beside the gate at y 72 is packed into it (gone from the world, nothing dropped)...
+blocks = [{ x = 41, y = 72, z = 0, state = "minecraft:chest[facing=north]" }]
+use-block = { pos = [40, 72, 0] }
+expect.blocks = [{ x = 41, y = 72, z = 0, state = "minecraft:air" }]
+
+[[step]]
+# ...and put back beside the other gate, as it was.
+blocks = [{ x = 41, y = 73, z = 0, state = "minecraft:air" }]
+use-block = { pos = [40, 73, 0] }
+expect.blocks = [{ x = 41, y = 73, z = 0, state = "minecraft:chest[facing=north]" }]

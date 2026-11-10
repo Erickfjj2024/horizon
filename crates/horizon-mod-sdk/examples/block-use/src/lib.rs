@@ -22,6 +22,12 @@ impl ServerMod for Gate {
         if pos.y == 71 {
             let _ = world::spawn_particles(&player.dimension, "minecraft:dust", f64::from(pos.x) + 0.5, f64::from(pos.y) + 0.5, f64::from(pos.z) + 0.5, 0.3, 0.3, 0.3, 0.0, 8, Some(0x5555FF), 1.0, 40.0);
         }
+        // FORK-23 (cardboard box): the gate at y 72 packs the block beside it into itself; the one at y 73 puts it back where it stands.
+        if pos.y == 72 {
+            let _ = world::pack_block(&player.dimension, pos.x + 1, pos.y, pos.z, pos.x, pos.y, pos.z);
+        } else if pos.y == 73 {
+            let _ = world::unpack_block(&player.dimension, pos.x, 72, pos.z, pos.x + 1, pos.y, pos.z);
+        }
         match stack {
             Some(s) if s.item == "minecraft:stone" => BlockUse::Pass,
             None if !sneaking => BlockUse::Consume,

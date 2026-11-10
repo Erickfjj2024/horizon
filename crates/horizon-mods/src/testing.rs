@@ -69,6 +69,8 @@ pub struct TestGame {
     pub hit_damage_result: Option<f32>,
     /// What the last `can_place` answered.
     pub can_place_result: Option<bool>,
+    /// The blocks packed into boxes (`world.pack-block`), by the box's position.
+    pub packed: std::collections::BTreeMap<(i32, i32, i32), String>,
     /// The crafting recipes and stack sizes a script gave.
     pub crafts: Vec<CraftSet>,
     pub stack_sizes: std::collections::BTreeMap<String, u32>,
@@ -260,6 +262,7 @@ impl TestGame {
             damage_result: None,
             hit_damage_result: None,
             can_place_result: None,
+            packed: Default::default(),
             crafts: Vec::new(),
             stack_sizes: Default::default(),
         };
@@ -1740,6 +1743,22 @@ impl Step {
                 for b in blocks {
                     game.world.insert((b.x, b.y, b.z), b.state.clone());
                 }
+            }
+        }
+        // A block packed goes into its box (the scripts keep its state), and comes out at the place it is unpacked.
+        for o in &out {
+            match o {
+                Output::PackBlock { dimension, pos, into, .. } if dimension == "minecraft:overworld" => {
+                    if let Some(state) = game.world.insert((pos[0], pos[1], pos[2]), "minecraft:air".to_owned()) {
+                        game.packed.insert((into[0], into[1], into[2]), state);
+                    }
+                }
+                Output::UnpackBlock { dimension, box_pos, pos, .. } if dimension == "minecraft:overworld" => {
+                    if let Some(state) = game.packed.remove(&(box_pos[0], box_pos[1], box_pos[2])) {
+                        game.world.insert((pos[0], pos[1], pos[2]), state);
+                    }
+                }
+                _ => {}
             }
         }
         // A block mined is gone (its drops are not simulated).
