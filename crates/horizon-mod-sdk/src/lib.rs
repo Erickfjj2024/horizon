@@ -200,6 +200,7 @@ pub mod server {
         pub_export_macro: true,
         export_macro_name: "__export_horizon_server_mod",
         default_bindings_module: "horizon_mod_sdk::server",
+        additional_derives: [PartialEq],
         with: {
             "horizon:mods/log@0.1.0": crate::log,
             "horizon:mods/storage@0.1.0": crate::storage,
