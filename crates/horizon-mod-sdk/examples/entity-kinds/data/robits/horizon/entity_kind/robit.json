@@ -15,5 +15,6 @@
       "model": "robits:robit_red"
     }
   ],
-  "container_slots": 9
+  "container_slots": 30,
+  "menu": "robits:robit"
 }

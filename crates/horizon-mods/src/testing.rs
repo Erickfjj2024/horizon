@@ -77,6 +77,12 @@ pub struct TestGame {
     /// The living entities of the mod's own kinds (FORK-10) and the kinds its content declares.
     pub mod_entities: Vec<crate::ModEntity>,
     pub entity_kinds: Vec<crate::content::EntityKind>,
+    /// The menu types the content declares, the entities whose menu is open (FORK-10 5b), their menu strings and what the closed
+    /// menus handed back.
+    pub menu_types: Vec<crate::content::MenuType>,
+    pub entity_menus: std::collections::BTreeSet<u32>,
+    pub entity_menu_text: std::collections::BTreeMap<u32, Vec<String>>,
+    pub menu_returned: Vec<String>,
     next_mod_entity: u32,
     /// The items lying in the world of the script (FORK-10 f).
     pub dropped: Vec<DroppedSet>,
@@ -316,6 +322,10 @@ impl TestGame {
             break_start_result: None,
             entity_damage_result: None,
             mod_entities: Vec::new(),
+            menu_types: Vec::new(),
+            entity_menus: std::collections::BTreeSet::new(),
+            entity_menu_text: std::collections::BTreeMap::new(),
+            menu_returned: Vec::new(),
             entity_kinds: Vec::new(),
             next_mod_entity: 1000,
             dropped: Vec::new(),
@@ -337,6 +347,7 @@ impl TestGame {
             && let Ok(content) = crate::Content::read(&self.hmod, &package.manifest)
         {
             self.entity_kinds = content.entity_kinds.clone();
+            self.menu_types = content.menu_types.clone();
         }
         self.mods = Mods::load(std::slice::from_ref(&self.hmod), |_| true, |_| false);
         match &self.mods.entries()[0].status {
@@ -449,6 +460,59 @@ impl TestGame {
         }
     }
     /// `entities-tick` with the mod's entities, and what it answers applied (as the game does: data, slots, energy, skin, name, a teleport, a removal).
+    /// One update of a mod entity, as the game applies it.
+    fn apply_entity_update(&mut self, u: crate::ModEntityUpdate) {
+        let Some(i) = self.mod_entities.iter().position(|e| e.id == u.id && e.dimension == u.dimension) else {
+            return;
+        };
+        if u.remove {
+            self.mod_entities.remove(i);
+            return;
+        }
+        let slots = self.entity_kinds.iter().find(|k| k.id == self.mod_entities[i].kind).map_or(0, |k| usize::from(k.container_slots));
+        let skins: Vec<String> = self
+            .entity_kinds
+            .iter()
+            .find(|k| k.id == self.mod_entities[i].kind)
+            .map(|k| k.skins.iter().map(|s| s.id.clone()).collect())
+            .unwrap_or_default();
+        let e = &mut self.mod_entities[i];
+        if let Some(d) = u.data {
+            e.data = d;
+        }
+        if let Some(mut items) = u.items {
+            // An open menu's virtual slots stay past the container's.
+            let open = self.entity_menus.contains(&u.id);
+            items.resize(if open { e.items.len().max(slots) } else { slots }, None);
+            e.items = items;
+        }
+        if let Some(d) = u.menu_data {
+            e.menu_data = d;
+        }
+        if let Some(t) = u.menu_text {
+            self.entity_menu_text.insert(u.id, t);
+        }
+        if let Some(energy) = u.energy {
+            e.energy = energy;
+        }
+        if let Some(skin) = u.skin.filter(|s| skins.contains(s)) {
+            e.skin = skin;
+        }
+        if let Some(name) = u.name {
+            e.name = name;
+        }
+        if let Some((x, y, z)) = u.teleport {
+            (e.x, e.y, e.z) = (x, y, z);
+            self.entity_goals.remove(&u.id);
+        }
+        if let Some((x, y, z, speed)) = u.path_to {
+            self.entity_goals.insert(u.id, ([x, y, z], speed));
+        }
+        if u.stop {
+            self.entity_goals.remove(&u.id);
+        }
+    }
+
     fn tick_mod_entities(&mut self) {
         if self.mod_entities.is_empty() {
             return;
@@ -458,47 +522,7 @@ impl TestGame {
         }
         let list = self.mod_entities.clone();
         for u in self.mods.entities_tick(self.tick, &list) {
-            let Some(i) = self.mod_entities.iter().position(|e| e.id == u.id && e.dimension == u.dimension) else {
-                continue;
-            };
-            if u.remove {
-                self.mod_entities.remove(i);
-                continue;
-            }
-            let slots = self.entity_kinds.iter().find(|k| k.id == self.mod_entities[i].kind).map_or(0, |k| usize::from(k.container_slots));
-            let skins: Vec<String> = self
-                .entity_kinds
-                .iter()
-                .find(|k| k.id == self.mod_entities[i].kind)
-                .map(|k| k.skins.iter().map(|s| s.id.clone()).collect())
-                .unwrap_or_default();
-            let e = &mut self.mod_entities[i];
-            if let Some(d) = u.data {
-                e.data = d;
-            }
-            if let Some(mut items) = u.items {
-                items.resize(slots, None);
-                e.items = items;
-            }
-            if let Some(energy) = u.energy {
-                e.energy = energy;
-            }
-            if let Some(skin) = u.skin.filter(|s| skins.contains(s)) {
-                e.skin = skin;
-            }
-            if let Some(name) = u.name {
-                e.name = name;
-            }
-            if let Some((x, y, z)) = u.teleport {
-                (e.x, e.y, e.z) = (x, y, z);
-                self.entity_goals.remove(&u.id);
-            }
-            if let Some((x, y, z, speed)) = u.path_to {
-                self.entity_goals.insert(u.id, ([x, y, z], speed));
-            }
-            if u.stop {
-                self.entity_goals.remove(&u.id);
-            }
+            self.apply_entity_update(u);
         }
         // Walking, over the script's blocks (a cell with a block that is not air stops it), as the game does.
         let world = self.world.clone();
@@ -1258,6 +1282,33 @@ pub struct BreakStartSet {
     stack: String,
 }
 
+/// A stack the actor puts in slot `slot` of the open menu of entity `id` (`-` for none).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntityMenuSlotSet {
+    id: u32,
+    slot: usize,
+    stack: String,
+}
+
+/// A press of button `button` of the open menu of entity `id`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntityMenuButtonSet {
+    id: u32,
+    button: i32,
+}
+
+/// The actor takes `count` (all when unset) from result slot `slot` of the open menu of entity `id`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntityMenuTakeSet {
+    id: u32,
+    slot: usize,
+    #[serde(default)]
+    count: Option<u32>,
+}
+
 /// A right click on one of the mod's entities.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1479,6 +1530,12 @@ pub struct Step {
     break_start: Option<BreakStartSet>,
     /// Server mods (FORK-10 d): the actor right-clicks one of the mod's entities.
     use_mod_entity: Option<EntityUseSet>,
+    /// Server mods (FORK-10 5b): the actor puts stacks in slots of an entity's open menu (`-` empties one), presses one of its
+    /// buttons, takes from one of its result slots, or closes it.
+    entity_menu_set: Option<Vec<EntityMenuSlotSet>>,
+    entity_menu_button: Option<EntityMenuButtonSet>,
+    entity_menu_take: Option<EntityMenuTakeSet>,
+    close_entity_menu: Option<u32>,
     /// Server mods (FORK-10 f): the items lying in the world from this step on (they replace the earlier ones).
     dropped: Option<Vec<DroppedSet>>,
     /// Server mods (FORK-10 e): a blow on one of the mod's entities.
@@ -1586,6 +1643,10 @@ pub struct Expect {
     mod_entities: Option<Vec<String>>,
     /// Server mods (FORK-10 d2): every `open-entity-menu`, as `"Name id"`.
     entity_menu: Option<Vec<String>>,
+    /// Server mods (FORK-10 5b): the menu data and strings of the mod's entities that have any, as `"id data=[v,..] text=a|b"`.
+    mod_entity_menu: Option<Vec<String>>,
+    /// Server mods (FORK-10 5b): what the entity menus closed so far handed back to the player, as `"item*count"`.
+    entity_menu_returned: Option<Vec<String>>,
     /// Server mods: every `open-radial-menu`, as `"Name: id=label,id=label current n"`.
     radial: Option<Vec<String>>,
     /// Server mods: every `set-hud-line`, as `"Name: id [icon] text fraction"`.
@@ -1822,6 +1883,8 @@ impl Step {
             || self.hit_damage.is_some()
             || self.release_item.is_some()
             || self.use_mod_entity.is_some()
+            || self.entity_menu_button.is_some()
+            || self.entity_menu_take.is_some()
             || self.break_start.is_some()
             || self.damage_mod_entity.is_some()
             || self.hit_with.is_some()
@@ -1997,6 +2060,62 @@ impl Step {
             let entity = game.mod_entities.iter().find(|e| e.id == u.id).cloned().ok_or("use-mod-entity: no such entity")?;
             game.entity_used_result = Some(game.mods.mod_entity_used(who, &entity, u.sneaking));
         }
+        for set in self.entity_menu_set.iter().flatten() {
+            if !game.entity_menus.contains(&set.id) {
+                return Err(format!("entity-menu-set: the menu of {} is not open", set.id));
+            }
+            let stack = if set.stack == "-" { None } else { Some(parse_stack(&set.stack).ok_or("entity-menu-set: a stack is item*count")?) };
+            let e = game.mod_entities.iter_mut().find(|e| e.id == set.id).ok_or("entity-menu-set: no such entity")?;
+            *e.items.get_mut(set.slot).ok_or("entity-menu-set: no such slot")? = stack;
+        }
+        if let (Some(b), Some(who)) = (&self.entity_menu_button, &who) {
+            if !game.entity_menus.contains(&b.id) {
+                return Err(format!("entity-menu-button: the menu of {} is not open", b.id));
+            }
+            game.snapshot();
+            let entity = game.mod_entities.iter().find(|e| e.id == b.id).cloned().ok_or("entity-menu-button: no such entity")?;
+            if let Some(u) = game.mods.entity_menu_button(who, &entity, b.button) {
+                game.apply_entity_update(u);
+            }
+        }
+        if let (Some(t), Some(who)) = (&self.entity_menu_take, &who) {
+            if !game.entity_menus.contains(&t.id) {
+                return Err(format!("entity-menu-take: the menu of {} is not open", t.id));
+            }
+            let kind = game.mod_entities.iter().find(|e| e.id == t.id).map(|e| e.kind.clone()).ok_or("entity-menu-take: no such entity")?;
+            let menu = game.entity_kinds.iter().find(|k| k.id == kind).and_then(|k| k.menu.clone()).unwrap_or_default();
+            if !game.menu_types.iter().any(|m| m.id == menu && m.results.iter().any(|&r| usize::from(r) == t.slot)) {
+                return Err(format!("entity-menu-take: slot {} is not a result slot of {menu}", t.slot));
+            }
+            let e = game.mod_entities.iter_mut().find(|e| e.id == t.id).ok_or("entity-menu-take: no such entity")?;
+            let before = e.items.get(t.slot).cloned().flatten();
+            let after = before.clone().and_then(|mut s| {
+                s.count = s.count.saturating_sub(t.count.unwrap_or(s.count));
+                (s.count > 0).then_some(s)
+            });
+            e.items[t.slot].clone_from(&after);
+            if let Some(stack) = crate::entity_state::taken(before.as_ref(), after.as_ref()) {
+                game.snapshot();
+                let entity = game.mod_entities.iter().find(|e| e.id == t.id).cloned().ok_or("entity-menu-take: no such entity")?;
+                if let Some(u) = game.mods.entity_menu_taken(who, &entity, t.slot as u32, &stack) {
+                    game.apply_entity_update(u);
+                }
+            }
+        }
+        if let Some(id) = self.close_entity_menu {
+            if !game.entity_menus.remove(&id) {
+                return Err(format!("close-entity-menu: the menu of {id} is not open"));
+            }
+            let (kind, container) = {
+                let e = game.mod_entities.iter().find(|e| e.id == id).ok_or("close-entity-menu: no such entity")?;
+                let k = game.entity_kinds.iter().find(|k| k.id == e.kind).ok_or("close-entity-menu: no kind")?;
+                (k.clone(), usize::from(k.container_slots))
+            };
+            let results = game.menu_types.iter().find(|m| Some(&m.id) == kind.menu.as_ref()).map_or_else(Vec::new, |m| m.results.clone());
+            let e = game.mod_entities.iter_mut().find(|e| e.id == id).ok_or("close-entity-menu: no such entity")?;
+            let back = crate::entity_state::close_menu(&mut e.items, container, &results);
+            game.menu_returned.extend(back.into_iter().map(|s| show_stack(&Some(s))));
+        }
         if let (Some(r), Some(who)) = (&self.release_item, &who) {
             game.snapshot();
             let stack = parse_stack(&r.stack).ok_or("release-item: a stack is item*count")?;
@@ -2079,6 +2198,16 @@ impl Step {
             }
         }
         // A mod entity spawned or removed (FORK-10): the spawn is answered with its id, as the game does.
+        // An entity's menu opened (FORK-10 5b): a kind with a menu type gets its virtual slots, empty, past the container's.
+        for o in &out {
+            let Output::EntityMenu { id, .. } = o else { continue };
+            let Some(e) = game.mod_entities.iter_mut().find(|e| e.id == *id) else { continue };
+            let Some(k) = game.entity_kinds.iter().find(|k| k.id == e.kind) else { continue };
+            let slots = k.menu.as_ref().and_then(|m| game.menu_types.iter().find(|t| &t.id == m)).map_or(0, |t| usize::from(t.slots));
+            if slots > 0 && game.entity_menus.insert(*id) {
+                crate::entity_state::open_menu(&mut e.items, usize::from(k.container_slots), slots);
+            }
+        }
         for o in &out {
             let Output::Entity { dimension, command, .. } = o else { continue };
             match command {
@@ -2103,6 +2232,7 @@ impl Step {
                         energy: 0,
                         skin: k.skins.first().map(|s| s.id.clone()).unwrap_or_default(),
                         name: None,
+                        menu_data: Vec::new(),
                     });
                     game.snapshot();
                     game.mods.entity_spawned(&game.mod_id(), *ticket, Some(id));
@@ -2632,6 +2762,23 @@ impl Step {
                 })
                 .collect();
             same("broken", want, &got)?;
+        }
+        if let Some(want) = &e.mod_entity_menu {
+            let got: Vec<String> = game
+                .mod_entities
+                .iter()
+                .filter_map(|m| {
+                    let text = game.entity_menu_text.get(&m.id).cloned().unwrap_or_default();
+                    (!m.menu_data.is_empty() || !text.is_empty()).then(|| {
+                        let data: Vec<String> = m.menu_data.iter().map(i32::to_string).collect();
+                        format!("{} data=[{}] text={}", m.id, data.join(","), text.join("|"))
+                    })
+                })
+                .collect();
+            same("mod-entity-menu", want, &got)?;
+        }
+        if let Some(want) = &e.entity_menu_returned {
+            same("entity-menu-returned", want, &game.menu_returned)?;
         }
         if let Some(want) = &e.entity_menu {
             let name = |id: &str| game.players.iter().find(|p| p.id == id).map_or(id.to_owned(), |p| p.name.clone());

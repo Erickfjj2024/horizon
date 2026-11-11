@@ -1305,9 +1305,21 @@ impl Game<'_> {
     /// the closing player as the source. A hopper minecart keeps
     /// `Container.stopOpen`'s no-op. Called by the close packet and by the
     /// `ServerPlayer.tick` reach/destroyed close.
-    fn close_guest_vehicle_menu(&mut self, host: &LanHost, conn: u32, key: (i32, i32, i32)) {
+    fn close_guest_vehicle_menu(&mut self, host: &mut LanHost, conn: u32, key: (i32, i32, i32)) {
         self.store_cart_items(key);
         self.world.block_entities.remove(&key);
+        // A mod entity's declared menu (FORK-10 5b): what the player left in its virtual slots comes back to them.
+        #[cfg(feature = "mods")]
+        if key.0 == i32::MAX - 16 {
+            let back = self.close_mod_entity_menu(key.2 as u32);
+            if let Some(gi) = host.hub.guests.iter().position(|g| g.conn == conn)
+                && !back.is_empty()
+            {
+                self.lan_place_back(host, gi, back);
+                host.hub.send_inventory(gi);
+            }
+            return;
+        }
         let at = if let Some(b) = self.boats.iter().find(|b| b.id as i32 == key.2) {
             Some([b.position.x, b.position.y, b.position.z])
         } else if let Some(c) = self.carts.iter().find(|c| c.id as i32 == key.2) {

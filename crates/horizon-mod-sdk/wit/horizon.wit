@@ -695,6 +695,12 @@ interface players {
     /// player puts there reaches the mod), and the menu closes when the player is more than 4 blocks from its box or the entity goes.
     /// Titled with the entity's name, else the kind's (`entity.<ns>.<path>`). False for a player who is not online, an entity of another
     /// mod, one with fewer than 9 slots, or one not in the level in place. API 43.
+    /// A kind with a `menu` (FORK-10 5b, API 46) opens that menu type instead, drawn by its `screen` as a block's (slots, data slots,
+    /// widgets, windows as tabs): its first `container_slots` slots are the entity's, the ones past them are virtual (a crafting grid,
+    /// an anvil's), shown to the mod past the container's in `mod-entity.items` while the menu is open and handed back to the player
+    /// (its result slots emptied) when it closes. Its data slots are the entity's `menu-data`, its strings the entity's `menu-text`, a
+    /// button calls the mod's `entity-menu-button`, taking from a result slot calls `entity-menu-taken`, and a `textfield`'s message
+    /// on `<mod id>:menu_text` carries the position `(i32::MIN, 0, entity id)`.
     open-entity-menu: func(player: string, dimension: string, id: u32) -> bool;
     /// A system message to every player and the server's log, after the
     /// mod's name. Counts toward the same 8 per call.
@@ -1583,13 +1589,16 @@ interface server-events {
         skin: string,
         /// The name it was given, shown over it.
         name: option<string>,
+        /// The data slots its menu shows (FORK-10 5b), as the mod last set them; not saved.
+        menu-data: list<s32>,
     }
     /// What the mod makes of an entity in a tick; a none leaves that as it is.
     record mod-entity-update {
         dimension: string,
         id: u32,
         data: option<list<u8>>,
-        /// The slots after the call; extra slots past the container's, and stacks of unknown items, are dropped.
+        /// The slots after the call; extra slots past the container's (past the menu's while a menu with virtual slots is open),
+        /// and stacks of unknown items, are dropped.
         items: option<list<option<item-stack>>>,
         energy: option<u64>,
         /// A skin id of the kind; an unknown one is ignored.
@@ -1608,6 +1617,11 @@ interface server-events {
         health: option<f32>,
         /// Takes it out of the world with no death and no drops.
         remove: bool,
+        /// The data slots of its menu (FORK-10 5b: progress, energy, a mode), 16 bits each on the wire as a block's; the open menus
+        /// get them within the tick. Not saved: the mod sets them again after a load.
+        menu-data: option<list<s32>>,
+        /// The strings of its menu (up to 64, each up to 256 bytes): a `text` widget with `text_data: n` shows string `n`. Not saved.
+        menu-text: option<list<string>>,
     }
     /// New bytes and slots for the block entity at `pos` in `dimension`.
     record block-entity-update {
@@ -1680,6 +1694,13 @@ interface server-events {
     /// An entity of the mod's own kind died of damage (its health reached 0): last look at it, as it was. The game removes it right
     /// after; its drops, if it has any, are the mod's to spawn.
     mod-entity-died: func(entity: mod-entity);
+    /// A player pressed button `id` (a `button` widget's `id`, `shift_id` or `alt_id`, as the client chose it) of the menu of an
+    /// entity of the mod's own kind (FORK-10 5b), with the entity as it is. Returns what to change in it, if anything.
+    entity-menu-button: func(player: player, entity: mod-entity, id: s32) -> option<mod-entity-update>;
+    /// A player took `stack` out of result slot `slot` of the menu of an entity of the mod's own kind (a crafting or repair result,
+    /// a slot listed in the menu type's `results`), with the entity as it is after the take: the mod uses up what made it (the
+    /// grid's ingredients, the anvil's inputs). Returns what to change in it, if anything.
+    entity-menu-taken: func(player: player, entity: mod-entity, slot: u32, stack: item-stack) -> option<mod-entity-update>;
     /// A player pressed button `id` of the menu of the block entity at `pos`
     /// (a `button` widget of the menu type's screen), with the entity as it
     /// is. Returns what to change in it, if anything.

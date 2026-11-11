@@ -4190,6 +4190,24 @@ impl Game<'_> {
     ) {
         self.mod_screen = None;
         super::menu_screens::reset_locals();
+        self.open_block_screen(key, target, window, menu);
+        // A menu no block holds (a mod entity's declared menu, FORK-10 5b): the menu type's own screen, kept under the key.
+        if self.mod_screen.is_none()
+            && key == (i32::MIN, 0, 0)
+            && let Some(screen) = self.declared_screen(menu)
+        {
+            self.mod_screen = Some(OpenNativeScreen {
+                key,
+                at: key,
+                window,
+                block: menu.to_owned(),
+                screen,
+                data: Vec::new(),
+            });
+        }
+    }
+    /// The screen of the mod block `target` when it is the one opening `menu`.
+    fn open_block_screen(&mut self, key: Pos, target: Option<Pos>, window: i32, menu: &str) {
         let Some(t) = target else {
             return;
         };

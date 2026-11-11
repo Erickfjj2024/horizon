@@ -190,8 +190,12 @@ pub fn equip_of(world: &World, k: (i32, i32, i32)) -> usize {
     let Some(e) = world.block_entities.get(&k) else {
         return 0;
     };
-    if !matches!(e, BlockEntity::Mod(_)) {
+    let BlockEntity::Mod(m) = e else {
         return 0;
+    };
+    // A mod entity's menu (FORK-10 5b) keeps its slots under a placeholder key: the menu type is the entity's own.
+    if k.1 == VEHICLE_KEY_Y {
+        return crate::containers::mod_menu_type(&m.id).map_or(0, |t| t.armor);
     }
     let state = world.block(k.0, k.1, k.2).0;
     world
@@ -216,7 +220,8 @@ fn worn_slot_mut(guest: &mut Guest, n: usize) -> Option<&mut Option<ItemStack>> 
 fn shown(world: &World, k: (i32, i32, i32)) -> Option<&[Option<ItemStack>]> {
     let e = world.block_entities.get(&k)?;
     let slots = e.slots();
-    if !matches!(e, BlockEntity::Mod(_)) {
+    // A mod entity's menu (under a vehicle's placeholder key) shows every slot it was opened with.
+    if !matches!(e, BlockEntity::Mod(_)) || k.1 == VEHICLE_KEY_Y {
         return Some(slots);
     }
     let state = world.block(k.0, k.1, k.2).0;

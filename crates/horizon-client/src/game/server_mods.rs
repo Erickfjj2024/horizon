@@ -103,6 +103,9 @@ mod run {
     /// Blocks queued for levels that don't tick (another dimension, in-frame)
     /// are kept up to this many; the oldest go first.
     const MAX_QUEUED_WRITES: usize = 1 << 16;
+    /// The position the strings of an open mod entity menu carry to the client (FORK-10 5b): the key a client keeps a menu with no
+    /// block under.
+    const ENTITY_MENU_TEXT_AT: [i32; 3] = [i32::MIN, 0, 0];
 
     /// Capability `world`'s view during a call: the levels' chunks, moved out
     /// of the game for the call and back after it (no copy).
@@ -563,9 +566,11 @@ mod run {
             for key in menus {
                 self.store_mod_entity_menu(key);
             }
+            let taken = self.mod_entity_menu_takes();
             let kept = if self.mods.mods.hears_mod_entities() { self.mod_entities_view() } else { Vec::new() };
             let kept = if kept.is_empty() { Vec::new() } else { self.mods.mods.entities_tick(self.ticks, &kept) };
             self.return_world();
+            self.apply_mod_entity_ticks(taken);
             self.apply_mod_entity_ticks(kept);
             self.mirror_mod_entity_menus();
             self.walk_mod_entities();
@@ -2204,19 +2209,27 @@ mod run {
             (i32::MAX - 16, crate::game::minecarts::CART_KEY_Y, id as i32)
         }
 
-        /// A mod's `open-entity-menu`: the entity's first rows of 9 slots open as a chest for the player, under a placeholder the menu edits.
+        /// A mod's `open-entity-menu`: the entity's first rows of 9 slots open as a chest for the player, under a placeholder the menu
+        /// edits; a kind with a `menu` (FORK-10 5b) opens that menu type over a mod placeholder instead, with its virtual slots.
         pub(in crate::game) fn open_mod_entity_menu(&mut self, mod_id: &str, player: &str, dimension: &str, id: u32) -> bool {
+            use horizon_client_render::containers::BlockEntity;
             if self.remote.is_some() || dimension != self.dim.id() {
                 return false;
             }
-            let Some(e) = self.mod_entities.list.iter().find(|e| e.id == id && e.dimension == dimension).cloned() else {
+            let Some(i) = self.mod_entities.list.iter().position(|e| e.id == id && e.dimension == dimension) else {
                 return false;
             };
+            let e = self.mod_entities.list[i].clone();
             if e.kind.split_once(':').map(|(ns, _)| ns) != Some(mod_id) {
                 return false;
             }
+            let kind = crate::game::mod_entities::MOD_KINDS.get().and_then(|k| k.get(&e.kind)).cloned();
+            let declared = kind
+                .as_ref()
+                .and_then(|k| k.menu.clone())
+                .filter(|m| horizon_client::containers::mod_menu_type(m).is_some());
             let rows = (e.items.len() / 9).min(6);
-            if rows == 0 {
+            if declared.is_none() && rows == 0 {
                 return false;
             }
             let uuid = u128::from_str_radix(&player.replace('-', ""), 16).unwrap_or(0);
@@ -2224,9 +2237,6 @@ mod run {
                 return false;
             };
             let key = Self::mod_entity_menu_key(id);
-            let items: Vec<Option<horizon_client::items::ItemStack>> =
-                e.items.iter().take(rows * 9).map(|s| s.as_ref().and_then(|s| self.game_stack(s))).collect();
-            self.world.block_entities.insert(key, horizon_client_render::containers::BlockEntity::Chest(items.clone()));
             let title = match &e.name {
                 Some(n) => horizon_protocol::text::literal(n),
                 None => horizon_protocol::text::translatable(&format!("entity.{}", e.kind.replace(':', ".")), &[]),
@@ -2235,6 +2245,32 @@ mod run {
                 return false;
             };
             self.guest_close_all(&mut host, conn);
+            if let (Some(menu), Some(kind)) = (declared, kind) {
+                let slots = horizon_client::containers::mod_menu_type(&menu).map_or(0, |t| t.slots);
+                let e = &mut self.mod_entities.list[i];
+                // Another player's menu of it already open keeps the virtual slots as they are.
+                if e.items.len() <= usize::from(kind.container_slots) {
+                    horizon_mods::entity_state::open_menu(&mut e.items, usize::from(kind.container_slots), slots);
+                }
+                let e = self.mod_entities.list[i].clone();
+                let items: Vec<Option<horizon_client::items::ItemStack>> =
+                    e.items.iter().map(|s| s.as_ref().and_then(|s| self.game_stack(s))).collect();
+                let placeholder = horizon_client_render::chunk::block_entity::ModBlockEntity {
+                    id: menu.clone(),
+                    nbt: Default::default(),
+                    items: items.clone(),
+                    data: e.menu_data.clone(),
+                };
+                self.world.block_entities.insert(key, BlockEntity::Mod(Box::new(placeholder)));
+                host.hub.open_container(conn, &menu, title, key, horizon_client::lan::menu::Slots::Block(key), items);
+                self.lan = Some(host);
+                let bytes = horizon_mods::screen::encode_menu_text(ENTITY_MENU_TEXT_AT, &e.menu_text);
+                let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
+                return true;
+            }
+            let items: Vec<Option<horizon_client::items::ItemStack>> =
+                e.items.iter().take(rows * 9).map(|s| s.as_ref().and_then(|s| self.game_stack(s))).collect();
+            self.world.block_entities.insert(key, BlockEntity::Chest(items.clone()));
             host.hub.open_container(
                 conn,
                 &format!("minecraft:generic_9x{rows}"),
@@ -2247,24 +2283,119 @@ mod run {
             true
         }
 
-        /// The open menu of a mod entity went (closed, or its entity is gone): what it holds goes back to the entity's first slots.
+        /// The open menu of a mod entity went (closed, or its entity is gone): what it holds goes back to the entity's first slots. A
+        /// declared menu's result slot that holds less than the mod put there was taken from (FORK-10 5b): the take waits for the mod.
         pub(in crate::game) fn store_mod_entity_menu(&mut self, key: (i32, i32, i32)) {
+            use horizon_client_render::containers::BlockEntity;
             if key.0 != i32::MAX - 16 {
                 return;
             }
-            let Some(horizon_client_render::containers::BlockEntity::Chest(items)) = self.world.block_entities.get(&key) else {
-                return;
+            let (items, results) = match self.world.block_entities.get(&key) {
+                Some(BlockEntity::Chest(items)) => (items, Vec::new()),
+                Some(BlockEntity::Mod(m)) => {
+                    (&m.items, horizon_client::containers::mod_menu_type(&m.id).map_or_else(Vec::new, |t| t.results.clone()))
+                }
+                _ => return,
             };
             let shown: Vec<Option<horizon_mods::ModItemStack>> = items.iter().map(|s| s.as_ref().map(Self::mod_stack)).collect();
-            if let Some(e) = self.mod_entities.list.iter_mut().find(|e| e.id as i32 == key.2) {
-                for (slot, s) in e.items.iter_mut().zip(shown) {
-                    *slot = s;
+            let Some(e) = self.mod_entities.list.iter_mut().find(|e| e.id as i32 == key.2) else {
+                return;
+            };
+            for &r in &results {
+                let r = usize::from(r);
+                if let Some(t) = horizon_mods::entity_state::taken(e.items.get(r).and_then(Option::as_ref), shown.get(r).and_then(Option::as_ref)) {
+                    self.mod_entities.taken.push((e.id, r as u32, t));
                 }
+            }
+            for (slot, s) in e.items.iter_mut().zip(shown) {
+                *slot = s;
             }
         }
 
-        /// While a mod entity's menu is open, what the mod's tick put in the entity's slots shows in the menu.
+        /// The player whose open menu is mod entity `id`'s, as the mods know them (the acting player when none is found).
+        fn mod_entity_menu_player(&mut self, id: u32) -> Option<ServerPlayer> {
+            let key = Self::mod_entity_menu_key(id);
+            let uuid = self
+                .lan
+                .as_ref()
+                .and_then(|h| h.hub.guests.iter().find(|g| g.menu.as_ref().is_some_and(|m| m.pos == Some(key))))
+                .map(|g| g.uuid);
+            match uuid {
+                Some(u) => {
+                    let id = uuid_string(u);
+                    self.mods.players.iter().find(|p| p.id == id).cloned()
+                }
+                None => self.acting_server_player(),
+            }
+        }
+
+        /// The takes from entity menus' result slots (FORK-10 5b) go to the mods that own the kinds (`entity-menu-taken`), with the
+        /// world lent; their updates are applied after.
+        fn mod_entity_menu_takes(&mut self) -> Vec<horizon_mods::ModEntityUpdate> {
+            let mut out = Vec::new();
+            for (id, slot, stack) in std::mem::take(&mut self.mod_entities.taken) {
+                let Some(view) = self.mod_entities_view().into_iter().find(|e| e.id == id) else {
+                    continue;
+                };
+                let Some(player) = self.mod_entity_menu_player(id) else {
+                    continue;
+                };
+                out.extend(self.mods.mods.entity_menu_taken(&player, &view, slot, &stack));
+            }
+            out
+        }
+
+        /// A player pressed button `id` of the open menu of mod entity `entity` (FORK-10 5b): the mod that owns the kind hears it
+        /// (`entity-menu-button`) and its update is applied, menu text and all.
+        pub(in crate::game) fn mod_entity_menu_button(&mut self, uuid: u128, entity: u32, id: i32) {
+            if !self.mods.server || !self.mods.mods.hears_mod_entities() {
+                return;
+            }
+            self.store_mod_entity_menu(Self::mod_entity_menu_key(entity));
+            let Some(view) = self.mod_entities_view().into_iter().find(|e| e.id == entity) else {
+                return;
+            };
+            let who = uuid_string(uuid);
+            let Some(player) = self.mods.players.iter().find(|p| p.id == who).cloned() else {
+                return;
+            };
+            self.lend_world();
+            let mut updates: Vec<horizon_mods::ModEntityUpdate> = self.mods.mods.entity_menu_button(&player, &view, id).into_iter().collect();
+            updates.extend(self.mod_entity_menu_takes());
+            self.return_world();
+            self.apply_mod_block_writes();
+            self.apply_mod_entity_ticks(updates);
+            self.mirror_mod_entity_menus();
+        }
+
+        /// Mod entity `id`'s menu closed for the guest of `conn` (FORK-10 5b): takes not yet told go to the mod, then the virtual
+        /// slots go and what the player left in them comes back to the player. The stacks to hand back.
+        pub(in crate::game) fn close_mod_entity_menu(&mut self, id: u32) -> Vec<horizon_client::items::ItemStack> {
+            if !self.mod_entities.taken.is_empty() && self.mods.server {
+                self.lend_world();
+                let updates = self.mod_entity_menu_takes();
+                self.return_world();
+                self.apply_mod_block_writes();
+                self.apply_mod_entity_ticks(updates);
+            }
+            let Some(e) = self.mod_entities.list.iter_mut().find(|e| e.id == id) else {
+                return Vec::new();
+            };
+            let Some(kind) = crate::game::mod_entities::MOD_KINDS.get().and_then(|k| k.get(&e.kind)) else {
+                return Vec::new();
+            };
+            let results = kind
+                .menu
+                .as_deref()
+                .and_then(horizon_client::containers::mod_menu_type)
+                .map_or_else(Vec::new, |t| t.results.iter().map(|&r| r as u16).collect());
+            let back = horizon_mods::entity_state::close_menu(&mut e.items, usize::from(kind.container_slots), &results);
+            back.iter().filter_map(|s| self.game_stack(s)).collect()
+        }
+
+        /// While a mod entity's menu is open, what the mod's tick put in the entity's slots shows in the menu, and its data slots too.
         fn mirror_mod_entity_menus(&mut self) {
+            use horizon_client_render::containers::BlockEntity;
             let open: Vec<u32> = self
                 .world
                 .block_entities
@@ -2279,15 +2410,45 @@ mod run {
                 };
                 let items: Vec<Option<horizon_client::items::ItemStack>> =
                     e.items.iter().map(|s| s.as_ref().and_then(|s| self.game_stack(s))).collect();
-                if let Some(horizon_client_render::containers::BlockEntity::Chest(open)) = self.world.block_entities.get_mut(&key) {
-                    let changed = open.iter().zip(&items).any(|(a, b)| a != b);
-                    if changed {
+                let data = e.menu_data.clone();
+                let changed = match self.world.block_entities.get_mut(&key) {
+                    Some(BlockEntity::Chest(open)) => {
+                        let changed = open.iter().zip(&items).any(|(a, b)| a != b);
                         for (to, from) in open.iter_mut().zip(items) {
                             *to = from;
                         }
-                        self.container_changed(key);
+                        changed
                     }
+                    Some(BlockEntity::Mod(m)) => {
+                        let changed = m.items.iter().zip(&items).any(|(a, b)| a != b) || m.data != data;
+                        for (to, from) in m.items.iter_mut().zip(items) {
+                            *to = from;
+                        }
+                        m.data = data;
+                        changed
+                    }
+                    _ => false,
+                };
+                if changed {
+                    self.container_changed(key);
                 }
+            }
+        }
+
+        /// Sends mod entity `id`'s menu strings to the players who have its menu open (FORK-10 5b).
+        pub(in crate::game) fn send_mod_entity_menu_text(&mut self, id: u32) {
+            let key = Self::mod_entity_menu_key(id);
+            let Some(texts) = self.mod_entities.list.iter().find(|e| e.id == id).map(|e| e.menu_text.clone()) else {
+                return;
+            };
+            let viewers: Vec<u128> = self
+                .lan
+                .as_ref()
+                .map(|h| h.hub.guests.iter().filter(|g| g.menu.as_ref().is_some_and(|m| m.pos == Some(key))).map(|g| g.uuid).collect())
+                .unwrap_or_default();
+            let bytes = horizon_mods::screen::encode_menu_text(ENTITY_MENU_TEXT_AT, &texts);
+            for uuid in viewers {
+                let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
             }
         }
 
@@ -2519,6 +2680,23 @@ mod run {
             if !self.hears_players() {
                 return;
             }
+            // A text box of a mod entity's menu (FORK-10 5b): the client knows no position for it, the mod gets the entity's id.
+            let mut data = data.to_vec();
+            if channel.ends_with(":menu_text")
+                && let Some((pos, field, text)) = horizon_mods::screen::decode_menu_input(&data)
+                && pos == ENTITY_MENU_TEXT_AT
+            {
+                let entity = self.lan.as_ref().and_then(|h| {
+                    let g = h.hub.guests.iter().find(|g| g.uuid == player)?;
+                    let key = g.menu.as_ref()?.pos?;
+                    (key.0 == i32::MAX - 16 && key.1 == crate::game::minecarts::CART_KEY_Y).then_some(key.2)
+                });
+                let Some(entity) = entity else {
+                    return;
+                };
+                data = horizon_mods::screen::encode_menu_input([i32::MIN, 0, entity], field, &text);
+            }
+            let data = &data[..];
             self.mods.events.push(ModEvent::Net {
                 who: Who::Uuid(player),
                 channel: channel.to_owned(),

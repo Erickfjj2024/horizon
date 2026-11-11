@@ -1,7 +1,7 @@
 id = "robits"
 name = "Robits"
 version = "0.1.0"
-description = "Test mod for mod-defined living entities (FORK-10): robits:robit is declared in content, a message spawns it, and the mod ticks it: it counts, changes skin, gets a name, moves and removes itself."
+description = "Test mod for mod-defined living entities (FORK-10): robits:robit is declared in content, a message spawns it, and the mod ticks it: it counts, changes skin, gets a name, moves and removes itself. Its menu is a declared screen with tabs (5b)."
 authors = ["Rust port"]
 api = "0.3"
 side = "server"

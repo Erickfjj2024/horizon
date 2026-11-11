@@ -251,6 +251,8 @@ impl Game<'_> {
             };
             if apply(&mut self.mod_entities.list[i], kind, &u) {
                 self.mod_entities.list.remove(i);
+            } else if u.menu_text.is_some() {
+                self.send_mod_entity_menu_text(u.id);
             }
         }
     }
@@ -273,6 +275,7 @@ fn wire(e: &ModEntityState) -> horizon_mods::ModEntity {
         energy: e.energy,
         skin: e.skin.clone(),
         name: e.name.clone(),
+        menu_data: e.menu_data.clone(),
     }
 }
 

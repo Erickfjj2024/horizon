@@ -320,6 +320,16 @@ pub mod server {
         }
         /// One of the mod's own entities died of damage. When [`Registration::on_mod_entities`] is set.
         fn mod_entity_died(&mut self, _entity: ModEntity) {}
+        /// A player pressed button `id` of the declared menu of one of the mod's own entities (FORK-10 5b): what to change in it.
+        /// When [`Registration::on_mod_entities`] is set.
+        fn entity_menu_button(&mut self, _player: &Player, _entity: ModEntity, _id: i32) -> Option<ModEntityUpdate> {
+            None
+        }
+        /// A player took `stack` from result slot `slot` of the declared menu of one of the mod's own entities (FORK-10 5b): use up
+        /// what made it. When [`Registration::on_mod_entities`] is set.
+        fn entity_menu_taken(&mut self, _player: &Player, _entity: ModEntity, _slot: u32, _stack: ItemStack) -> Option<ModEntityUpdate> {
+            None
+        }
         /// The living entities of the mod's own kinds, each tick (FORK-10): what to do with them. When [`Registration::on_mod_entities`] is set.
         fn entities_tick(&mut self, _tick: u64, _entities: Vec<ModEntity>) -> Vec<ModEntityUpdate> {
             Vec::new()
@@ -737,6 +747,16 @@ macro_rules! export_server_mod {
                 }
                 fn mod_entity_died(entity: ModEntity) {
                     with(|m| m.mod_entity_died(entity));
+                }
+                fn entity_menu_button(player: Player, entity: ModEntity, id: i32) -> Option<ModEntityUpdate> {
+                    let mut out = None;
+                    with(|m| out = m.entity_menu_button(&player, entity, id));
+                    out
+                }
+                fn entity_menu_taken(player: Player, entity: ModEntity, slot: u32, stack: ItemStack) -> Option<ModEntityUpdate> {
+                    let mut out = None;
+                    with(|m| out = m.entity_menu_taken(&player, entity, slot, stack));
+                    out
                 }
                 fn block_break_start(player: Player, stack: ItemStack, pos: BlockPos, state: String) -> bool {
                     let mut out = false;

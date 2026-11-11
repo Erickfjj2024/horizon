@@ -62,3 +62,42 @@ expect.mod-entities = ["1002 robits:robit 10.500 80.000 10.500 energy=0 data=[10
 ticks = 30
 expect.mod-entities = []
 expect.menu-text = ["minecraft:overworld 10 69 10 died:1002"]
+
+[[step]]
+# FORK-10 5b: a robit on the ground (spawned past its errands, so it only stands) opens its declared menu: the 30 slots of its
+# container and the 13 virtual ones of the crafting and repair tabs.
+blocks = [{ x = 20, y = 69, z = 20, state = "minecraft:stone" }]
+net = { channel = "robits:spawn_old", data = [20, 0, 0, 0, 70, 0, 0, 0, 20, 0, 0, 0] }
+expect.mod-entities = ["1003 robits:robit 20.500 70.000 20.500 energy=0 data=[10] skin=default name=-"]
+
+[[step]]
+use-mod-entity = { id = 1003 }
+expect.entity-menu = ["Alex 1003"]
+
+[[step]]
+# Follow (button 1): the mod keeps the flag, and the menu gets its data slots and its string.
+entity-menu-button = { id = 1003, button = 1 }
+expect.mod-entity-menu = ["1003 data=[1,0] text=following"]
+
+[[step]]
+# Two logs in the crafting grid's first slot (a step's ticks run before what the player does, so the tick is the next step's).
+entity-menu-set = [{ id = 1003, slot = 30, stack = "minecraft:oak_log*2" }]
+expect.mod-entity-items = ["1003 30=minecraft:oak_log*2"]
+
+[[step]]
+# In a tick the mod puts 4 planks in the result slot.
+ticks = 1
+expect.mod-entity-items = ["1003 30=minecraft:oak_log*2,39=minecraft:oak_planks*4"]
+
+[[step]]
+# Taking the planks (`entity-menu-taken`) uses up one log.
+entity-menu-take = { id = 1003, slot = 39 }
+expect.mod-entity-items = ["1003 30=minecraft:oak_log*1"]
+
+[[step]]
+# A stick in the anvil's left slot, then the menu closes: what is left in the virtual slots comes back to the player and the
+# container keeps its 30 slots, empty; the flag stays in the saved bytes.
+entity-menu-set = [{ id = 1003, slot = 40, stack = "minecraft:stick*1" }]
+close-entity-menu = 1003
+expect.entity-menu-returned = ["minecraft:oak_log*1", "minecraft:stick*1"]
+expect.mod-entity-items = []

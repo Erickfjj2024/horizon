@@ -7,7 +7,7 @@
 //! version's level so the launcher can tell before it installs.
 
 /// The newest level this Horizon serves.
-pub const LEVEL: u32 = 45;
+pub const LEVEL: u32 = 46;
 
 /// Every function the game offers mods, as `interface.function`, with its
 /// level. Level 0 is the contract of Horizon 0.2.67 to 0.2.69. A new
@@ -108,7 +108,7 @@ pub const FUNCTIONS: [(&str, u32); 115] = [
     ("recipe-types.item-tag-members", 40),
     ("players.set-hud-line", 41),
     ("players.open-radial-menu", 42),
-    ("players.open-entity-menu", 43),
+    ("players.open-entity-menu", 46),
     ("world.block-hardness", 35),
     ("world.spawn-particles", 26),
     ("recipe-types.burn-time", 27),

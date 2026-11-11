@@ -403,6 +403,19 @@ impl Game<'_> {
         window: i32,
         id: i32,
     ) {
+        // A mod entity's declared menu (FORK-10 5b): the button goes to the mod that owns the kind (`entity-menu-button`).
+        #[cfg(feature = "mods")]
+        if let Some(g) = host.hub.guest(conn)
+            && let Some(menu) = g.menu.as_ref().filter(|m| m.window == window)
+            && let Some(key) = menu.pos.filter(|k| k.0 == i32::MAX - 16 && k.1 == super::minecarts::CART_KEY_Y)
+            && matches!(self.world.block_entities.get(&key), Some(BlockEntity::Mod(_)))
+        {
+            if !g.spectator() {
+                let uuid = g.uuid;
+                self.mod_entity_menu_button(uuid, key.2 as u32, id);
+            }
+            return;
+        }
         // A mod container's menu: its mod's buttons (`native_menu_button`),
         // as handleContainerButtonClick checks them: the open menu, not a
         // spectator, still valid.

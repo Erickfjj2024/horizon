@@ -36,6 +36,9 @@ pub struct ModEntityState {
     /// Ticks of fire left, and ticks before an environmental hurt (lava, fire) can land again; not saved.
     pub burning: i32,
     pub hurt_cooldown: u8,
+    /// The data slots and strings of its menu, as the mod last set them (FORK-10 5b); not saved.
+    pub menu_data: Vec<i32>,
+    pub menu_text: Vec<String>,
 }
 
 /// The entities and whether the save was read.
@@ -45,6 +48,8 @@ pub struct ModEntities {
     pub swept: bool,
     pub loaded: bool,
     pub list: Vec<ModEntityState>,
+    /// Takes from the result slots of open entity menus not yet told to the mod (FORK-10 5b): the entity, the slot, the stack.
+    pub taken: Vec<(u32, u32, ModItemStack)>,
 }
 
 impl ModEntityState {
@@ -70,6 +75,8 @@ impl ModEntityState {
             fall_distance: 0.0,
             burning: 0,
             hurt_cooldown: 0,
+            menu_data: Vec::new(),
+            menu_text: Vec::new(),
         }
     }
 }
@@ -129,6 +136,8 @@ pub fn decode(text: &str) -> Vec<ModEntityState> {
                 fall_distance: 0.0,
                 burning: 0,
                 hurt_cooldown: 0,
+                menu_data: Vec::new(),
+                menu_text: Vec::new(),
                 items: r["items"]
                     .as_array()?
                     .iter()
@@ -259,9 +268,16 @@ pub fn apply(e: &mut ModEntityState, kind: &EntityKind, u: &ModEntityUpdate) -> 
         e.data.clone_from(d);
     }
     if let Some(items) = &u.items {
+        // While a menu with virtual slots is open the entity holds them past its container's.
         let mut items = items.clone();
-        items.resize(usize::from(kind.container_slots), None);
+        items.resize(e.items.len().max(usize::from(kind.container_slots)), None);
         e.items = items;
+    }
+    if let Some(d) = &u.menu_data {
+        e.menu_data.clone_from(d);
+    }
+    if let Some(t) = &u.menu_text {
+        e.menu_text.clone_from(t);
     }
     if let Some(energy) = u.energy {
         e.energy = energy;
@@ -293,6 +309,39 @@ pub fn apply(e: &mut ModEntityState, kind: &EntityKind, u: &ModEntityUpdate) -> 
     u.remove
 }
 
+/// A menu of `slots` slots opens on the entity (FORK-10 5b): its virtual slots, past the container's, start empty.
+pub fn open_menu(items: &mut Vec<Option<ModItemStack>>, container: usize, slots: usize) {
+    items.truncate(container);
+    items.resize(container.max(slots), None);
+}
+
+/// The entity's menu closed: its virtual slots go, and what they held that the player put there (not the `results`, which the mod
+/// fills and empties) is handed back to the player.
+pub fn close_menu(items: &mut Vec<Option<ModItemStack>>, container: usize, results: &[u16]) -> Vec<ModItemStack> {
+    let back = items
+        .iter()
+        .enumerate()
+        .skip(container)
+        .filter(|(i, _)| !results.iter().any(|&r| usize::from(r) == *i))
+        .filter_map(|(_, s)| s.clone())
+        .collect();
+    items.truncate(container);
+    items.resize(container, None);
+    back
+}
+
+/// What a player took out of a result slot that held `before` and holds `after` now: the stack, with the count taken, or none
+/// when nothing was taken (an item put back, or the mod's own change).
+pub fn taken(before: Option<&ModItemStack>, after: Option<&ModItemStack>) -> Option<ModItemStack> {
+    let b = before?;
+    let left = match after {
+        None => 0,
+        Some(a) if a.item == b.item && a.components == b.components => a.count,
+        Some(_) => return None,
+    };
+    (left < b.count).then(|| ModItemStack { count: b.count - left, ..b.clone() })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -313,6 +362,7 @@ mod tests {
             ],
             container_slots: 3,
             fire_immune: false,
+            menu: None,
         }
     }
 
@@ -330,7 +380,55 @@ mod tests {
             stop: false,
             health: None,
             remove: false,
+            menu_data: None,
+            menu_text: None,
         }
+    }
+
+    fn stack(item: &str, count: u32) -> Option<ModItemStack> {
+        Some(ModItemStack { item: item.into(), count, components: String::new() })
+    }
+
+    #[test]
+    fn a_menu_with_virtual_slots_holds_them_while_open_and_hands_the_players_items_back() {
+        let k = kind();
+        let mut e = ModEntityState::new(1, "minecraft:overworld", &k, [0.0; 3], Vec::new());
+        e.items[0] = stack("minecraft:coal", 4);
+        // A menu of 3 + 4 slots (a 2x2 grid, 5 and 6, and its result at 6): the virtual slots start empty after the container's.
+        open_menu(&mut e.items, 3, 7);
+        assert_eq!(e.items.len(), 7);
+        // While it is open, the mod's update reaches the virtual slots; past the menu's they still go.
+        let mut u = update(1);
+        u.items = Some(vec![stack("minecraft:coal", 4), None, None, stack("minecraft:stick", 1), stack("minecraft:oak_planks", 2), None, stack("minecraft:crafting_table", 1), stack("minecraft:dirt", 1)]);
+        u.menu_data = Some(vec![5, 9]);
+        u.menu_text = Some(vec!["Robit".into()]);
+        apply(&mut e, &k, &u);
+        assert_eq!(e.items.len(), 7);
+        assert_eq!((e.menu_data.as_slice(), e.menu_text.as_slice()), (&[5, 9][..], &["Robit".to_owned()][..]));
+        // Closing: the grid's items go back to the player, the result is dropped (the mod made it), the container stays.
+        let back = close_menu(&mut e.items, 3, &[6]);
+        assert_eq!(back, [stack("minecraft:stick", 1).unwrap(), stack("minecraft:oak_planks", 2).unwrap()]);
+        assert_eq!(e.items, [stack("minecraft:coal", 4), None, None]);
+        // With the menu closed an update is cut to the container again.
+        let mut u = update(1);
+        u.items = Some(vec![None; 7]);
+        apply(&mut e, &k, &u);
+        assert_eq!(e.items.len(), 3);
+        // Opening again starts the virtual slots empty, whatever was there.
+        e.items.push(stack("minecraft:dirt", 1));
+        open_menu(&mut e.items, 3, 5);
+        assert_eq!(e.items[3..], [None, None]);
+    }
+
+    #[test]
+    fn taking_from_a_result_slot_is_the_count_that_left_it() {
+        let made = stack("minecraft:crafting_table", 4);
+        assert_eq!(taken(made.as_ref(), None), made);
+        assert_eq!(taken(made.as_ref(), stack("minecraft:crafting_table", 1).as_ref()), stack("minecraft:crafting_table", 3));
+        assert_eq!(taken(made.as_ref(), made.as_ref()), None);
+        // Something else in the slot (the mod's new result) or nothing before is not a take.
+        assert_eq!(taken(made.as_ref(), stack("minecraft:stick", 1).as_ref()), None);
+        assert_eq!(taken(None, None), None);
     }
 
     #[test]

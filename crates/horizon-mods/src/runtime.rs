@@ -1681,20 +1681,42 @@ impl Mods {
                 Hooks::Client(..) => Ok(Vec::new()),
             });
             for u in updates.into_iter().flatten() {
-                let given = mine.iter().any(|e| e.dimension == u.dimension && e.id == u.id);
-                let finite = u.teleport.is_none_or(|t| t.0.is_finite() && t.1.is_finite() && t.2.is_finite())
-                    && u.health.is_none_or(f32::is_finite);
-                if given
-                    && finite
-                    && u.data.as_ref().is_none_or(|d| d.len() <= BLOCK_ENTITY_BYTES)
-                    && u.items.as_ref().is_none_or(|s| s.len() <= 256)
-                    && u.name.as_ref().is_none_or(|n| n.as_ref().is_none_or(|n| n.len() <= 128))
-                {
+                if mine.iter().any(|e| e.dimension == u.dimension && e.id == u.id) && entity_update_ok(&u) {
                     out.push(u);
                 }
             }
         }
         out
+    }
+    /// The running server mod that owns entity kind `kind` and asked for `mod-entities`.
+    fn entity_owner(&self, kind: &str) -> Option<usize> {
+        let (owner, _) = kind.split_once(':')?;
+        self.entries.iter().position(|e| {
+            e.run.as_ref().and_then(|r| r.hooks.server()).is_some_and(|r| r.mod_entities) && e.manifest.as_ref().is_some_and(|m| m.id == owner)
+        })
+    }
+    /// `player` pressed button `id` of the menu of `entity` (FORK-10 5b): the update of the mod that owns the kind, checked.
+    pub fn entity_menu_button(&mut self, player: &ServerPlayer, entity: &ModEntity, id: i32) -> Option<ModEntityUpdate> {
+        let i = self.entity_owner(&entity.kind)?;
+        let u = self
+            .call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m.horizon_mods_server_events().call_entity_menu_button(&mut run.store, player, entity, id),
+                Hooks::Client(..) => Ok(None),
+            })
+            .flatten()?;
+        (u.dimension == entity.dimension && u.id == entity.id && entity_update_ok(&u)).then_some(u)
+    }
+    /// `player` took `stack` from result slot `slot` of the menu of `entity` (FORK-10 5b): the update of the mod that owns the kind,
+    /// checked.
+    pub fn entity_menu_taken(&mut self, player: &ServerPlayer, entity: &ModEntity, slot: u32, stack: &ModItemStack) -> Option<ModEntityUpdate> {
+        let i = self.entity_owner(&entity.kind)?;
+        let u = self
+            .call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m.horizon_mods_server_events().call_entity_menu_taken(&mut run.store, player, entity, slot, stack),
+                Hooks::Client(..) => Ok(None),
+            })
+            .flatten()?;
+        (u.dimension == entity.dimension && u.id == entity.id && entity_update_ok(&u)).then_some(u)
     }
     /// `player` pressed menu button `id` of the menu of `entity` (a block
     /// entity of a running server mod's block, as the game holds it): the
@@ -2401,6 +2423,20 @@ fn clip_widgets(widgets: Vec<UiWidget>) -> Vec<UiWidget> {
             }
         })
         .collect()
+}
+
+/// Whether a mod's update of one of its entities is in bounds: finite numbers, at most 64 KiB of bytes, 256 slots, a name of 128
+/// bytes, 256 data slots and the menu strings' limits.
+pub fn entity_update_ok(u: &ModEntityUpdate) -> bool {
+    u.teleport.is_none_or(|t| t.0.is_finite() && t.1.is_finite() && t.2.is_finite())
+        && u.health.is_none_or(f32::is_finite)
+        && u.data.as_ref().is_none_or(|d| d.len() <= BLOCK_ENTITY_BYTES)
+        && u.items.as_ref().is_none_or(|s| s.len() <= 256)
+        && u.name.as_ref().is_none_or(|n| n.as_ref().is_none_or(|n| n.len() <= 128))
+        && u.menu_data.as_ref().is_none_or(|d| d.len() <= 256)
+        && u.menu_text.as_ref().is_none_or(|t| {
+            t.len() <= crate::content::MENU_TEXTS && t.iter().all(|s| s.len() <= crate::content::MENU_TEXT_BYTES)
+        })
 }
 
 impl mod_log::Host for State {

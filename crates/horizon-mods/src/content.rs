@@ -308,6 +308,11 @@ pub struct EntityKind {
     /// Fire and lava do not hurt it and it does not burn (`EntityType.fireImmune`).
     #[serde(default)]
     pub fire_immune: bool,
+    /// The menu type (`data/<mod>/horizon/menu/<path>.json` of the same mod, `<mod>:<path>`) that `open-entity-menu` opens, drawn by
+    /// its `screen` as a block's (FORK-10 5b): its first `container_slots` slots are the entity's container, the ones past them are
+    /// virtual (a crafting grid, an anvil's), held only while the menu is open. None opens the container as a chest.
+    #[serde(default)]
+    pub menu: Option<String>,
 }
 
 fn default_kind_health() -> f32 {
@@ -1768,6 +1773,17 @@ impl Content {
             let file: EntityKind =
                 serde_json::from_slice(&self.file(&name)?).map_err(|e| format!("{name}: {e}"))?;
             file.check(&name)?;
+            if let Some(menu) = &file.menu {
+                let Some(m) = self.menu_types.iter().find(|m| &m.id == menu) else {
+                    return Err(format!("{name}: menu {menu} is not a menu type of this mod"));
+                };
+                if m.slots < file.container_slots {
+                    return Err(format!(
+                        "{name}: menu {menu} has {} slots, fewer than the {} of the container",
+                        m.slots, file.container_slots
+                    ));
+                }
+            }
             self.entity_kinds.push(EntityKind { id: kind, ..file });
         }
         Ok(())
@@ -2213,6 +2229,27 @@ capabilities = ["registries"]
         ] {
             let files: &[(&str, &[u8])] = &[("data/ruby/horizon/entity_kind/a.json", file.as_bytes())];
             let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();
+            assert!(e.contains(why), "{case}: {e}");
+        }
+    }
+
+    #[test]
+    fn an_entity_kind_names_a_menu_of_its_mod_with_room_for_its_container() {
+        let menu = br#"{"slots": 40, "data_slots": 2, "results": [39]}"#;
+        let kind = br#"{"width":1,"height":1,"container_slots":30,"menu":"ruby:robit","skins":[{"id":"a","texture":"ruby:a"}]}"#;
+        let files: &[(&str, &[u8])] = &[("data/ruby/horizon/menu/robit.json", menu), ("data/ruby/horizon/entity_kind/robit.json", kind)];
+        let content = hmod("kind-menu", MANIFEST_TEXT, files).unwrap();
+        assert_eq!(content.entity_kinds[0].menu.as_deref(), Some("ruby:robit"));
+        let small = br#"{"slots": 9}"#;
+        for (case, menu_file, why) in [
+            ("kind-menu-missing", None, "menu ruby:robit is not a menu type of this mod"),
+            ("kind-menu-small", Some(&small[..]), "has 9 slots, fewer than the 30 of the container"),
+        ] {
+            let mut files: Vec<(&str, &[u8])> = vec![("data/ruby/horizon/entity_kind/robit.json", kind)];
+            if let Some(m) = menu_file {
+                files.push(("data/ruby/horizon/menu/robit.json", m));
+            }
+            let e = hmod(case, MANIFEST_TEXT, &files).unwrap_err();
             assert!(e.contains(why), "{case}: {e}");
         }
     }

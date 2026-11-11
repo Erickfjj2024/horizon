@@ -1633,6 +1633,12 @@ impl Game<'_> {
         if key.1 != CART_KEY_Y {
             return;
         }
+        // A mod entity's menu (FORK-10 d2, 5b), a chest or a declared menu.
+        if key.0 == i32::MAX - 16 {
+            #[cfg(feature = "mods")]
+            self.store_mod_entity_menu(key);
+            return;
+        }
         let Some(BlockEntity::Chest(items)) = self.world.block_entities.get(&key) else {
             return;
         };
