@@ -146,6 +146,8 @@ struct BlockFile {
     item: bool,
     #[serde(default)]
     components: BTreeMap<String, serde_json::Value>,
+    #[serde(default)]
+    redstone_emitter: bool,
 }
 fn yes() -> bool {
     true
@@ -176,6 +178,9 @@ pub struct Block {
     /// A connecting block's width in pixels (2 to 14): its shapes, the
     /// chorus plant's (10) when unset.
     pub thickness: Option<f32>,
+    /// A redstone source (round 4, item 4; Mekanism's `AttributeRedstoneEmitter`): wires join it and it gives the signal its mod
+    /// sets with `world.set-redstone-output` (none until then).
+    pub redstone_emitter: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1694,6 +1699,7 @@ impl Content {
                     .connects_to
                     .map(|t| t.trim_start_matches('#').to_owned()),
                 thickness: file.thickness,
+                redstone_emitter: file.redstone_emitter,
             });
         }
         let mut remainders = Vec::new();
@@ -2105,8 +2111,13 @@ capabilities = ["registries"]
                 components: BTreeMap::new(),
                 connects_to: None,
                 thickness: None,
+                redstone_emitter: false,
             }]
         );
+        // A block that gives redstone (round 4, item 4) says so.
+        let emitter = br#"{"template": "minecraft:iron_block", "redstone_emitter": true}"#;
+        let files: &[(&str, &[u8])] = &[("data/ruby/horizon/block/laser_amplifier.json", emitter)];
+        assert!(hmod("emitter", MANIFEST_TEXT, files).unwrap().blocks[0].redstone_emitter);
         assert_eq!(content.items[0].id, "ruby:ruby");
         assert_eq!(content.items[0].rarity, Some(Rarity::Uncommon));
         assert!(content.items[0].components.is_empty());

@@ -69,6 +69,8 @@ impl ServerMod for Gate {
         // API 38: the machine at y 77 gives a comparator the signal 9.
         if pos.y == 77 {
             let _ = world::set_comparator_output(&player.dimension, pos.x, pos.y, pos.z, 9);
+            // API 50: and a redstone signal of 12 to every side, strong (it powers the blocks it touches through them).
+            let _ = world::set_redstone_output(&player.dimension, pos.x, pos.y, pos.z, 12, true);
         }
         // API 39: the machine at y 78 mines the 3 blocks east of it (one is air, one bedrock) with a silk touch pickaxe.
         if pos.y == 78 {

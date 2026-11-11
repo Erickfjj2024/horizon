@@ -1147,6 +1147,38 @@ mod run {
             self.container_changed(key);
         }
 
+        /// A mod's `world.set-redstone-output` (round 4, item 4): the level and whether it is strong are kept in the emitter's block
+        /// entity (`redstone`, `redstone_strong`), and when they change the blocks around hear it (`updateNeighborsAt`), and those
+        /// around the blocks it touches too when it is or was strong.
+        pub(in crate::game) fn native_set_redstone(&mut self, pos: [i32; 3], level: u8, strong: bool) {
+            let key = (pos[0], pos[1], pos[2]);
+            let Some(horizon_client_render::containers::BlockEntity::Mod(m)) = self.world.block_entities.get_mut(&key) else {
+                return;
+            };
+            let (name, strong_name) = (Self::jname("redstone"), Self::jname("redstone_strong"));
+            let was_strong = matches!(m.nbt.get(&strong_name), Some(horizon_world::nbt::Tag::Byte(1)));
+            let new = (horizon_world::nbt::Tag::Byte(level.min(15) as i8), horizon_world::nbt::Tag::Byte(i8::from(strong)));
+            if m.nbt.get(&name) == Some(&new.0) && m.nbt.get(&strong_name) == Some(&new.1) {
+                return;
+            }
+            m.nbt.insert(name, new.0);
+            m.nbt.insert(strong_name, new.1);
+            self.world.modified.insert((key.0 >> 4, key.2 >> 4));
+            let state = self.world.block(key.0, key.1, key.2);
+            let at = horizon_core::position::BlockPos::new(pos[0], pos[1], pos[2]);
+            let far = strong || was_strong;
+            self.with_level(|b, level, ticks| {
+                let block = b.block(state);
+                b.update_neighbors_at(level, ticks, at, block);
+                if far {
+                    for d in horizon_core::geometry::Direction::ALL {
+                        let [dx, dy, dz] = d.normal();
+                        b.update_neighbors_at(level, ticks, at.offset(dx, dy, dz), block);
+                    }
+                }
+            });
+        }
+
         /// A mod's `world.set-menu-text` (FORK-20): the strings are kept in the block entity (`menu_text` of its saved compound) and go
         /// to the clients within reach, which show them in the menu's `text` widgets.
         pub(in crate::game) fn native_set_menu_text(&mut self, pos: [i32; 3], texts: &[String]) {
@@ -3416,6 +3448,13 @@ mod run {
                         self.native_break_blocks(&positions, &tool, silk_touch, fortune);
                     } else {
                         log::debug!("Horizon: mod {name} broke blocks in another level");
+                    }
+                }
+                Output::SetRedstone { name, dimension, pos, level, strong } => {
+                    if dimension == self.dim.id() {
+                        self.native_set_redstone(pos, level, strong);
+                    } else {
+                        log::debug!("Horizon: mod {name} set a redstone output in another level");
                     }
                 }
                 Output::SetComparator { name, dimension, pos, level } => {

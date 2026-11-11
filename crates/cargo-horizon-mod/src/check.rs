@@ -300,6 +300,7 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
             }
             Output::BreakBlocks { positions, .. } => format!("break {} block(s)", positions.len()),
             Output::SetComparator { level, .. } => format!("comparator output {level}"),
+            Output::SetRedstone { level, strong, .. } => format!("redstone output {level} (strong {strong})"),
             Output::SetMenuText { texts, .. } => format!("set {} menu text(s)", texts.len()),
             Output::MineBlock { tool, .. } => format!("mined a block with {tool}"),
             Output::PullItems { face, max, .. } => format!("pulled up to {max} item(s) through face {face}"),

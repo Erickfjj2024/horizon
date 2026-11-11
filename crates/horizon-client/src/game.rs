@@ -1127,6 +1127,38 @@ impl GameLevel<'_> {
             .collect()
     }
 }
+impl GameLevel<'_> {
+    /// Whether `state` is of a mod block that gives redstone (`"redstone_emitter": true`, round 4 item 4): the states are found once.
+    fn mod_redstone_emitter(&self, state: BlockStateId) -> bool {
+        static STATES: std::sync::OnceLock<std::collections::HashSet<u32>> = std::sync::OnceLock::new();
+        let Some(names) = crate::game::mods::MOD_REDSTONE_EMITTERS.get().filter(|n| !n.is_empty()) else {
+            return false;
+        };
+        STATES
+            .get_or_init(|| {
+                (0..self.registry.len() as u32)
+                    .filter(|&i| self.registry.state(BlockStateId(i)).is_some_and(|s| names.contains(s.name.as_str())))
+                    .collect()
+            })
+            .contains(&state.0)
+    }
+    /// The signal a mod's emitter block at `pos` gives (`world.set-redstone-output`): its level to every side, and through the block
+    /// it touches (`direct`) only when strong.
+    fn mod_redstone_signal(&self, pos: BlockPos, state: BlockStateId, direct: bool) -> i32 {
+        if !self.mod_redstone_emitter(state) {
+            return 0;
+        }
+        let Some(horizon_client_render::containers::BlockEntity::Mod(m)) = self.world.block_entities.get(&(pos.x, pos.y, pos.z)) else {
+            return 0;
+        };
+        let byte = |k: &str| match m.nbt.get(&horizon_world::nbt::JavaString::from(k)) {
+            Some(horizon_world::nbt::Tag::Byte(v)) => i32::from(*v),
+            _ => 0,
+        };
+        if direct && byte("redstone_strong") == 0 { 0 } else { byte("redstone").clamp(0, 15) }
+    }
+}
+
 impl LevelAccess for GameLevel<'_> {
     fn observe_block_changed(&self, pos: BlockPos, old: BlockStateId, new: BlockStateId) {
         if self.native_authoritative {
@@ -1175,7 +1207,7 @@ impl LevelAccess for GameLevel<'_> {
         !canceled
     }
     fn adjust_signal_source(&self, state: BlockStateId, vanilla: bool) -> bool {
-        let mut source = vanilla;
+        let mut source = vanilla || self.mod_redstone_emitter(state);
         if self.native_authoritative {
             self.native_is_signal_source(state, &mut source);
         }
@@ -1189,7 +1221,7 @@ impl LevelAccess for GameLevel<'_> {
         direct: bool,
         vanilla: i32,
     ) -> i32 {
-        let mut signal = vanilla;
+        let mut signal = vanilla.max(self.mod_redstone_signal(pos, state, direct));
         if self.native_authoritative {
             let face = direction.opposite();
             self.native_block_signal(self.dimension, pos, state, face, direct, &mut signal);

@@ -93,6 +93,8 @@ expect.menu-text = ["minecraft:overworld 6 64 6 -1"]
 use-block = { pos = [1, 77, 1] }
 ticks = 1
 expect.comparator = ["minecraft:overworld 1 77 1 9"]
+# API 50: and the redstone signal it gives, 12, strong.
+expect.redstone = ["minecraft:overworld 1 77 1 12 true"]
 
 [[step]]
 # API 39: break-blocks answers how many blocks it will break: the stone only (the bedrock is unbreakable, the third cell is air).

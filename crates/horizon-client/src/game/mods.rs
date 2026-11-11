@@ -428,9 +428,14 @@ fn register_entity_types(mods: &[horizon_client::mod_content::ContentMod]) {
     }
 }
 
+/// The mods' blocks that give redstone (`"redstone_emitter": true`, round 4 item 4), by id: set once with the other content.
+pub(super) static MOD_REDSTONE_EMITTERS: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+
 /// the mods' menu types, as their entity types: set once, from the startup
 /// root.
 fn register_menu_types(mods: &[horizon_client::mod_content::ContentMod]) {
+    let emitters = mods.iter().flat_map(|m| m.content.blocks.iter()).filter(|b| b.redstone_emitter).map(|b| b.id.clone()).collect();
+    let _ = MOD_REDSTONE_EMITTERS.set(emitters);
     use horizon_client::containers;
     let menus = horizon_client::mod_content::menu_types(mods);
     let screens = menus
@@ -933,6 +938,7 @@ impl Game<'_> {
                 | Output::SetCapabilitiesEnabled { .. }
                 | Output::SetMenuText { .. }
                 | Output::SetComparator { .. }
+                | Output::SetRedstone { .. }
                 | Output::BreakBlocks { .. }
                 | Output::SpawnParticles { .. }
                 | Output::SetTankFilter { .. }

@@ -821,6 +821,12 @@ interface %world {
     /// 50 for obsidian), negative for what cannot be broken (bedrock is -1); none where no chunk of the dimension is loaded. A mod that bills
     /// energy by hardness (the Laser Tractor Beam, 100 000 J a point) reads it. API 35.
     block-hardness: func(dimension: string, x: s32, y: s32, z: s32) -> option<f32>;
+    /// Sets the redstone signal the mod's block at the position gives, 0 to 15 (round 4, item 4; Mekanism's
+    /// `AttributeRedstoneEmitter`: the laser amplifier, the logic adapters, the alarms' readers): to every side, and with `strong` it
+    /// also powers the blocks it touches through them (`getDirectSignal`), as a lever does. Only a block whose content says
+    /// `"redstone_emitter": true` and that has a block entity gives it; it is kept with the block entity (saved), and the blocks around
+    /// are updated when it changes. Made after the call; an error past 256 a call. API 50.
+    set-redstone-output: func(dimension: string, x: s32, y: s32, z: s32, level: u8, strong: bool) -> result<_, string>;
     /// Sets the strings the menu of the block entity at the position carries (FORK-20): up to 64, each up to 256 bytes of text, kept
     /// with the entity. A screen's `text` widget with `text_data: n` shows string `n`; the clients that have the menu open get them
     /// when they change and when they open it. Made after this call returns; nothing happens for a block that is not a mod's block

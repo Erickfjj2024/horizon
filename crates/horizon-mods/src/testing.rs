@@ -1804,6 +1804,8 @@ pub struct Expect {
     broken: Option<Vec<String>>,
     /// Server mods: every `set-comparator-output`, as `"dimension x y z level"`.
     comparator: Option<Vec<String>>,
+    /// Server mods (round 4, item 4): every `set-redstone-output`, as `"dimension x y z level strong"`.
+    redstone: Option<Vec<String>>,
     /// Server mods (FORK-20): every `set-menu-text`, as `"dimension x y z text|text"`.
     menu_text: Option<Vec<String>>,
     /// Server mods (FORK-34): every `set-capabilities-enabled`, as `"dimension x y z items=true fluids=true energy=false"`.
@@ -3092,6 +3094,18 @@ impl Step {
                 })
                 .collect();
             same("hud", want, &got)?;
+        }
+        if let Some(want) = &e.redstone {
+            let got: Vec<String> = out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::SetRedstone { dimension, pos, level, strong, .. } => {
+                        Some(format!("{dimension} {} {} {} {level} {strong}", pos[0], pos[1], pos[2]))
+                    }
+                    _ => None,
+                })
+                .collect();
+            same("redstone", want, &got)?;
         }
         if let Some(want) = &e.comparator {
             let got: Vec<String> = out

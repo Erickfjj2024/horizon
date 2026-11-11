@@ -480,6 +480,8 @@ pub enum Output {
     BreakBlocks { name: String, dimension: String, positions: Vec<[i32; 3]>, tool: String, silk_touch: bool, fortune: u32 },
     /// `players.open-entity-menu`: the container of a mod entity, opened as a chest for a player.
     EntityMenu { name: String, mod_id: String, player: String, dimension: String, id: u32 },
+    /// `world.set-redstone-output`: the signal a mod block gives (round 4, item 4).
+    SetRedstone { name: String, dimension: String, pos: [i32; 3], level: u8, strong: bool },
     /// `players.open-item-menu`: a menu type of the mod opened over a player's slot (round 4, item 2).
     ItemMenu { name: String, mod_id: String, player: String, slot: u32, menu: String },
     /// `players.open-radial-menu`: a radial menu on one player's screen, whose choice comes back on `<mod id>:radial`.
@@ -2880,6 +2882,14 @@ impl mod_world::Host for State {
             return Err(format!("at most {BLOCKS_PER_CALL} comparator outputs a call"));
         }
         self.out.push(Output::SetComparator { name: self.name.clone(), dimension, pos: [x, y, z], level: level.min(15) });
+        Ok(())
+    }
+    fn set_redstone_output(&mut self, dimension: String, x: i32, y: i32, z: i32, level: u8, strong: bool) -> Result<(), String> {
+        let made = self.out.iter().filter(|o| matches!(o, Output::SetRedstone { .. })).count();
+        if made >= BLOCKS_PER_CALL {
+            return Err(format!("at most {BLOCKS_PER_CALL} redstone outputs a call"));
+        }
+        self.out.push(Output::SetRedstone { name: self.name.clone(), dimension, pos: [x, y, z], level: level.min(15), strong });
         Ok(())
     }
     fn set_menu_text(&mut self, dimension: String, x: i32, y: i32, z: i32, texts: Vec<String>) -> Result<(), String> {
