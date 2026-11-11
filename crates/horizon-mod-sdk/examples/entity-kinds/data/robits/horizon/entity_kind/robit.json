@@ -4,8 +4,16 @@
   "max_health": 1.0,
   "speed": 0.3,
   "skins": [
-    {"id": "default", "texture": "robits:entity/robit"},
-    {"id": "red", "texture": "robits:entity/robit_red"}
+    {
+      "id": "default",
+      "texture": "robits:entity/robit",
+      "model": "robits:robit"
+    },
+    {
+      "id": "red",
+      "texture": "robits:entity/robit_red",
+      "model": "robits:robit_red"
+    }
   ],
   "container_slots": 3
 }

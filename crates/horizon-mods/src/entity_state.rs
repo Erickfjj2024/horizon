@@ -22,11 +22,17 @@ pub struct ModEntityState {
     pub energy: u64,
     pub skin: String,
     pub name: Option<String>,
+    /// The entity Horizon shows it as (an `item_display` the clients draw with the skin's model), once it has one; not saved.
+    pub carrier: Option<u32>,
+    /// The skin and the name that carrier was made with, to make it again when either changes; not saved.
+    pub shown: Option<(String, Option<String>)>,
 }
 
 /// The entities and whether the save was read.
 #[derive(Default)]
 pub struct ModEntities {
+    /// Whether the carriers an earlier run left in the world were taken out.
+    pub swept: bool,
     pub loaded: bool,
     pub list: Vec<ModEntityState>,
 }
@@ -46,6 +52,8 @@ impl ModEntityState {
             energy: 0,
             skin: kind.skins.first().map(|s| s.id.clone()).unwrap_or_default(),
             name: None,
+            carrier: None,
+            shown: None,
         }
     }
 }
@@ -97,6 +105,8 @@ pub fn decode(text: &str) -> Vec<ModEntityState> {
                 energy: r["energy"].as_u64().unwrap_or(0),
                 skin: r["skin"].as_str().unwrap_or("").to_owned(),
                 name: r["name"].as_str().map(str::to_owned),
+                carrier: None,
+                shown: None,
                 items: r["items"]
                     .as_array()?
                     .iter()
@@ -114,6 +124,28 @@ pub fn decode(text: &str) -> Vec<ModEntityState> {
         })
         .collect()
 }
+
+/// The compound (SNBT) of the `item_display` that stands for an entity of `kind` with `skin` and `name`: it shows a stick whose
+/// `item_model` is the skin's model (`<ns>:<path>`, `assets/<ns>/items/<path>.json`), faces the same way whatever the viewer does,
+/// eases moves over 2 ticks, and carries a tag the game finds its own by.
+pub fn carrier_snbt(kind: &EntityKind, skin: &str, name: Option<&str>) -> String {
+    let components = kind
+        .skins
+        .iter()
+        .find(|s| s.id == skin)
+        .and_then(|s| s.model.as_deref())
+        .map_or_else(String::new, |m| format!(",components:{{\"minecraft:item_model\":\"{m}\"}}"));
+    let name = name.map_or_else(String::new, |n| {
+        let json = serde_json::to_string(&json!({ "text": n })).unwrap_or_default();
+        format!(",CustomName:'{}',CustomNameVisible:1b", json.replace('\\', "\\\\").replace('\'', "\\'"))
+    });
+    format!(
+        "{{item:{{id:\"minecraft:stick\",count:1{components}}},teleport_duration:2,Tags:[\"{CARRIER_TAG}\"]{name}}}"
+    )
+}
+
+/// The tag every carrier has, for the game to tell them from other displays.
+pub const CARRIER_TAG: &str = "horizon_mod_entity";
 
 /// An update the mod made (`mod-entity-update`) applied to `e` (`kind` is its kind): what it changes, whether it asks for the
 /// entity to be taken out. A skin the kind does not have, and slots past its container, are dropped.
@@ -177,6 +209,21 @@ mod tests {
             teleport: None,
             remove: false,
         }
+    }
+
+    #[test]
+    fn the_carrier_shows_the_skins_model_and_the_name() {
+        let mut k = kind();
+        k.skins[1].model = Some("robits:robit_red".into());
+        // A skin without a model shows the plain stick; one with it names the model in the item's components.
+        assert_eq!(
+            carrier_snbt(&k, "default", None),
+            r#"{item:{id:"minecraft:stick",count:1},teleport_duration:2,Tags:["horizon_mod_entity"]}"#
+        );
+        assert_eq!(
+            carrier_snbt(&k, "red", Some("Bo'lt")),
+            r#"{item:{id:"minecraft:stick",count:1,components:{"minecraft:item_model":"robits:robit_red"}},teleport_duration:2,Tags:["horizon_mod_entity"],CustomName:'{"text":"Bo\'lt"}',CustomNameVisible:1b}"#
+        );
     }
 
     #[test]

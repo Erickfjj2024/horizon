@@ -4,7 +4,7 @@
 use super::Game;
 use horizon_mods::{
     content::EntityKind,
-    entity_state::{FILE, ModEntityState, apply, decode, encode},
+    entity_state::{CARRIER_TAG, FILE, ModEntityState, apply, carrier_snbt, decode, encode},
 };
 use std::{collections::HashMap, sync::OnceLock};
 
@@ -66,11 +66,81 @@ impl Game<'_> {
         Some(id)
     }
 
-    /// Removes the mod entity `id` with no death and no drops; false for none.
+    /// Removes the mod entity `id` with no death and no drops (its carrier goes too); false for none.
     pub(super) fn native_remove_mod_entity(&mut self, dimension: &str, id: u32) -> bool {
+        let carriers: Vec<u32> = self
+            .mod_entities
+            .list
+            .iter()
+            .filter(|e| e.id == id && e.dimension == dimension)
+            .filter_map(|e| e.carrier)
+            .collect();
+        for c in carriers {
+            self.others.retain(|o| o.id != c);
+            self.persist.raw.remove(&c);
+        }
         let before = self.mod_entities.list.len();
         self.mod_entities.list.retain(|e| !(e.id == id && e.dimension == dimension));
         self.mod_entities.list.len() != before
+    }
+
+    /// Makes each entity of the level in place stand for itself on the clients (FORK-10 b): an `item_display` of the skin's model (see
+    /// `carrier_snbt`) summoned beside the entity, moved with it each tick, made again when the skin or the name changes, and again when
+    /// its chunk comes back. Carriers a save kept from an earlier run (the display is saved with the world, the entity's state is the
+    /// mod's) are taken out before the first new one is made.
+    pub(super) fn sync_mod_entity_carriers(&mut self) {
+        if self.remote.is_some() || self.mod_entities.list.is_empty() && !self.mod_entities.swept {
+            return;
+        }
+        let Some(kinds) = MOD_KINDS.get() else {
+            return;
+        };
+        if !self.mod_entities.swept {
+            self.mod_entities.swept = true;
+            let stale: Vec<u32> = self
+                .others
+                .iter()
+                .filter(|o| o.kind == "minecraft:item_display")
+                .filter(|o| self.persist.raw.get(&o.id).is_some_and(|t| has_carrier_tag(t)))
+                .map(|o| o.id)
+                .collect();
+            for id in stale {
+                self.others.retain(|o| o.id != id);
+                self.persist.raw.remove(&id);
+            }
+        }
+        let dim = self.dim.id().to_owned();
+        for i in 0..self.mod_entities.list.len() {
+            if self.mod_entities.list[i].dimension != dim {
+                continue;
+            }
+            let Some(kind) = kinds.get(&self.mod_entities.list[i].kind) else {
+                continue;
+            };
+            let e = self.mod_entities.list[i].clone();
+            let alive = e.carrier.is_some_and(|c| self.others.iter().any(|o| o.id == c));
+            let current = Some((e.skin.clone(), e.name.clone())) == e.shown;
+            if alive && !current {
+                if let Some(c) = e.carrier {
+                    self.others.retain(|o| o.id != c);
+                    self.persist.raw.remove(&c);
+                }
+            }
+            if alive && current {
+                if let Some(c) = e.carrier {
+                    let _ = self.native_move_entity(&dim, c, e.pos, e.yaw, 0.0);
+                }
+                continue;
+            }
+            let text = carrier_snbt(kind, &e.skin, e.name.as_deref());
+            let Ok((horizon_world::nbt::Tag::Compound(compound), _)) = horizon_world::nbt::parse_snbt(&text) else {
+                continue;
+            };
+            let carrier = self.native_summon(&dim, "minecraft:item_display", e.pos, compound);
+            let entry = &mut self.mod_entities.list[i];
+            entry.carrier = carrier;
+            entry.shown = carrier.map(|_| (e.skin, e.name));
+        }
     }
 
     /// The entities of the level in place, as the mods see them.
@@ -117,6 +187,15 @@ impl Game<'_> {
             }
         }
     }
+}
+
+/// Whether an entity's memory carries the tag of a mod entity's carrier.
+fn has_carrier_tag(tag: &horizon_world::nbt::Tag) -> bool {
+    let horizon_world::nbt::Tag::Compound(c) = tag else {
+        return false;
+    };
+    matches!(c.get(&horizon_world::nbt::JavaString::from("Tags")), Some(horizon_world::nbt::Tag::List(l))
+        if l.iter().any(|t| matches!(t, horizon_world::nbt::Tag::String(s) if s.to_string().is_ok_and(|t| t == CARRIER_TAG))))
 }
 
 /// The mods' entity kinds, set once.

@@ -1,4 +1,4 @@
-//! Robits (FORK-10): `robits:robit`, a living entity kind declared in `data/robits/horizon/entity_kind/robit.json`. A message on
+//! Robits (FORK-10): `robits:robit`, a living entity kind declared in `data/robits/horizon/entity_kind/robit.json`, drawn on the clients as an item display of the skin's model (`assets/robits/items/`). A message on
 //! `robits:spawn` (a position as three little-endian whole numbers) spawns one; each tick the mod counts in its saved bytes and its
 //! energy, takes the red skin from the second tick, is named Bolt on the third and teleports a block up, and removes the robit on the fifth.
 use horizon_mod_sdk::server::{ModEntity, ModEntityUpdate, Player, Registration, ServerMod, entities};
