@@ -15,6 +15,13 @@ impl ServerMod for Gate {
     }
     /// FORK-20: what a text box of the machine's screen confirms (widget 7800) comes back as the menu's first string.
     fn net_message(&mut self, player: &Player, channel: &str, data: &[u8]) {
+        // API 35: a message on `blockuse:hardness` (a position) is answered with the block's hardness as the menu's first string.
+        if channel == "blockuse:hardness" && let Some(input) = menu_input::decode(data) {
+            let h = world::block_hardness(&player.dimension, input.pos.x, input.pos.y, input.pos.z);
+            let text = h.map_or("unloaded".to_owned(), |h| format!("{h}"));
+            let _ = world::set_menu_text(&player.dimension, input.pos.x, input.pos.y, input.pos.z, &[text]);
+            return;
+        }
         if channel != menu_input::channel("blockuse") {
             return;
         }

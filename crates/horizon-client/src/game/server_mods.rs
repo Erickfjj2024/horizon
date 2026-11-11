@@ -202,6 +202,11 @@ mod run {
                     .unwrap_or_default(),
             )
         }
+        fn block_hardness(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<f32> {
+            let (_, chunks) = self.dims.iter().find(|(d, _)| *d == dimension)?;
+            let chunk = chunks.get(&(x >> 4, z >> 4))?;
+            Some(self.res.facts().get(chunk.block(x & 15, y, z & 15)).hardness)
+        }
         fn block(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<String> {
             let (_, chunks) = self.dims.iter().find(|(d, _)| *d == dimension)?;
             let chunk = chunks.get(&(x >> 4, z >> 4))?;

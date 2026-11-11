@@ -560,6 +560,10 @@ pub trait WorldView: std::any::Any + Send {
     fn environment(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<Environment>;
     /// The redstone signal at a mod block entity's position, 0 to 15.
     fn redstone(&self, dimension: &str, x: i32, y: i32, z: i32) -> u8;
+    /// The destroy time of the block at a position, `None` where no chunk of that dimension is loaded.
+    fn block_hardness(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> Option<f32> {
+        None
+    }
     /// The collision boxes of the block at a position, relative to the
     /// block's corner; `None` where no chunk of that dimension is loaded.
     fn collision(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<Vec<CollisionBox>>;
@@ -2648,6 +2652,10 @@ impl mod_world::Host for State {
     fn get_block(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<String> {
         let view = self.world.lock().ok()?;
         view.as_ref()?.block(&dimension, x, y, z)
+    }
+    fn block_hardness(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<f32> {
+        let view = self.world.lock().ok()?;
+        view.as_ref()?.block_hardness(&dimension, x, y, z)
     }
     fn get_biome(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<String> {
         let view = self.world.lock().ok()?;

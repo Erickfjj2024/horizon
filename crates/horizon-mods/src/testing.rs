@@ -76,6 +76,8 @@ pub struct TestGame {
     /// The crafting recipes and stack sizes a script gave.
     pub crafts: Vec<CraftSet>,
     pub stack_sizes: std::collections::BTreeMap<String, u32>,
+    /// The hardness of blocks a script gave.
+    pub hardness: std::collections::BTreeMap<String, f32>,
     /// The mobs of the Overworld a script set, for capability `entities`.
     pub mobs: Vec<crate::MobInfo>,
     /// The structures last told to the mod, by dimension and group.
@@ -88,6 +90,7 @@ struct ScriptWorld(
     std::collections::BTreeMap<(i32, i32, i32), u8>,
     Vec<CraftSet>,
     std::collections::BTreeMap<String, u32>,
+    std::collections::BTreeMap<String, f32>,
 );
 
 /// A crafting recipe of a script (`[[craft]]`): the nine cells it takes, what it makes, what stays in the cells.
@@ -119,6 +122,10 @@ impl crate::WorldView for ScriptWorld {
     }
     fn item_max_stack(&self, item: &str) -> Option<u32> {
         self.3.get(item).copied()
+    }
+    fn block_hardness(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<f32> {
+        let name = self.block(dimension, x, y, z)?;
+        Some(self.4.get(name.split('[').next().unwrap_or("")).copied().unwrap_or(0.0))
     }
     fn block(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<String> {
         let here = (dimension == "minecraft:overworld")
@@ -268,6 +275,7 @@ impl TestGame {
             packed: Default::default(),
             crafts: Vec::new(),
             stack_sizes: Default::default(),
+            hardness: Default::default(),
         };
         copy_mod(hmod, &copy)?;
         game.start()?;
@@ -845,6 +853,9 @@ pub struct Script {
     /// Stack sizes (`[stack-sizes]`, `"minecraft:stick" = 64`).
     #[serde(default)]
     pub stack_sizes: std::collections::BTreeMap<String, u32>,
+    /// The destroy time of blocks (`[hardness]`, `"minecraft:stone" = 1.5`); a block not listed is 0.
+    #[serde(default)]
+    pub hardness: std::collections::BTreeMap<String, f32>,
     #[serde(default, rename = "step")]
     pub steps: Vec<Step>,
 }
@@ -1358,6 +1369,7 @@ impl Script {
     pub fn run(&self, game: &mut TestGame) -> Result<(), String> {
         game.crafts = self.crafts.clone();
         game.stack_sizes = self.stack_sizes.clone();
+        game.hardness = self.hardness.clone();
         if let Some(p) = &mut game.player {
             self.player.apply(p);
         }
@@ -1538,7 +1550,7 @@ impl Step {
             game.block_items.insert((s.x, s.y, s.z), s.slots.clone());
         }
         game.mods
-            .lend_world(Box::new(ScriptWorld(game.world.clone(), game.power.clone(), game.crafts.clone(), game.stack_sizes.clone())));
+            .lend_world(Box::new(ScriptWorld(game.world.clone(), game.power.clone(), game.crafts.clone(), game.stack_sizes.clone(), game.hardness.clone())));
         if let Some(name) = &self.join {
             game.join(name);
         }
