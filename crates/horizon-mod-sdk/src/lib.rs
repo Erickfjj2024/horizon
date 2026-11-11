@@ -304,6 +304,11 @@ pub mod server {
         }
         /// The arrows of a shot exist, with these entity ids. When [`Registration::on_item_release`] is set.
         fn item_shot(&mut self, _player: &Player, _stack: ItemStack, _projectiles: Vec<u32>) {}
+        /// A player is breaking the block `state` at `pos` holding `stack`, an item of the mod: true cancels the normal break. When
+        /// [`Registration::on_block_break_start`] is set.
+        fn block_break_start(&mut self, _player: &Player, _stack: ItemStack, _pos: BlockPos, _state: &str) -> bool {
+            false
+        }
         /// A player right-clicked one of the mod's own entities: true takes the click. When [`Registration::on_mod_entities`] is set.
         fn mod_entity_used(&mut self, _player: &Player, _entity: ModEntity, _sneaking: bool) -> bool {
             false
@@ -414,6 +419,7 @@ pub mod server {
                 damage: false,
                 item_release: false,
                 mod_entities: false,
+                block_break: false,
                 redirects: Vec::new(),
             }
         }
@@ -501,6 +507,11 @@ pub mod server {
         /// Call [`ServerMod::item_released`] and [`ServerMod::item_shot`] for bow-like items.
         pub fn on_item_release(mut self) -> Self {
             self.item_release = true;
+            self
+        }
+        /// Call [`ServerMod::block_break_start`] when a player breaks a block holding an item of the mod.
+        pub fn on_block_break_start(mut self) -> Self {
+            self.block_break = true;
             self
         }
         /// Call [`ServerMod::entities_tick`] for the mod's own entity kinds.
@@ -726,6 +737,11 @@ macro_rules! export_server_mod {
                 }
                 fn mod_entity_died(entity: ModEntity) {
                     with(|m| m.mod_entity_died(entity));
+                }
+                fn block_break_start(player: Player, stack: ItemStack, pos: BlockPos, state: String) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.block_break_start(&player, stack, pos, &state));
+                    out
                 }
                 fn mod_entity_used(player: Player, entity: ModEntity, sneaking: bool) -> bool {
                     let mut out = false;

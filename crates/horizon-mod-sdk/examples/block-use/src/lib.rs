@@ -7,7 +7,7 @@ struct Gate;
 
 impl ServerMod for Gate {
     fn init() -> Result<(Self, Registration), String> {
-        Ok((Gate, Registration::new().on_blocks().on_net().redirect("blockuse:bound", 0, 1)))
+        Ok((Gate, Registration::new().on_blocks().on_net().on_block_break_start().redirect("blockuse:bound", 0, 1)))
     }
     /// FORK-35: a machine of the mod needs the block above it free: with one over it (y 81 over a block at 80), the placement is refused.
     fn can_place(&mut self, _player: &Player, pos: BlockPos, _state: &str) -> bool {
@@ -33,6 +33,16 @@ impl ServerMod for Gate {
         if let Some(input) = menu_input::decode(data).filter(|i| i.id == 7800) {
             let _ = world::set_menu_text(&player.dimension, input.pos.x, input.pos.y, input.pos.z, &[input.text]);
         }
+    }
+    /// The mod's drill (`blockuse:drill`) breaks a 1 by 3 column instead of one block: the normal break is cancelled and the three go
+    /// with `break-blocks`.
+    fn block_break_start(&mut self, player: &Player, stack: ItemStack, pos: BlockPos, _state: &str) -> bool {
+        if stack.item != "blockuse:drill" {
+            return false;
+        }
+        let column = [(pos.x, pos.y, pos.z), (pos.x, pos.y - 1, pos.z), (pos.x, pos.y - 2, pos.z)];
+        let _ = world::break_blocks(&player.dimension, &column, "minecraft:diamond_pickaxe", false, 0);
+        true
     }
     fn block_used(&mut self, player: &Player, pos: BlockPos, sneaking: bool, stack: Option<ItemStack>) -> BlockUse {
         // FORK-34: the gate at y 70 is a structure that is not formed: its items, tanks and energy are closed to the outside.

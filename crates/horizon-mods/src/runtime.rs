@@ -1572,6 +1572,30 @@ impl Mods {
     pub fn hears_mod_entities(&self) -> bool {
         self.entries.iter().filter_map(|e| e.run.as_ref()?.hooks.server()).any(|r| r.mod_entities)
     }
+    /// Whether a running server mod asked for `block-break`.
+    pub fn hears_block_break(&self) -> bool {
+        self.entries.iter().filter_map(|e| e.run.as_ref()?.hooks.server()).any(|r| r.block_break)
+    }
+    /// `player` is breaking `state` at `pos` holding `stack`: true when the mod that owns the item cancels the normal break.
+    pub fn block_break_start(&mut self, player: &ServerPlayer, stack: &ModItemStack, pos: [i32; 3], state: &str) -> bool {
+        let Some((owner, _)) = stack.item.split_once(':') else { return false };
+        let at = BlockPos { x: pos[0], y: pos[1], z: pos[2] };
+        for i in 0..self.entries.len() {
+            if !self.entries[i].run.as_ref().and_then(|r| r.hooks.server()).is_some_and(|r| r.block_break)
+                || self.entries[i].manifest.as_ref().is_none_or(|m| m.id != owner)
+            {
+                continue;
+            }
+            let answer = self.call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m.horizon_mods_server_events().call_block_break_start(&mut run.store, player, stack, at, state),
+                Hooks::Client(..) => Ok(false),
+            });
+            if answer == Some(true) {
+                return true;
+            }
+        }
+        false
+    }
     /// `player` right-clicked `entity` (of a mod's own kind): whether the mod that owns the kind took the click.
     pub fn mod_entity_used(&mut self, player: &ServerPlayer, entity: &ModEntity, sneaking: bool) -> bool {
         let Some((owner, _)) = entity.kind.split_once(':') else { return false };

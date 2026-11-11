@@ -69,6 +69,8 @@ pub struct TestGame {
     pub hit_damage_result: Option<f32>,
     /// What the last `item_released` answered.
     pub release_result: Option<bool>,
+    /// What the last `block_break_start` answered.
+    pub break_start_result: Option<bool>,
     /// What the last `mod_entity_used` answered, and the damage the last `mod_entity_damaged` applied.
     pub entity_used_result: Option<bool>,
     pub entity_damage_result: Option<f32>,
@@ -309,6 +311,7 @@ impl TestGame {
             hit_damage_result: None,
             release_result: None,
             entity_used_result: None,
+            break_start_result: None,
             entity_damage_result: None,
             mod_entities: Vec::new(),
             entity_kinds: Vec::new(),
@@ -1189,6 +1192,15 @@ pub struct HitDamageSet {
     damage: f32,
 }
 
+/// The actor breaking a block holding a stack (`block-break-start`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BreakStartSet {
+    pos: [i32; 3],
+    state: String,
+    stack: String,
+}
+
 /// A right click on one of the mod's entities.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1406,6 +1418,8 @@ pub struct Step {
     hit_damage: Option<HitDamageSet>,
     /// Server mods: the actor let go of a bow-like item.
     release_item: Option<ReleaseSet>,
+    /// Server mods: the actor breaks a block holding a stack of the mod.
+    break_start: Option<BreakStartSet>,
     /// Server mods (FORK-10 d): the actor right-clicks one of the mod's entities.
     use_mod_entity: Option<EntityUseSet>,
     /// Server mods (FORK-10 f): the items lying in the world from this step on (they replace the earlier ones).
@@ -1472,6 +1486,8 @@ pub struct Expect {
     hit_damage_result: Option<f32>,
     /// Server mods: whether the mod let the step's `release-item` shoot.
     release_result: Option<bool>,
+    /// Server mods: whether the mod cancelled the normal break of the step's `break-start`.
+    break_start_result: Option<bool>,
     /// Server mods (FORK-10 d): whether the mod took the step's `use-mod-entity` click.
     mod_entity_used: Option<bool>,
     /// Server mods (FORK-10 f): the items still lying in the world after the step, as `"id item*count"`.
@@ -1749,6 +1765,7 @@ impl Step {
             || self.hit_damage.is_some()
             || self.release_item.is_some()
             || self.use_mod_entity.is_some()
+            || self.break_start.is_some()
             || self.damage_mod_entity.is_some()
             || self.hit_with.is_some()
             || self.press.is_some()
@@ -1911,6 +1928,11 @@ impl Step {
                 game.mod_entities.retain(|m| m.id != d.id);
                 game.entity_goals.remove(&d.id);
             }
+        }
+        if let (Some(b), Some(who)) = (&self.break_start, &who) {
+            game.snapshot();
+            let stack = parse_stack(&b.stack).ok_or("break-start: a stack is item*count")?;
+            game.break_start_result = Some(game.mods.block_break_start(who, &stack, b.pos, &b.state));
         }
         if let (Some(u), Some(who)) = (&self.use_mod_entity, &who) {
             game.snapshot();
@@ -2310,6 +2332,11 @@ impl Step {
         if let Some(want) = e.mod_entity_damage {
             if game.entity_damage_result != Some(want) {
                 return Err(format!("mod-entity-damage: expected {want}, got {:?}", game.entity_damage_result));
+            }
+        }
+        if let Some(want) = e.break_start_result {
+            if game.break_start_result != Some(want) {
+                return Err(format!("break-start-result: expected {want}, got {:?}", game.break_start_result));
             }
         }
         if let Some(want) = e.mod_entity_used {

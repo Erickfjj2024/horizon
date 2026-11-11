@@ -2301,6 +2301,26 @@ mod run {
             ))
         }
 
+        /// The acting player is breaking the block `state` at `pos`: whether the mod of the held item cancels the normal break.
+        pub(in crate::game) fn mod_block_break_start(&mut self, pos: [i32; 3], state: horizon_world::registry::BlockStateId) -> bool {
+            if !self.mods.server || !self.mods.mods.hears_block_break() {
+                return false;
+            }
+            let Some(stack) = self.held().cloned().filter(|s| !s.item.starts_with("minecraft:")) else {
+                return false;
+            };
+            let Some(player) = self.acting_server_player() else {
+                return false;
+            };
+            let text = state_string(self.pack.assets.registry, state);
+            let stack = Self::mod_stack(&stack);
+            self.lend_world();
+            let cancel = self.mods.mods.block_break_start(&player, &stack, pos, &text);
+            self.return_world();
+            self.apply_mod_block_writes();
+            cancel
+        }
+
         /// The acting player right-clicked entity `entity`: when it is the box of one of a mod's own entities (FORK-10 d), whether the
         /// mod that owns the kind takes the click.
         pub(in crate::game) fn mod_entity_click(&mut self, entity: u32) -> bool {

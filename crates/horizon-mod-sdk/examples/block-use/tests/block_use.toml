@@ -119,3 +119,16 @@ expect.radial = ["Alex: off=Off,vein=Vein,extended=Extended current 1"]
 net = { channel = "blockuse:radial", data = [118, 101, 105, 110] }
 ticks = 1
 expect.told = ["Alex: mode vein"]
+
+[[step]]
+# block-break-start: breaking a block with the mod's drill cancels the normal break and breaks a column of 3 instead.
+blocks = [{ x = 5, y = 66, z = 5, state = "minecraft:stone" }, { x = 5, y = 65, z = 5, state = "minecraft:stone" }, { x = 5, y = 64, z = 5, state = "minecraft:stone" }]
+break-start = { pos = [5, 66, 5], state = "minecraft:stone", stack = "blockuse:drill*1" }
+ticks = 1
+expect.break-start-result = true
+expect.broken = ["3 with minecraft:diamond_pickaxe silk=false fortune=0"]
+
+[[step]]
+# Another item, or vanilla's, is not the mod's to take: the game breaks the block.
+break-start = { pos = [5, 66, 5], state = "minecraft:stone", stack = "minecraft:diamond_pickaxe*1" }
+expect.break-start-result = false

@@ -2282,6 +2282,11 @@ impl Game<'_> {
         state: BlockStateId,
         canceled: &mut bool,
     ) {
+        // A server mod's item may take the break over (`block-break-start`: the Meka-Tool's vein mining and blasting).
+        #[cfg(feature = "mods")]
+        if !*canceled && self.mod_block_break_start(pos, state) {
+            *canceled = true;
+        }
         let _ = (pos, state, canceled);
     }
     /// A player placed `stack` as the block `state` at `pos`: where
