@@ -458,6 +458,8 @@ pub enum Output {
     PackBlock { name: String, dimension: String, pos: [i32; 3], into: [i32; 3], replacement: Option<String> },
     /// `world.unpack-block`: what the box at `box_pos` holds, back at `pos`.
     UnpackBlock { name: String, dimension: String, box_pos: [i32; 3], pos: [i32; 3] },
+    /// `world.break-blocks`: many blocks broken as a player holding a tool would.
+    BreakBlocks { name: String, dimension: String, positions: Vec<[i32; 3]>, tool: String, silk_touch: bool, fortune: u32 },
     /// `world.set-comparator-output`: the signal a comparator reads from a block entity.
     SetComparator { name: String, dimension: String, pos: [i32; 3], level: u8 },
     /// `world.set-menu-text`: the strings the menu of a block entity carries (FORK-20).
@@ -579,6 +581,10 @@ pub trait WorldView: std::any::Any + Send {
     /// The items lying in `min` to `max` of `dimension`, as `(id, stack, position)`; none where the view does not know.
     fn dropped_items(&self, _dimension: &str, _min: [f64; 3], _max: [f64; 3]) -> Vec<(u32, ModItemStack, [f64; 3])> {
         Vec::new()
+    }
+    /// Whether the block at a position is one `break-blocks` breaks: loaded, not air, not a fluid, not unbreakable.
+    fn breakable(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> bool {
+        false
     }
     /// The destroy time of the block at a position, `None` where no chunk of that dimension is loaded.
     fn block_hardness(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> Option<f32> {
@@ -2654,6 +2660,28 @@ impl mod_world::Host for State {
         }
         self.out.push(Output::UnpackBlock { name: self.name.clone(), dimension, box_pos: [box_x, box_y, box_z], pos: [x, y, z] });
         Ok(())
+    }
+    fn break_blocks(&mut self, dimension: String, positions: Vec<(i32, i32, i32)>, tool: String, silk_touch: bool, fortune: u32) -> Result<u32, String> {
+        if positions.len() > 4096 || tool.len() > 100 || fortune > 3 {
+            return Err("at most 4096 positions, a tool id and a fortune 0 to 3".into());
+        }
+        let made = self.out.iter().filter(|o| matches!(o, Output::BreakBlocks { .. })).count();
+        if made >= 16 {
+            return Err("at most 16 break-blocks a call".into());
+        }
+        let breakable = |p: &(i32, i32, i32)| {
+            self.world.lock().ok().and_then(|v| v.as_ref().map(|v| v.breakable(&dimension, p.0, p.1, p.2))).unwrap_or(false)
+        };
+        let count = positions.iter().filter(|p| breakable(p)).count() as u32;
+        self.out.push(Output::BreakBlocks {
+            name: self.name.clone(),
+            dimension,
+            positions: positions.into_iter().map(|p| [p.0, p.1, p.2]).collect(),
+            tool,
+            silk_touch,
+            fortune,
+        });
+        Ok(count)
     }
     fn set_comparator_output(&mut self, dimension: String, x: i32, y: i32, z: i32, level: u8) -> Result<(), String> {
         let made = self.out.iter().filter(|o| matches!(o, Output::SetComparator { .. })).count();

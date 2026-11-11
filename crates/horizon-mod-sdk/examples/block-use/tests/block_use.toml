@@ -93,3 +93,11 @@ expect.menu-text = ["minecraft:overworld 6 64 6 -1"]
 use-block = { pos = [1, 77, 1] }
 ticks = 1
 expect.comparator = ["minecraft:overworld 1 77 1 9"]
+
+[[step]]
+# API 39: break-blocks answers how many blocks it will break: the stone only (the bedrock is unbreakable, the third cell is air).
+blocks = [{ x = 2, y = 78, z = 1, state = "minecraft:stone" }, { x = 3, y = 78, z = 1, state = "minecraft:bedrock" }]
+use-block = { pos = [1, 78, 1] }
+ticks = 1
+expect.broken = ["3 with minecraft:diamond_pickaxe silk=true fortune=0"]
+expect.menu-text = ["minecraft:overworld 1 78 1 breaks 1"]

@@ -892,6 +892,7 @@ impl Game<'_> {
                 | Output::SetCapabilitiesEnabled { .. }
                 | Output::SetMenuText { .. }
                 | Output::SetComparator { .. }
+                | Output::BreakBlocks { .. }
                 | Output::SpawnParticles { .. }
                 | Output::SetTankFilter { .. }
                 | Output::SetEnergyCapacity { .. }) => {

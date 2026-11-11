@@ -204,6 +204,13 @@ mod run {
                     .unwrap_or_default(),
             )
         }
+        fn breakable(&self, dimension: &str, x: i32, y: i32, z: i32) -> bool {
+            let Some((_, chunks)) = self.dims.iter().find(|(d, _)| *d == dimension) else { return false };
+            let Some(chunk) = chunks.get(&(x >> 4, z >> 4)) else { return false };
+            let f = self.res.facts().get(chunk.block(x & 15, y, z & 15));
+            let base = &*f.name;
+            !base.ends_with(":air") && !matches!(base, "minecraft:water" | "minecraft:lava") && f.hardness >= 0.0
+        }
         fn dropped_items(&self, dimension: &str, min: [f64; 3], max: [f64; 3]) -> Vec<(u32, horizon_mods::ModItemStack, [f64; 3])> {
             if dimension != self.dimension {
                 return Vec::new();
@@ -928,6 +935,41 @@ mod run {
             for stack in drops {
                 if let Some(rest) = self.give_to_container(to, dir, stack) {
                     self.pop_resource(pos, rest);
+                }
+            }
+        }
+        /// A mod's `world.break-blocks`: each block that is loaded and breakable (not air, a fluid, bedrock-hard) becomes air and its drops,
+        /// worked out with the tool (silk touch, fortune), fall at its place.
+        pub(in crate::game) fn native_break_blocks(&mut self, positions: &[[i32; 3]], tool: &str, silk_touch: bool, fortune: u32) {
+            let mut enchants = Vec::new();
+            if silk_touch {
+                enchants.push("\"minecraft:silk_touch\":1".to_owned());
+            }
+            if fortune > 0 {
+                enchants.push(format!("\"minecraft:fortune\":{fortune}"));
+            }
+            let components = if enchants.is_empty() { String::new() } else { format!("{{\"minecraft:enchantments\":{{{}}}}}", enchants.join(",")) };
+            let held = self.game_stack(&horizon_mods::ModItemStack { item: tool.to_owned(), count: 1, components });
+            let Ok(air) = crate::game::render_control::parse_state(self.pack.assets.registry, "minecraft:air") else {
+                return;
+            };
+            for pos in positions.iter().take(4096) {
+                let state = self.world.block(pos[0], pos[1], pos[2]);
+                let facts = self.res.facts().get(state);
+                let base = &*facts.name;
+                if !self.world.chunks.contains_key(&(pos[0] >> 4, pos[2] >> 4))
+                    || base.ends_with(":air")
+                    || matches!(base, "minecraft:water" | "minecraft:lava")
+                    || facts.hardness < 0.0
+                {
+                    continue;
+                }
+                let drops = self.block_loot_at(*pos, state, held.as_ref());
+                if self.place_state(*pos, air, false).is_err() {
+                    continue;
+                }
+                for stack in drops {
+                    self.pop_resource(*pos, stack);
                 }
             }
         }
@@ -2590,6 +2632,13 @@ mod run {
                 Output::SpawnParticles { name, dimension, particle, pos, spread, speed, count, color, scale, max_distance } => {
                     if !self.lan_send_mod_particles(&dimension, &particle, pos, spread, speed, count, color, scale, max_distance) {
                         log::debug!("Horizon: mod {name} asked for the particle {particle}, which was not shown");
+                    }
+                }
+                Output::BreakBlocks { name, dimension, positions, tool, silk_touch, fortune } => {
+                    if dimension == self.dim.id() {
+                        self.native_break_blocks(&positions, &tool, silk_touch, fortune);
+                    } else {
+                        log::debug!("Horizon: mod {name} broke blocks in another level");
                     }
                 }
                 Output::SetComparator { name, dimension, pos, level } => {

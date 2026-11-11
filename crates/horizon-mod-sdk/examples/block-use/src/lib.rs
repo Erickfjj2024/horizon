@@ -55,6 +55,11 @@ impl ServerMod for Gate {
         if pos.y == 77 {
             let _ = world::set_comparator_output(&player.dimension, pos.x, pos.y, pos.z, 9);
         }
+        // API 39: the machine at y 78 mines the 3 blocks east of it (one is air, one bedrock) with a silk touch pickaxe.
+        if pos.y == 78 {
+            let n = world::break_blocks(&player.dimension, &[(pos.x + 1, pos.y, pos.z), (pos.x + 2, pos.y, pos.z), (pos.x + 3, pos.y, pos.z)], "minecraft:diamond_pickaxe", true, 0).unwrap_or(99);
+            let _ = world::set_menu_text(&player.dimension, pos.x, pos.y, pos.z, &[format!("breaks {n}")]);
+        }
         match stack {
             Some(s) if s.item == "minecraft:stone" => BlockUse::Pass,
             None if !sneaking => BlockUse::Consume,

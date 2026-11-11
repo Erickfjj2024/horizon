@@ -145,6 +145,11 @@ impl crate::WorldView for ScriptWorld {
     fn item_max_stack(&self, item: &str) -> Option<u32> {
         self.3.get(item).copied()
     }
+    fn breakable(&self, dimension: &str, x: i32, y: i32, z: i32) -> bool {
+        let Some(name) = self.block(dimension, x, y, z) else { return false };
+        let base = name.split('[').next().unwrap_or("");
+        !base.ends_with(":air") && !matches!(base, "minecraft:water" | "minecraft:lava" | "minecraft:bedrock") && self.block_hardness(dimension, x, y, z).is_some_and(|h| h >= 0.0)
+    }
     fn dropped_items(&self, dimension: &str, min: [f64; 3], max: [f64; 3]) -> Vec<(u32, crate::ModItemStack, [f64; 3])> {
         if dimension != "minecraft:overworld" {
             return Vec::new();
@@ -1494,6 +1499,8 @@ pub struct Expect {
     sounds: Option<Vec<String>>,
     /// Server mods (FORK-10): the mod's entities after the step, as `"id kind x y z energy=E data=[bytes] skin=S name=N"` (the coordinates with 3 decimals, name `-` for none).
     mod_entities: Option<Vec<String>>,
+    /// Server mods: every `break-blocks`, as `"count with tool silk=bool fortune=n"`.
+    broken: Option<Vec<String>>,
     /// Server mods: every `set-comparator-output`, as `"dimension x y z level"`.
     comparator: Option<Vec<String>>,
     /// Server mods (FORK-20): every `set-menu-text`, as `"dimension x y z text|text"`.
@@ -2505,6 +2512,18 @@ impl Step {
                 })
                 .collect();
             same("mod-entities", want, &got)?;
+        }
+        if let Some(want) = &e.broken {
+            let got: Vec<String> = out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::BreakBlocks { positions, tool, silk_touch, fortune, .. } => {
+                        Some(format!("{} with {tool} silk={silk_touch} fortune={fortune}", positions.len()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            same("broken", want, &got)?;
         }
         if let Some(want) = &e.comparator {
             let got: Vec<String> = out

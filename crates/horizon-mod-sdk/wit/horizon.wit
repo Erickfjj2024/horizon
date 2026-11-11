@@ -763,6 +763,12 @@ interface %world {
     /// with the entity. Made after this call returns; nothing happens for a
     /// block that is not a mod's block entity. API 24.
     set-capabilities-enabled: func(dimension: string, x: s32, y: s32, z: s32, items: bool, fluids: bool, energy: bool) -> result<_, string>;
+    /// Breaks up to 4096 blocks as a player holding `tool` would (the Meka-Tool's vein mining and blasting; FORK-34's `mine-block` for many
+    /// blocks): each loaded block that is not air, a fluid or unbreakable (negative hardness; bedrock, barriers, portals, command blocks)
+    /// is replaced by air and its drops, worked out with the tool (`silk-touch`, `fortune` 0 to 3 as its enchantments), fall at its place.
+    /// Returns how many blocks it will break, counted at the call; they are broken after the call returns. The tool is not worn, no
+    /// experience is given, and protection (spawn, adventure mode) is not asked: the mod checks what it needs. API 39.
+    break-blocks: func(dimension: string, positions: list<tuple<s32, s32, s32>>, tool: string, silk-touch: bool, fortune: u32) -> result<u32, string>;
     /// Sets the signal a comparator reads from the mod's block entity at the position, 0 to 15 (`getAnalogOutputSignal`: Mekanism's tanks,
     /// bins and multiblock valves give the fill level), instead of the one its container gives; the comparators around are told. Kept with
     /// the entity. Made after this call returns; nothing happens for a block that is not a mod's block entity. A level past 15 is 15. API 38.
