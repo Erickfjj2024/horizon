@@ -1494,6 +1494,8 @@ pub struct Expect {
     sounds: Option<Vec<String>>,
     /// Server mods (FORK-10): the mod's entities after the step, as `"id kind x y z energy=E data=[bytes] skin=S name=N"` (the coordinates with 3 decimals, name `-` for none).
     mod_entities: Option<Vec<String>>,
+    /// Server mods: every `set-comparator-output`, as `"dimension x y z level"`.
+    comparator: Option<Vec<String>>,
     /// Server mods (FORK-20): every `set-menu-text`, as `"dimension x y z text|text"`.
     menu_text: Option<Vec<String>>,
     /// Server mods (FORK-34): every `set-capabilities-enabled`, as `"dimension x y z items=true fluids=true energy=false"`.
@@ -2503,6 +2505,16 @@ impl Step {
                 })
                 .collect();
             same("mod-entities", want, &got)?;
+        }
+        if let Some(want) = &e.comparator {
+            let got: Vec<String> = out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::SetComparator { dimension, pos, level, .. } => Some(format!("{dimension} {} {} {} {level}", pos[0], pos[1], pos[2])),
+                    _ => None,
+                })
+                .collect();
+            same("comparator", want, &got)?;
         }
         if let Some(want) = &e.menu_text {
             let got: Vec<String> = out

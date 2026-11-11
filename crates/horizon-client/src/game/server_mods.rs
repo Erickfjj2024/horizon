@@ -942,6 +942,22 @@ mod run {
                 self.world.modified.insert((key.0 >> 4, key.2 >> 4));
             }
         }
+        /// A mod's `world.set-comparator-output`: the signal is kept in the block entity (`comparator` of its saved compound) and the
+        /// comparators around hear it change.
+        pub(in crate::game) fn native_set_comparator(&mut self, pos: [i32; 3], level: u8) {
+            let key = (pos[0], pos[1], pos[2]);
+            let Some(horizon_client_render::containers::BlockEntity::Mod(m)) = self.world.block_entities.get_mut(&key) else {
+                return;
+            };
+            let name = Self::jname("comparator");
+            let new = horizon_world::nbt::Tag::Byte(level.min(15) as i8);
+            if m.nbt.get(&name) == Some(&new) {
+                return;
+            }
+            m.nbt.insert(name, new);
+            self.container_changed(key);
+        }
+
         /// A mod's `world.set-menu-text` (FORK-20): the strings are kept in the block entity (`menu_text` of its saved compound) and go
         /// to the clients within reach, which show them in the menu's `text` widgets.
         pub(in crate::game) fn native_set_menu_text(&mut self, pos: [i32; 3], texts: &[String]) {
@@ -2574,6 +2590,13 @@ mod run {
                 Output::SpawnParticles { name, dimension, particle, pos, spread, speed, count, color, scale, max_distance } => {
                     if !self.lan_send_mod_particles(&dimension, &particle, pos, spread, speed, count, color, scale, max_distance) {
                         log::debug!("Horizon: mod {name} asked for the particle {particle}, which was not shown");
+                    }
+                }
+                Output::SetComparator { name, dimension, pos, level } => {
+                    if dimension == self.dim.id() {
+                        self.native_set_comparator(pos, level);
+                    } else {
+                        log::debug!("Horizon: mod {name} set a comparator output in another level");
                     }
                 }
                 Output::SetMenuText { name, dimension, pos, texts } => {

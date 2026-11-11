@@ -1370,6 +1370,14 @@ impl LevelAccess for GameLevel<'_> {
         {
             return signal;
         }
+        // A mod's block entity that gave its own comparator signal (`world.set-comparator-output`).
+        if let Some(horizon_client_render::containers::BlockEntity::Mod(m)) =
+            self.world.block_entities.get(&(pos.x, pos.y, pos.z))
+            && let Some(horizon_world::nbt::Tag::Byte(level)) =
+                m.nbt.get(&horizon_world::nbt::JavaString::from("comparator"))
+        {
+            return i32::from(*level).clamp(0, 15);
+        }
         machines::container_signal(self.world, self.behaviours, self.items, self.registry, pos)
     }
     fn item_frame_analog_output(&self, pos: BlockPos, facing: Direction) -> Option<i32> {

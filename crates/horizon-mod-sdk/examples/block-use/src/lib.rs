@@ -51,6 +51,10 @@ impl ServerMod for Gate {
         if pos.y == 75 {
             let _ = world::set_menu_text(&player.dimension, pos.x, pos.y, pos.z, &["forge:ores/iron".to_owned(), player.name.clone()]);
         }
+        // API 38: the machine at y 77 gives a comparator the signal 9.
+        if pos.y == 77 {
+            let _ = world::set_comparator_output(&player.dimension, pos.x, pos.y, pos.z, 9);
+        }
         match stack {
             Some(s) if s.item == "minecraft:stone" => BlockUse::Pass,
             None if !sneaking => BlockUse::Consume,

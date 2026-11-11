@@ -891,6 +891,7 @@ impl Game<'_> {
                 | Output::MineBlock { .. }
                 | Output::SetCapabilitiesEnabled { .. }
                 | Output::SetMenuText { .. }
+                | Output::SetComparator { .. }
                 | Output::SpawnParticles { .. }
                 | Output::SetTankFilter { .. }
                 | Output::SetEnergyCapacity { .. }) => {

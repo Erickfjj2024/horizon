@@ -763,6 +763,10 @@ interface %world {
     /// with the entity. Made after this call returns; nothing happens for a
     /// block that is not a mod's block entity. API 24.
     set-capabilities-enabled: func(dimension: string, x: s32, y: s32, z: s32, items: bool, fluids: bool, energy: bool) -> result<_, string>;
+    /// Sets the signal a comparator reads from the mod's block entity at the position, 0 to 15 (`getAnalogOutputSignal`: Mekanism's tanks,
+    /// bins and multiblock valves give the fill level), instead of the one its container gives; the comparators around are told. Kept with
+    /// the entity. Made after this call returns; nothing happens for a block that is not a mod's block entity. A level past 15 is 15. API 38.
+    set-comparator-output: func(dimension: string, x: s32, y: s32, z: s32, level: u8) -> result<_, string>;
     /// The block's destroy time (`BlockBehaviour.defaultDestroyTime`, what a pickaxe's speed is divided into; 0 for air and plants, 1.5 for stone,
     /// 50 for obsidian), negative for what cannot be broken (bedrock is -1); none where no chunk of the dimension is loaded. A mod that bills
     /// energy by hardness (the Laser Tractor Beam, 100 000 J a point) reads it. API 35.

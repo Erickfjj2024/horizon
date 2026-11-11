@@ -87,3 +87,9 @@ blocks = [{ x = 6, y = 64, z = 6, state = "minecraft:bedrock" }]
 net = { channel = "blockuse:hardness", data = [6, 0, 0, 0, 64, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0] }
 ticks = 1
 expect.menu-text = ["minecraft:overworld 6 64 6 -1"]
+
+[[step]]
+# API 38: a click on the machine at y 77 sets the signal a comparator reads from it.
+use-block = { pos = [1, 77, 1] }
+ticks = 1
+expect.comparator = ["minecraft:overworld 1 77 1 9"]

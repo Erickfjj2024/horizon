@@ -458,6 +458,8 @@ pub enum Output {
     PackBlock { name: String, dimension: String, pos: [i32; 3], into: [i32; 3], replacement: Option<String> },
     /// `world.unpack-block`: what the box at `box_pos` holds, back at `pos`.
     UnpackBlock { name: String, dimension: String, box_pos: [i32; 3], pos: [i32; 3] },
+    /// `world.set-comparator-output`: the signal a comparator reads from a block entity.
+    SetComparator { name: String, dimension: String, pos: [i32; 3], level: u8 },
     /// `world.set-menu-text`: the strings the menu of a block entity carries (FORK-20).
     SetMenuText { name: String, dimension: String, pos: [i32; 3], texts: Vec<String> },
     /// `world.set-capabilities-enabled`: which of a block entity's capabilities the outside can use.
@@ -2651,6 +2653,14 @@ impl mod_world::Host for State {
             return Err(format!("at most {BLOCKS_PER_CALL} packs a call"));
         }
         self.out.push(Output::UnpackBlock { name: self.name.clone(), dimension, box_pos: [box_x, box_y, box_z], pos: [x, y, z] });
+        Ok(())
+    }
+    fn set_comparator_output(&mut self, dimension: String, x: i32, y: i32, z: i32, level: u8) -> Result<(), String> {
+        let made = self.out.iter().filter(|o| matches!(o, Output::SetComparator { .. })).count();
+        if made >= BLOCKS_PER_CALL {
+            return Err(format!("at most {BLOCKS_PER_CALL} comparator outputs a call"));
+        }
+        self.out.push(Output::SetComparator { name: self.name.clone(), dimension, pos: [x, y, z], level: level.min(15) });
         Ok(())
     }
     fn set_menu_text(&mut self, dimension: String, x: i32, y: i32, z: i32, texts: Vec<String>) -> Result<(), String> {
