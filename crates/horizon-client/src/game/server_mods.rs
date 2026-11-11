@@ -125,6 +125,8 @@ mod run {
         dimension: &'static str,
         /// The items lying in the level in place, as the mods may look for them (`items-in-box`), at most 4096.
         dropped: Vec<(u32, horizon_mods::ModItemStack, [f64; 3])>,
+        /// Every entity of the level in place (`entities-in-box`, round 4 item 3), at most 8192.
+        entities: Vec<horizon_mods::SeenEntity>,
         /// The game's recipes and items, for `crafting-find`, `crafting-matches` and `item-max-stack-size`.
         res: Arc<crate::game::Resources>,
     }
@@ -213,6 +215,12 @@ mod run {
             let f = self.res.facts().get(chunk.block(x & 15, y, z & 15));
             let base = &*f.name;
             !base.ends_with(":air") && !matches!(base, "minecraft:water" | "minecraft:lava") && f.hardness >= 0.0
+        }
+        fn entities(&self, dimension: &str, min: [f64; 3], max: [f64; 3]) -> Vec<horizon_mods::SeenEntity> {
+            if dimension != self.dimension {
+                return Vec::new();
+            }
+            self.entities.iter().filter(|e| (0..3).all(|i| e.pos[i] >= min[i] && e.pos[i] <= max[i])).cloned().collect()
         }
         fn dropped_items(&self, dimension: &str, min: [f64; 3], max: [f64; 3]) -> Vec<(u32, horizon_mods::ModItemStack, [f64; 3])> {
             if dimension != self.dimension {
@@ -682,6 +690,7 @@ mod run {
                 .take(4096)
                 .map(|d| (d.id, Self::mod_stack(&d.stack), [d.position.x, d.position.y, d.position.z]))
                 .collect();
+            let entities = self.seen_entities();
             let registry = self.pack.assets.registry;
             let biomes = self.res.biomes().clone();
             let shapes = self.collision_table();
@@ -698,8 +707,78 @@ mod run {
                 signals,
                 dimension,
                 dropped,
+                entities,
                 res: Arc::clone(&self.res),
             }));
+        }
+
+        /// Every entity of the level in place as `entities-in-box` reports it: mobs, items, boats, minecarts, the mods' own entities
+        /// and the players here (round 4, item 3).
+        fn seen_entities(&self) -> Vec<horizon_mods::SeenEntity> {
+            let seen = |id: u32, kind: String, p: horizon_core::geometry::Vec3, vehicle: Option<u32>| horizon_mods::SeenEntity {
+                id,
+                kind,
+                pos: [p.x, p.y, p.z],
+                vehicle,
+                player: None,
+            };
+            let mut out: Vec<horizon_mods::SeenEntity> = Vec::new();
+            out.extend(self.mobs.iter().filter(|m| !m.removed).map(|m| seen(m.id, m.kind.id.clone(), m.position, m.extra.mount)));
+            out.extend(self.dropped.iter().map(|d| seen(d.id, "minecraft:item".into(), d.position, None)));
+            out.extend(self.boats.iter().map(|b| seen(b.id, b.entity_type(), b.position, None)));
+            out.extend(self.carts.iter().map(|c| seen(c.id, c.kind.id().into(), c.position, None)));
+            let dim = self.dim.id();
+            out.extend(self.mod_entities.list.iter().filter(|e| e.dimension == dim).map(|e| horizon_mods::SeenEntity {
+                id: e.id,
+                kind: e.kind.clone(),
+                pos: e.pos,
+                vehicle: None,
+                player: None,
+            }));
+            if let Some(h) = &self.lan {
+                out.extend(h.hub.guests.iter().filter(|g| g.placed && g.dimension == dim).map(|g| horizon_mods::SeenEntity {
+                    id: g.entity_id as u32,
+                    kind: "minecraft:player".into(),
+                    pos: g.position,
+                    vehicle: g.vehicle,
+                    player: Some(uuid_string(g.uuid)),
+                }));
+            }
+            out.truncate(8192);
+            out
+        }
+
+        /// A mod's `teleport-entity` (round 4, item 3): one of the mods' own entities changes its place (and dimension, its displays
+        /// made again there), any other goes as `teleport_entity` moves it.
+        fn native_teleport_entity(&mut self, dimension: &str, id: u32, to: &str, pos: [f64; 3], yaw: Option<f32>) -> bool {
+            if self.remote.is_some() || dimension != self.dim.id() {
+                return false;
+            }
+            if let Some(i) = self.mod_entities.list.iter().position(|e| e.id == id && e.dimension == dimension) {
+                let shows: Vec<u32> = {
+                    let e = &self.mod_entities.list[i];
+                    [e.carrier, e.hitbox].into_iter().flatten().chain(e.bone_carriers.iter().copied()).collect()
+                };
+                let e = &mut self.mod_entities.list[i];
+                e.pos = pos;
+                if let Some(y) = yaw {
+                    e.yaw = y;
+                }
+                (e.goal, e.path_goal, e.fall_velocity, e.fall_distance) = (None, None, 0.0, 0.0);
+                e.path.clear();
+                if to != dimension {
+                    e.dimension = to.to_owned();
+                    (e.carrier, e.hitbox, e.shown) = (None, None, None);
+                    e.bone_carriers.clear();
+                    for c in shows {
+                        self.others.retain(|o| o.id != c);
+                        self.persist.raw.remove(&c);
+                    }
+                }
+                return true;
+            }
+            let at = horizon_core::geometry::Vec3::new(pos[0], pos[1], pos[2]);
+            self.teleport_entity(id, crate::game::Dim::from_id(to), at, yaw)
         }
 
         /// Every state's collision boxes, made once. A shape the game works out
@@ -3580,6 +3659,7 @@ mod run {
                         }
                         C::RemoveEntity { id } => self.native_remove_entity(&dimension, id) || self.native_remove_mod_entity(&dimension, id),
                         C::TeleportMob { id, pos } => self.native_teleport_mob(&dimension, id, pos),
+                        C::TeleportEntity { id, to_dimension, pos, yaw } => self.native_teleport_entity(&dimension, id, &to_dimension, pos, yaw),
                         C::PushMob { id, velocity } => self.native_push_mob(&dimension, id, velocity),
                         C::SetMobHealth { id, health } => self.native_set_mob_health(&dimension, id, health),
                         C::KillMob { id } => self.native_kill_mob(&dimension, id),

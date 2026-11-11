@@ -994,6 +994,20 @@ A display entity's transformation (`block_display`, `item_display`, `text_displa
 | `interpolation` | `s32` |  |
 | `teleport` | `s32` |  |
 
+### record `entity-in-box`
+
+An entity `entities-in-box` found.
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | `u32` |  |
+| `kind` | `string` | `minecraft:zombie`, `minecraft:item`, `minecraft:oak_boat`, `minecraft:minecart`, a mod's own kind, `minecraft:player`. |
+| `x` | `f64` |  |
+| `y` | `f64` |  |
+| `z` | `f64` |  |
+| `vehicle` | `option<u32>` | What it rides, if anything. |
+| `player` | `option<string>` | For a player, their id (move them with `player-control.teleport`). |
+
 ### record `damage-result`
 
 What a blow of `damage-entities-in-box` did to one entity.
@@ -1014,6 +1028,8 @@ What a blow of `damage-entities-in-box` did to one entity.
 | `set-display` | `func(dimension: string, id: u32, display: display) -> result<_, string>` | Sets a display's transformation. |
 | `remove-entity` | `func(dimension: string, id: u32) -> result<_, string>` | Removes an entity Horizon keeps without simulating, as `/kill` does. |
 | `teleport-mob` | `func(dimension: string, id: u32, x: f64, y: f64, z: f64) -> result<_, string>` | Moves a mob to the position at once, as `/tp` does. |
+| `entities-in-box` | `func(dimension: string, min: tuple<f64, f64, f64>, max: tuple<f64, f64, f64>) -> list<entity-in-box>` | The entities of `dimension` (the level in place) with their feet in `min` to `max` (up to 64 blocks a side): mobs, items lying there, boats, minecarts, the mods' own entities and players, nearest the middle first, at most 256 (what Mekanism's teleporter finds in its frame). Empty for another level or a bigger box. API 49. |
+| `teleport-entity` | `func(dimension: string, id: u32, to-dimension: string, x: f64, y: f64, z: f64, yaw: option<f32>) -> result<_, string>` | Moves entity `id` of `dimension` (the level in place) to `x, y, z` of `to-dimension`, facing `yaw` (none keeps its own), as `Entity.teleport` does: a mob, an item, a boat, a minecart or one of the mods' own entities, not a player (those go with `player-control.teleport`). Its motion stops. In the same dimension the mobs that ride it go with it, still riding; to another dimension it waits, saved, until the chunks there are loaded (as a portal's traveller does), a mob takes its riders along, and a boat's or a minecart's mob riders land beside it. An error for a position that is not a number or an unknown dimension; the move itself happens after the call, and an entity that is gone, or that a player rides, stays. API 49. |
 | `push-mob` | `func(dimension: string, id: u32, vx: f64, vy: f64, vz: f64) -> result<_, string>` | Adds a velocity to a mob's. |
 | `set-mob-health` | `func(dimension: string, id: u32, health: f32) -> result<_, string>` | Sets a living mob's health (above 0, cut to its maximum). |
 | `kill-mob` | `func(dimension: string, id: u32) -> result<_, string>` | Kills a mob as `/kill` does: it falls and drops its loot. |

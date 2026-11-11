@@ -43,6 +43,8 @@ pub(super) struct Plan {
     /// Through an End portal: `approximate` is the End's spawn point, or the
     /// Overworld's shared spawn.
     pub(super) end: bool,
+    /// A mod's `teleport-entity` (round 4, item 3): it lands at this point, facing this yaw when given, with no portal to find.
+    pub(super) exact: Option<(Vec3, Option<f32>)>,
 }
 
 impl Plan {
@@ -64,6 +66,20 @@ impl Plan {
             width,
             height,
             end: true,
+            exact: None,
+        }
+    }
+    /// A mod's `teleport-entity` to `at` of `dim`: no portal, the point itself.
+    pub(super) fn exact(dim: Dim, at: Vec3, yaw: Option<f32>, width: f32, height: f32) -> Self {
+        Self {
+            dim,
+            approximate: BlockPos::new(at.x.floor() as i32, at.y.floor() as i32, at.z.floor() as i32),
+            entry_x_axis: true,
+            offset: Vec3::ZERO,
+            width,
+            height,
+            end: false,
+            exact: Some((at, yaw)),
         }
     }
 }
@@ -143,7 +159,7 @@ fn end_portal_rotation(into_end: bool, [yaw, pitch]: [f32; 2], spawn: [f32; 2]) 
 /// A waiting entity as `horizon_portal_arrivals.dat` keeps it.
 fn arrival_tag(a: &Arrival) -> Tag {
     let p = &a.plan;
-    Tag::compound([
+    let mut tag = Tag::compound([
         ("dimension", Tag::String(p.dim.id().into())),
         ("x", Tag::Int(p.approximate.x)),
         ("y", Tag::Int(p.approximate.y)),
@@ -156,7 +172,14 @@ fn arrival_tag(a: &Arrival) -> Tag {
         ("height", Tag::Float(p.height.to_bits())),
         ("end", Tag::Int(i32::from(p.end))),
         ("entity", a.tag.clone()),
-    ])
+    ]);
+    if let (Tag::Compound(c), Some((at, yaw))) = (&mut tag, p.exact) {
+        c.insert("exact".into(), doubles([at.x, at.y, at.z]));
+        if let Some(yaw) = yaw {
+            c.insert("exact_yaw".into(), Tag::Float(yaw.to_bits()));
+        }
+    }
+    tag
 }
 /// The waiting entity `arrival_tag` wrote.
 fn arrival_from_tag(a: &Tag) -> Option<Arrival> {
@@ -190,6 +213,16 @@ fn arrival_from_tag(a: &Tag) -> Option<Arrival> {
             width: float("width").unwrap_or(0.25),
             height: float("height").unwrap_or(0.25),
             end: int("end").unwrap_or(0) != 0,
+            exact: match a.get("exact") {
+                Some(Tag::List(v)) if v.len() == 3 => {
+                    let d = |i: usize| match v[i] {
+                        Tag::Double(b) => f64::from_bits(b),
+                        _ => 0.0,
+                    };
+                    Some((Vec3::new(d(0), d(1), d(2)), float("exact_yaw")))
+                }
+                _ => None,
+            },
         },
         tag: tag.clone(),
     })
@@ -260,6 +293,7 @@ impl Game<'_> {
             width,
             height,
             end: false,
+            exact: None,
         }
     }
     /// The plan of an item or mob going through the portal block at `entry`:
@@ -941,11 +975,18 @@ impl Game<'_> {
     /// `Entity.teleportCrossDimension` away from the loaded dimension: the
     /// entity is saved and removed, and waits for its dimension to load.
     fn send_through_portal(&mut self, id: u32, entry: BlockPos) {
+        self.depart(id, &|g: &Self, at, width, height, mob| g.entity_plan(entry, at, width, height, mob));
+    }
+
+    /// Entity `id` (an item, a mob with its riders, a boat, a minecart) leaves the level in place for where `plan_of` sends it (from
+    /// its position, width, height and whether it is a mob), saved until its destination is loaded. False when it is none of those or
+    /// may not go there.
+    pub(super) fn depart(&mut self, id: u32, plan_of: &dyn Fn(&Self, Vec3, f32, f32, bool) -> Plan) -> bool {
         if let Some(i) = self.dropped.iter().position(|e| e.id == id) {
             let e = &self.dropped[i];
-            let plan = self.entity_plan(entry, e.position, 0.25, 0.25, false);
+            let plan = plan_of(self, e.position, 0.25, 0.25, false);
             if !self.may_enter(plan.dim) {
-                return;
+                return false;
             }
             let uuid = self.uuid_for(id);
             let tag = horizon_client::entity_nbt::item_entity_to_nbt(
@@ -957,11 +998,12 @@ impl Game<'_> {
             self.forget_entity(id);
             self.portals.arrivals.push(Arrival { plan, tag });
             self.portals.dirty = true;
+            return true;
         } else if let Some(i) = self.mobs.iter().position(|m| m.id == id) {
             let m = &self.mobs[i];
-            let plan = self.entity_plan(entry, m.position, m.width(), m.height(), true);
+            let plan = plan_of(self, m.position, m.width(), m.height(), true);
             if !self.may_enter(plan.dim) {
-                return;
+                return false;
             }
             let mut tag = self.mob_tree_nbt(i);
             // Entity.removeAfterChangingDimensions drops the leash.
@@ -986,12 +1028,13 @@ impl Game<'_> {
             }
             self.portals.arrivals.push(Arrival { plan, tag });
             self.portals.dirty = true;
+            return true;
         } else if let Some(i) = self.boats.iter().position(|b| b.id == id) {
             let b = &self.boats[i];
             let (width, height) = (super::boats::WIDTH as f32, super::boats::HEIGHT as f32);
-            let plan = self.entity_plan(entry, b.position, width, height, false);
+            let plan = plan_of(self, b.position, width, height, false);
             if !self.may_enter(plan.dim) {
-                return;
+                return false;
             }
             self.release_vehicle_container(id);
             let uuid = self.uuid_for(id);
@@ -1009,15 +1052,16 @@ impl Game<'_> {
             self.forget_entity(id);
             self.portals.arrivals.push(Arrival { plan, tag });
             self.portals.dirty = true;
+            return true;
         } else if let Some(i) = self.carts.iter().position(|c| c.id == id) {
             let c = &self.carts[i];
             let (width, height) = (
                 super::minecarts::WIDTH as f32,
                 super::minecarts::HEIGHT as f32,
             );
-            let plan = self.entity_plan(entry, c.position, width, height, false);
+            let plan = plan_of(self, c.position, width, height, false);
             if !self.may_enter(plan.dim) {
-                return;
+                return false;
             }
             self.release_vehicle_container(id);
             let uuid = self.uuid_for(id);
@@ -1026,8 +1070,92 @@ impl Game<'_> {
             self.forget_entity(id);
             self.portals.arrivals.push(Arrival { plan, tag });
             self.portals.dirty = true;
+            return true;
         }
+        false
     }
+    /// A mod's `teleport-entity` (round 4, item 3) of entity `id` of the level in place to `at` of `to`, facing `yaw` when given:
+    /// `Entity.teleport`. In the same level it moves at once, its motion stopped, with the mobs riding it; to another level it leaves
+    /// as a portal's traveller does (a mob with its riders, a boat's or a minecart's mob riders each on its own beside it) and lands
+    /// once that level's chunks there are loaded. False for an entity it does not know, or one a player rides.
+    pub(super) fn teleport_entity(&mut self, id: u32, to: Dim, at: Vec3, yaw: Option<f32>) -> bool {
+        if self.guest_rides(id) {
+            return false;
+        }
+        // The mobs that ride it, and theirs.
+        let mut riders: Vec<u32> = Vec::new();
+        let mut k = 0;
+        let mut seeds = vec![id];
+        while k < seeds.len() {
+            let v = seeds[k];
+            let on: Vec<u32> = self.mobs.iter().filter(|m| m.extra.mount == Some(v) && !m.removed).map(|m| m.id).collect();
+            riders.extend(&on);
+            seeds.extend(on);
+            k += 1;
+        }
+        if to != self.dim {
+            if !self.may_enter(to) {
+                return false;
+            }
+            let plan = move |_: &Self, _: Vec3, width: f32, height: f32, _: bool| Plan::exact(to, at, yaw, width, height);
+            let is_mob = self.mobs.iter().any(|m| m.id == id);
+            // A mob takes its riders in its own compound; a vehicle's mob riders go each on its own.
+            if !is_mob {
+                for r in riders.iter().filter(|r| self.mobs.iter().any(|m| m.id == **r && m.extra.mount == Some(id))) .copied().collect::<Vec<_>>() {
+                    if let Some(m) = self.mobs.iter_mut().find(|m| m.id == r) {
+                        m.extra.mount = None;
+                        m.extra.passenger = false;
+                    }
+                    self.depart(r, &plan);
+                }
+            }
+            return self.depart(id, &plan);
+        }
+        let place = |position: &mut Vec3, previous: &mut Vec3, velocity: &mut Vec3| {
+            *position = at;
+            *previous = at;
+            *velocity = Vec3::ZERO;
+        };
+        let moved = if let Some(m) = self.mobs.iter_mut().find(|m| m.id == id && !m.removed) {
+            place(&mut m.position, &mut m.previous, &mut m.velocity);
+            if let Some(y) = yaw {
+                (m.yaw, m.previous_yaw, m.body_yaw, m.head_yaw) = (y, y, y, y);
+            }
+            m.ai.nav.stop();
+            m.fall_distance = 0.0;
+            m.needs_sync = true;
+            true
+        } else if let Some(e) = self.dropped.iter_mut().find(|e| e.id == id) {
+            place(&mut e.position, &mut e.previous, &mut e.velocity);
+            e.needs_sync = true;
+            true
+        } else if let Some(b) = self.boats.iter_mut().find(|b| b.id == id) {
+            b.position = at;
+            b.velocity = Vec3::ZERO;
+            if let Some(y) = yaw {
+                b.yaw = y;
+            }
+            true
+        } else if let Some(c) = self.carts.iter_mut().find(|c| c.id == id) {
+            c.position = at;
+            c.velocity = Vec3::ZERO;
+            if let Some(y) = yaw {
+                c.yaw = y;
+            }
+            true
+        } else {
+            false
+        };
+        if moved {
+            for m in self.mobs.iter_mut().filter(|m| riders.contains(&m.id)) {
+                place(&mut m.position, &mut m.previous, &mut m.velocity);
+                m.fall_distance = 0.0;
+                m.needs_sync = true;
+            }
+        }
+        moved
+    }
+
     /// The chunks of the arrivals still waiting to land in `dim`, for the
     /// streaming `extra` areas that light them: vanilla's portal ticket
     /// (`Entity.teleport` adds `TicketType.PORTAL` at the destination) keeps
@@ -1061,7 +1189,10 @@ impl Game<'_> {
             self.portals.dirty = true;
             let motion = horizon_client::entity_nbt::motion(&tag);
             let [yaw, pitch] = horizon_client::entity_nbt::rotation(&tag);
-            let (at, motion, [yaw, pitch]) = if plan.end {
+            let (at, motion, [yaw, pitch]) = if let Some((at, turn)) = plan.exact {
+                // A mod's teleport (`Entity.teleport`): the point itself, its motion stopped.
+                (at, Vec3::ZERO, [turn.unwrap_or(yaw), pitch])
+            } else if plan.end {
                 // Relative.DELTA: the motion is kept.
                 let at = self.end_portal_exit(&plan);
                 // EndPortalBlock.getPortalDestination: PLACE_PORTAL_TICKET.
@@ -1084,8 +1215,10 @@ impl Game<'_> {
                     "Rotation".into(),
                     Tag::List(vec![Tag::Float(yaw.to_bits()), Tag::Float(pitch.to_bits())]),
                 );
-                // setPortalCooldown before the teleport, copied by restoreFrom.
-                c.insert("PortalCooldown".into(), Tag::Int(ENTITY_DELAY));
+                // setPortalCooldown before the teleport, copied by restoreFrom (not for a mod's teleport).
+                if plan.exact.is_none() {
+                    c.insert("PortalCooldown".into(), Tag::Int(ENTITY_DELAY));
+                }
             }
             // ServerLevel.addDuringTeleport: a fresh add, not loaded from disk.
             super::persist::mark_fresh(&mut tag);

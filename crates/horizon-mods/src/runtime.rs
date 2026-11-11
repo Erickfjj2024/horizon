@@ -225,6 +225,13 @@ pub enum EntityCommand {
         id: u32,
         pos: [f64; 3],
     },
+    /// `entities.teleport-entity` (round 4, item 3).
+    TeleportEntity {
+        id: u32,
+        to_dimension: String,
+        pos: [f64; 3],
+        yaw: Option<f32>,
+    },
     PushMob {
         id: u32,
         velocity: [f64; 3],
@@ -585,6 +592,16 @@ pub enum Output {
     },
 }
 
+/// An entity as `entities-in-box` reports it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SeenEntity {
+    pub id: u32,
+    pub kind: String,
+    pub pos: [f64; 3],
+    pub vehicle: Option<u32>,
+    pub player: Option<String>,
+}
+
 /// The game's world as capability `world` reads it during a call: the
 /// game lends one with [`Mods::lend_world`] and takes it back after.
 pub trait WorldView: std::any::Any + Send {
@@ -597,6 +614,10 @@ pub trait WorldView: std::any::Any + Send {
     fn environment(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<Environment>;
     /// The redstone signal at a mod block entity's position, 0 to 15.
     fn redstone(&self, dimension: &str, x: i32, y: i32, z: i32) -> u8;
+    /// The entities with their feet in `min` to `max` of `dimension` (round 4, item 3); none where the view does not know.
+    fn entities(&self, _dimension: &str, _min: [f64; 3], _max: [f64; 3]) -> Vec<SeenEntity> {
+        Vec::new()
+    }
     /// The items lying in `min` to `max` of `dimension`, as `(id, stack, position)`; none where the view does not know.
     fn dropped_items(&self, _dimension: &str, _min: [f64; 3], _max: [f64; 3]) -> Vec<(u32, ModItemStack, [f64; 3])> {
         Vec::new()
@@ -2499,6 +2520,16 @@ fn clip_widgets(widgets: Vec<UiWidget>) -> Vec<UiWidget> {
         .collect()
 }
 
+/// The entities found in `min` to `max`, those in it nearest its middle first, at most 256 (`entities-in-box`).
+pub fn nearest_first(found: Vec<SeenEntity>, min: [f64; 3], max: [f64; 3]) -> Vec<SeenEntity> {
+    let centre = [(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0, (min[2] + max[2]) / 2.0];
+    let far = |p: &[f64; 3]| (0..3).map(|i| (p[i] - centre[i]).powi(2)).sum::<f64>();
+    let mut found: Vec<SeenEntity> = found.into_iter().filter(|e| (0..3).all(|i| e.pos[i] >= min[i] && e.pos[i] <= max[i])).collect();
+    found.sort_by(|a, b| far(&a.pos).total_cmp(&far(&b.pos)).then(a.id.cmp(&b.id)));
+    found.truncate(256);
+    found
+}
+
 /// Whether a mod's update of an item menu is in bounds: 256 slots, 256 data slots and the menu strings' limits.
 pub fn item_menu_update_ok(u: &ItemMenuUpdate) -> bool {
     u.items.as_ref().is_none_or(|s| s.len() <= 256)
@@ -3195,6 +3226,22 @@ pub fn shield_faces(yaw: f32, at: [f64; 2], source: Option<[f64; 3]>) -> bool {
 }
 
 #[cfg(test)]
+mod nearest_tests {
+    use super::*;
+
+    #[test]
+    fn entities_in_a_box_come_nearest_the_middle_first_and_those_outside_are_left() {
+        let e = |id: u32, pos: [f64; 3]| SeenEntity { id, kind: "minecraft:pig".into(), pos, vehicle: None, player: None };
+        let found = vec![e(1, [4.0, 64.0, 4.0]), e(2, [1.0, 64.0, 1.0]), e(3, [9.5, 64.0, 0.0]), e(4, [2.0, 64.0, 2.0]), e(5, [-0.5, 64.0, 2.0])];
+        let got: Vec<u32> = nearest_first(found, [0.0, 63.0, 0.0], [4.0, 66.0, 4.0]).iter().map(|e| e.id).collect();
+        // The middle is (2, 64.5, 2): 4 is nearest, then 2, then 1; 3 and 5 have their feet outside.
+        assert_eq!(got, [4, 2, 1]);
+        let many: Vec<SeenEntity> = (0..300).map(|i| e(i, [1.0, 64.0, 1.0])).collect();
+        assert_eq!(nearest_first(many, [0.0, 63.0, 0.0], [4.0, 66.0, 4.0]).len(), 256);
+    }
+}
+
+#[cfg(test)]
 mod shield_tests {
     use super::shield_faces;
 
@@ -3328,6 +3375,30 @@ impl entities::Host for State {
     }
     fn remove_entity(&mut self, dimension: String, id: u32) -> Result<(), String> {
         self.entity_request(dimension, EntityCommand::RemoveEntity { id }, &[])
+    }
+    fn entities_in_box(&mut self, dimension: String, min: (f64, f64, f64), max: (f64, f64, f64)) -> Vec<entities::EntityInBox> {
+        let (min, max) = ([min.0, min.1, min.2], [max.0, max.1, max.2]);
+        if min.iter().chain(&max).any(|v| !v.is_finite()) || (0..3).any(|i| max[i] - min[i] > 64.0) {
+            return Vec::new();
+        }
+        let Ok(view) = self.world.lock() else { return Vec::new() };
+        let Some(view) = view.as_ref() else { return Vec::new() };
+        nearest_first(view.entities(&dimension, min, max), min, max)
+            .into_iter()
+            .map(|e| entities::EntityInBox { id: e.id, kind: e.kind, x: e.pos[0], y: e.pos[1], z: e.pos[2], vehicle: e.vehicle, player: e.player })
+            .collect()
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn teleport_entity(&mut self, dimension: String, id: u32, to_dimension: String, x: f64, y: f64, z: f64, yaw: Option<f32>) -> Result<(), String> {
+        if yaw.is_some_and(|y| !y.is_finite()) {
+            return Err("the yaw must be a number".into());
+        }
+        if let Some(view) = self.world.lock().ok().as_ref().and_then(|v| v.as_ref())
+            && !view.has_dimension(&to_dimension)
+        {
+            return Err(format!("no dimension {to_dimension}"));
+        }
+        self.entity_request(dimension, EntityCommand::TeleportEntity { id, to_dimension, pos: [x, y, z], yaw }, &[x, y, z])
     }
     fn teleport_mob(&mut self, dimension: String, id: u32, x: f64, y: f64, z: f64) -> Result<(), String> {
         self.entity_request(dimension, EntityCommand::TeleportMob { id, pos: [x, y, z] }, &[x, y, z])

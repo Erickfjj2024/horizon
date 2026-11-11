@@ -1,0 +1,17 @@
+[[step]]
+join = "Alex"
+player = { x = 1.5, y = 64.0, z = 2.5 }
+mobs = [{ id = 5, kind = "minecraft:pig", x = 2.0, y = 64.0, z = 2.0 }, { id = 6, kind = "minecraft:zombie", x = 30.0, y = 64.0, z = 2.0 }]
+dropped = [{ id = 9, stack = "minecraft:stone*1", x = 3.5, y = 64.0, z = 1.0 }]
+
+[[step]]
+# The box holds the pig (nearest the middle), the player and the stone; the zombie is far. The pig goes to the Nether, the stone
+# 100 blocks east facing east (yaw -90), the player stays; a NaN position is refused.
+net = { channel = "tpprobe:go" }
+expect.told = ["Alex: minecraft:pig#5 minecraft:player#10000 minecraft:item#9", "Alex: refused"]
+expect.entity-commands = ["teleport-entity 5 minecraft:the_nether 0.25 64 0.25 None", "teleport-entity 9 minecraft:overworld 103.5 64 1 Some(-90.0)"]
+
+[[step]]
+# They are gone from the box: only the player is left in it.
+net = { channel = "tpprobe:go" }
+expect.told = ["Alex: minecraft:player#10000", "Alex: refused"]

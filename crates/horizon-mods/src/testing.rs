@@ -118,6 +118,7 @@ struct ScriptWorld(
     std::collections::BTreeMap<String, u32>,
     std::collections::BTreeMap<String, f32>,
     Vec<DroppedSet>,
+    Vec<crate::SeenEntity>,
 );
 
 /// An item lying in the world of a script (`dropped = [...]` of a step): its entity id, stack and position.
@@ -165,6 +166,9 @@ impl crate::WorldView for ScriptWorld {
         let Some(name) = self.block(dimension, x, y, z) else { return false };
         let base = name.split('[').next().unwrap_or("");
         !base.ends_with(":air") && !matches!(base, "minecraft:water" | "minecraft:lava" | "minecraft:bedrock") && self.block_hardness(dimension, x, y, z).is_some_and(|h| h >= 0.0)
+    }
+    fn entities(&self, dimension: &str, _min: [f64; 3], _max: [f64; 3]) -> Vec<crate::SeenEntity> {
+        if dimension == "minecraft:overworld" { self.6.clone() } else { Vec::new() }
     }
     fn dropped_items(&self, dimension: &str, min: [f64; 3], max: [f64; 3]) -> Vec<(u32, crate::ModItemStack, [f64; 3])> {
         if dimension != "minecraft:overworld" {
@@ -419,6 +423,43 @@ impl TestGame {
             self.tick_mod_entities();
             self.mod_entity_hazards();
             self.tick_item_menus();
+        }
+    }
+    /// Every entity of the script's Overworld as `entities-in-box` reports it: the mobs, the items lying there, the mod's own entities
+    /// and the players (whose entity ids here are 10000 and on, in the order they joined).
+    fn seen_entities(&self) -> Vec<crate::SeenEntity> {
+        let seen = |id: u32, kind: &str, pos: [f64; 3], player: Option<String>| crate::SeenEntity { id, kind: kind.into(), pos, vehicle: None, player };
+        let mobs = self.mobs.iter().map(|m| seen(m.id, &m.kind, m.pos, None));
+        let items = self.dropped.iter().map(|d| seen(d.id, "minecraft:item", [d.x, d.y, d.z], None));
+        let own = self.mod_entities.iter().filter(|e| e.dimension == "minecraft:overworld").map(|e| seen(e.id, &e.kind, [e.x, e.y, e.z], None));
+        let players = self
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.dimension == "minecraft:overworld")
+            .map(|(i, p)| seen(10_000 + i as u32, "minecraft:player", [p.x, p.y, p.z], Some(p.id.clone())));
+        mobs.chain(items).chain(own).chain(players).collect()
+    }
+    /// A mod's `teleport-entity`, as the game makes it: a mob, an item or one of the mod's entities moves (to another dimension too);
+    /// a player is not moved this way.
+    fn teleport_entity(&mut self, dimension: &str, id: u32, to: &str, pos: [f64; 3]) {
+        if dimension != "minecraft:overworld" {
+            return;
+        }
+        if let Some(m) = self.mobs.iter_mut().find(|m| m.id == id) {
+            m.pos = pos;
+            if to != dimension {
+                self.mobs.retain(|m| m.id != id);
+            }
+        } else if let Some(d) = self.dropped.iter_mut().find(|d| d.id == id) {
+            (d.x, d.y, d.z) = (pos[0], pos[1], pos[2]);
+            if to != dimension {
+                self.dropped.retain(|d| d.id != id);
+            }
+        } else if let Some(e) = self.mod_entities.iter_mut().find(|e| e.id == id) {
+            (e.x, e.y, e.z) = (pos[0], pos[1], pos[2]);
+            e.dimension = to.to_owned();
+            self.entity_goals.remove(&id);
         }
     }
     /// The item menu of player `id` as the mod sees it.
@@ -1971,7 +2012,15 @@ impl Step {
             game.block_items.insert((s.x, s.y, s.z), s.slots.clone());
         }
         game.mods
-            .lend_world(Box::new(ScriptWorld(game.world.clone(), game.power.clone(), game.crafts.clone(), game.stack_sizes.clone(), game.hardness.clone(), game.dropped.clone())));
+            .lend_world(Box::new(ScriptWorld(
+                game.world.clone(),
+                game.power.clone(),
+                game.crafts.clone(),
+                game.stack_sizes.clone(),
+                game.hardness.clone(),
+                game.dropped.clone(),
+                game.seen_entities(),
+            )));
         if let Some(name) = &self.join {
             game.join(name);
         }
@@ -2372,6 +2421,12 @@ impl Step {
             let slots = k.menu.as_ref().and_then(|m| game.menu_types.iter().find(|t| &t.id == m)).map_or(0, |t| usize::from(t.slots));
             if slots > 0 && game.entity_menus.insert(*id) {
                 crate::entity_state::open_menu(&mut e.items, usize::from(k.container_slots), slots);
+            }
+        }
+        // A mod's teleport-entity (round 4, item 3) is made after its call, as the game does.
+        for o in &out {
+            if let Output::Entity { dimension, command: crate::EntityCommand::TeleportEntity { id, to_dimension, pos, .. }, .. } = o {
+                game.teleport_entity(dimension, *id, to_dimension, *pos);
             }
         }
         for o in &out {
@@ -2782,6 +2837,9 @@ impl Step {
                         C::RemoveEntity { id } => format!("remove-entity {id}"),
                         C::TeleportMob { id, pos } => {
                             format!("teleport-mob {id} {} {} {}", pos[0], pos[1], pos[2])
+                        }
+                        C::TeleportEntity { id, to_dimension, pos, yaw } => {
+                            format!("teleport-entity {id} {to_dimension} {} {} {} {yaw:?}", pos[0], pos[1], pos[2])
                         }
                         C::PushMob { id, velocity } => {
                             format!("push-mob {id} {} {} {}", velocity[0], velocity[1], velocity[2])

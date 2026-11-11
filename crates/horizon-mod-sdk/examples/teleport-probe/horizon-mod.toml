@@ -1,0 +1,9 @@
+id = "tpprobe"
+name = "Teleport Probe"
+version = "0.1.0"
+description = "Test mod for entities-in-box and teleport-entity (round 4, item 3): a message finds what stands in a 4-block box and sends it away, a pig to the Nether."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "entities", "net"]
+experimental = ["entities", "net"]
