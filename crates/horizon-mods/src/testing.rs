@@ -699,6 +699,18 @@ impl TestGame {
             .collect();
         crate::network::transfer_tanks(&transmitters, &mut tank_nodes);
         crate::flow::transfer(&mut tank_nodes);
+        // An output face fills an empty cauldron beside it with a bucket of water or lava, as the game does.
+        for n in &mut tank_nodes {
+            for t in &mut n.tanks {
+                for (face, d) in crate::energy::FACES.iter().enumerate() {
+                    let at = (n.pos[0] + d[0], n.pos[1] + d[1], n.pos[2] + d[2]);
+                    let block = self.world.get(&at).cloned().unwrap_or_else(|| "minecraft:air".into());
+                    if let Some(full) = crate::flow::fill_cauldron(t, face, block.split('[').next().unwrap_or("")) {
+                        self.world.insert(at, full.to_owned());
+                    }
+                }
+            }
+        }
         for n in tank_nodes {
             if let Some(held) = self.block_tanks.get_mut(&(n.pos[0], n.pos[1], n.pos[2])) {
                 for (slot, t) in held.iter_mut().zip(&n.tanks) {

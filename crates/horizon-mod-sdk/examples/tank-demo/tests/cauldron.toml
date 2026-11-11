@@ -1,0 +1,20 @@
+# A tank whose faces give fills an empty cauldron beside it with a whole bucket (NeoForge's cauldron fluid handler); the full
+# cauldron takes no more.
+
+[[step]]
+join = "Alex"
+blocks = [
+    { x = 0, y = 64, z = 0, state = "tankdemo:big_tank" },
+    { x = 1, y = 64, z = 0, state = "minecraft:cauldron" },
+]
+ticks = 1
+
+[[step]]
+set-tanks = [{ x = 0, y = 64, z = 0, tanks = ["minecraft:water*2500"] }]
+ticks = 1
+expect.block-tanks = [{ x = 0, y = 64, z = 0, tanks = ["minecraft:water*1500"] }]
+expect.blocks = [{ x = 1, y = 64, z = 0, state = "minecraft:water_cauldron[level=3]" }]
+
+[[step]]
+ticks = 3
+expect.block-tanks = [{ x = 0, y = 64, z = 0, tanks = ["minecraft:water*1500"] }]

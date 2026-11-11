@@ -39,6 +39,31 @@ fn takes(s: FlowSide) -> bool {
     matches!(s, FlowSide::Input | FlowSide::Both)
 }
 
+/// A bucket, in millibuckets: what a cauldron holds when full.
+pub const BUCKET: u64 = 1000;
+
+/// A tank giving through `face` into the block `neighbour` beside it when that is an empty cauldron (NeoForge's `CauldronFluidContent`:
+/// a cauldron takes a whole bucket of water or lava at once, nothing less): the cauldron it becomes, with the bucket taken from the
+/// tank. None when the face does not give, the tank holds less than a bucket of water or lava, or moves less than that a tick.
+pub fn fill_cauldron(tank: &mut TankState, face: usize, neighbour: &str) -> Option<&'static str> {
+    if neighbour != "minecraft:cauldron" || !tank.faces.get(face).is_some_and(|s| gives(*s)) {
+        return None;
+    }
+    if tank.amount < BUCKET || tank.max_rate < BUCKET {
+        return None;
+    }
+    let full = match tank.substance.as_str() {
+        "minecraft:water" => "minecraft:water_cauldron[level=3]",
+        "minecraft:lava" => "minecraft:lava_cauldron",
+        _ => return None,
+    };
+    tank.amount -= BUCKET;
+    if tank.amount == 0 {
+        tank.substance.clear();
+    }
+    Some(full)
+}
+
 /// One tick of transfers, in position order, each block's tanks in order and
 /// their faces in the order of [`FACES`]; a tank gives to the first tank of
 /// the neighbour that accepts, and gives and takes at most its `max_rate` a
@@ -188,5 +213,43 @@ mod tests {
         transfer(&mut n);
         assert_eq!(n[1].tanks[1].amount, 30);
         assert_eq!(n[1].tanks[1].substance, "minecraft:water");
+    }
+}
+
+#[cfg(test)]
+mod cauldron_tests {
+    use super::*;
+
+    fn tank(substance: &str, amount: u64, rate: u64, face: FlowSide) -> TankState {
+        TankState {
+            kind: "fluid".into(),
+            capacity: 64_000,
+            max_rate: rate,
+            faces: [FlowSide::None, FlowSide::None, face, FlowSide::None, FlowSide::None, FlowSide::None],
+            substance: substance.into(),
+            amount,
+            accepts: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn an_output_face_fills_an_empty_cauldron_with_a_whole_bucket_of_water_or_lava() {
+        let mut t = tank("minecraft:water", 2500, 64_000, FlowSide::Output);
+        assert_eq!(fill_cauldron(&mut t, 2, "minecraft:cauldron"), Some("minecraft:water_cauldron[level=3]"));
+        assert_eq!(t.amount, 1500);
+        let mut lava = tank("minecraft:lava", 1000, 1000, FlowSide::Both);
+        assert_eq!(fill_cauldron(&mut lava, 2, "minecraft:cauldron"), Some("minecraft:lava_cauldron"));
+        assert_eq!((lava.amount, lava.substance.as_str()), (0, ""), "the tank emptied");
+    }
+
+    #[test]
+    fn a_cauldron_is_not_filled_by_less_than_a_bucket_another_fluid_a_full_one_or_a_face_that_does_not_give() {
+        let cauldron = "minecraft:cauldron";
+        assert_eq!(fill_cauldron(&mut tank("minecraft:water", 999, 64_000, FlowSide::Output), 2, cauldron), None);
+        assert_eq!(fill_cauldron(&mut tank("minecraft:water", 5000, 500, FlowSide::Output), 2, cauldron), None);
+        assert_eq!(fill_cauldron(&mut tank("mekanism:brine", 5000, 64_000, FlowSide::Output), 2, cauldron), None);
+        assert_eq!(fill_cauldron(&mut tank("minecraft:water", 5000, 64_000, FlowSide::Input), 2, cauldron), None);
+        assert_eq!(fill_cauldron(&mut tank("minecraft:water", 5000, 64_000, FlowSide::Output), 3, cauldron), None);
+        assert_eq!(fill_cauldron(&mut tank("minecraft:water", 5000, 64_000, FlowSide::Output), 2, "minecraft:water_cauldron"), None);
     }
 }

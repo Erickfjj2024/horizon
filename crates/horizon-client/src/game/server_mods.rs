@@ -1904,12 +1904,36 @@ mod run {
                     })
                 })
                 .collect();
-            if nodes.len() < 2 {
+            if nodes.is_empty() {
                 return;
             }
             let before = nodes.clone();
-            horizon_mods::network::transfer_tanks(&transmitters, &mut nodes);
-            horizon_mods::flow::transfer(&mut nodes);
+            if nodes.len() >= 2 {
+                horizon_mods::network::transfer_tanks(&transmitters, &mut nodes);
+                horizon_mods::flow::transfer(&mut nodes);
+            }
+            // A tank's output face fills an empty cauldron beside it with a bucket of water or lava (the one fluid handler vanilla
+            // blocks have, NeoForge's cauldron wrapper).
+            let mut cauldrons: Vec<([i32; 3], &'static str)> = Vec::new();
+            for n in &mut nodes {
+                for t in &mut n.tanks {
+                    for (face, d) in horizon_mods::energy::FACES.iter().enumerate() {
+                        let at = [n.pos[0] + d[0], n.pos[1] + d[1], n.pos[2] + d[2]];
+                        if cauldrons.iter().any(|(p, _)| *p == at) {
+                            continue;
+                        }
+                        let name = &self.res.facts().get(self.world.block(at[0], at[1], at[2])).name;
+                        if let Some(full) = horizon_mods::flow::fill_cauldron(t, face, name) {
+                            cauldrons.push((at, full));
+                        }
+                    }
+                }
+            }
+            for (at, full) in cauldrons {
+                if let Ok(state) = crate::game::render_control::parse_state(self.pack.assets.registry, full) {
+                    let _ = self.place_state(at, state, false);
+                }
+            }
             for (n, was) in nodes.iter().zip(before) {
                 if *n == was {
                     continue;
