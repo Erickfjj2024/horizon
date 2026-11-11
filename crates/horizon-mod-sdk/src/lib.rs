@@ -308,6 +308,13 @@ pub mod server {
         fn mod_entity_used(&mut self, _player: &Player, _entity: ModEntity, _sneaking: bool) -> bool {
             false
         }
+        /// One of the mod's own entities is about to take `amount` damage from `source`: the damage to apply. When
+        /// [`Registration::on_mod_entities`] is set.
+        fn mod_entity_damaged(&mut self, _entity: ModEntity, _source: DamageSource, amount: f32) -> f32 {
+            amount
+        }
+        /// One of the mod's own entities died of damage. When [`Registration::on_mod_entities`] is set.
+        fn mod_entity_died(&mut self, _entity: ModEntity) {}
         /// The living entities of the mod's own kinds, each tick (FORK-10): what to do with them. When [`Registration::on_mod_entities`] is set.
         fn entities_tick(&mut self, _tick: u64, _entities: Vec<ModEntity>) -> Vec<ModEntityUpdate> {
             Vec::new()
@@ -711,6 +718,14 @@ macro_rules! export_server_mod {
                     let mut out = true;
                     with(|m| out = m.item_released(&player, stack, &hand, ticks_held));
                     out
+                }
+                fn mod_entity_damaged(entity: ModEntity, source: DamageSource, amount: f32) -> f32 {
+                    let mut out = amount;
+                    with(|m| out = m.mod_entity_damaged(entity, source, amount));
+                    out
+                }
+                fn mod_entity_died(entity: ModEntity) {
+                    with(|m| m.mod_entity_died(entity));
                 }
                 fn mod_entity_used(player: Player, entity: ModEntity, sneaking: bool) -> bool {
                     let mut out = false;

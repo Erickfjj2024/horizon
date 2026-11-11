@@ -69,8 +69,9 @@ pub struct TestGame {
     pub hit_damage_result: Option<f32>,
     /// What the last `item_released` answered.
     pub release_result: Option<bool>,
-    /// What the last `mod_entity_used` answered.
+    /// What the last `mod_entity_used` answered, and the damage the last `mod_entity_damaged` applied.
     pub entity_used_result: Option<bool>,
+    pub entity_damage_result: Option<f32>,
     /// The living entities of the mod's own kinds (FORK-10) and the kinds its content declares.
     pub mod_entities: Vec<crate::ModEntity>,
     pub entity_kinds: Vec<crate::content::EntityKind>,
@@ -279,6 +280,7 @@ impl TestGame {
             hit_damage_result: None,
             release_result: None,
             entity_used_result: None,
+            entity_damage_result: None,
             mod_entities: Vec::new(),
             entity_kinds: Vec::new(),
             next_mod_entity: 1000,
@@ -1154,6 +1156,14 @@ pub struct EntityUseSet {
     sneaking: bool,
 }
 
+/// A blow on one of the mod's entities (FORK-10 e): the damage the weapon makes, before the mod's say.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntityDamageSet {
+    id: u32,
+    amount: f32,
+}
+
 /// A bow-like item let go: `item-released`, and when the mod lets the shot stand, `item-shot` with the arrows' ids.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1356,6 +1366,8 @@ pub struct Step {
     release_item: Option<ReleaseSet>,
     /// Server mods (FORK-10 d): the actor right-clicks one of the mod's entities.
     use_mod_entity: Option<EntityUseSet>,
+    /// Server mods (FORK-10 e): a blow on one of the mod's entities.
+    damage_mod_entity: Option<EntityDamageSet>,
     /// Server mods, capability `entities`: the mobs of the Overworld from now on.
     mobs: Option<Vec<MobSet>>,
     /// Server mods: a spawn ticket is answered after the ticks.
@@ -1418,6 +1430,8 @@ pub struct Expect {
     release_result: Option<bool>,
     /// Server mods (FORK-10 d): whether the mod took the step's `use-mod-entity` click.
     mod_entity_used: Option<bool>,
+    /// Server mods (FORK-10 e): the damage the mod let the step's `damage-mod-entity` apply.
+    mod_entity_damage: Option<f32>,
     /// Server mods, capability `player-items`: every request, as `"set-slot Name 3 stack"`
     /// (`-` for an empty slot), `"hurt Name type amount"` and `"effect Name id ticks level"`.
     player_items: Option<Vec<String>>,
@@ -1674,6 +1688,7 @@ impl Step {
             || self.hit_damage.is_some()
             || self.release_item.is_some()
             || self.use_mod_entity.is_some()
+            || self.damage_mod_entity.is_some()
             || self.hit_with.is_some()
             || self.press.is_some()
             || self.net.is_some()
@@ -1809,6 +1824,32 @@ impl Step {
             game.snapshot();
             let stack = parse_stack(&h.stack).ok_or("hit-damage: a stack is item*count")?;
             game.hit_damage_result = Some(game.mods.item_hit_damage(who, &stack, &h.kind, h.damage));
+        }
+        if let Some(d) = &self.damage_mod_entity {
+            game.snapshot();
+            let entity = game.mod_entities.iter().find(|e| e.id == d.id).cloned().ok_or("damage-mod-entity: no such entity")?;
+            let source = crate::DamageSource {
+                damage_type: "minecraft:player_attack".into(),
+                causing: None,
+                is_magic: false,
+                is_fire: false,
+                is_fall: false,
+                is_explosion: false,
+                tags: vec!["minecraft:is_player_attack".into()],
+            };
+            let applied = game.mods.mod_entity_damaged(&entity, &source, d.amount);
+            game.entity_damage_result = Some(applied);
+            let (health, dead) = crate::entity_state::after_damage(entity.health, applied);
+            if let Some(m) = game.mod_entities.iter_mut().find(|m| m.id == d.id) {
+                m.health = health;
+            }
+            if dead {
+                let mut last = entity;
+                last.health = 0.0;
+                game.mods.mod_entity_died(&last);
+                game.mod_entities.retain(|m| m.id != d.id);
+                game.entity_goals.remove(&d.id);
+            }
         }
         if let (Some(u), Some(who)) = (&self.use_mod_entity, &who) {
             game.snapshot();
@@ -2170,6 +2211,11 @@ impl Step {
         if let Some(want) = e.hit_damage_result {
             if game.hit_damage_result != Some(want) {
                 return Err(format!("hit-damage-result: expected {want}, got {:?}", game.hit_damage_result));
+            }
+        }
+        if let Some(want) = e.mod_entity_damage {
+            if game.entity_damage_result != Some(want) {
+                return Err(format!("mod-entity-damage: expected {want}, got {:?}", game.entity_damage_result));
             }
         }
         if let Some(want) = e.mod_entity_used {

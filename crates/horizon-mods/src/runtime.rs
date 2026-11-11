@@ -1567,6 +1567,39 @@ impl Mods {
         }
         false
     }
+    /// `entity` (of a mod's own kind) is about to take `amount` from `source`: what the mod that owns the kind makes of it, 0 up.
+    pub fn mod_entity_damaged(&mut self, entity: &ModEntity, source: &DamageSource, amount: f32) -> f32 {
+        let Some((owner, _)) = entity.kind.split_once(':') else { return amount };
+        for i in 0..self.entries.len() {
+            if !self.entries[i].run.as_ref().and_then(|r| r.hooks.server()).is_some_and(|r| r.mod_entities)
+                || self.entries[i].manifest.as_ref().is_none_or(|m| m.id != owner)
+            {
+                continue;
+            }
+            let answer = self.call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m.horizon_mods_server_events().call_mod_entity_damaged(&mut run.store, entity, source, amount),
+                Hooks::Client(..) => Ok(amount),
+            });
+            return answer.filter(|a| a.is_finite()).map_or(amount, |a| a.clamp(0.0, 1_000_000.0));
+        }
+        amount
+    }
+    /// `entity` of a mod's own kind died: the mod that owns the kind is told.
+    pub fn mod_entity_died(&mut self, entity: &ModEntity) {
+        let Some((owner, _)) = entity.kind.split_once(':') else { return };
+        for i in 0..self.entries.len() {
+            if !self.entries[i].run.as_ref().and_then(|r| r.hooks.server()).is_some_and(|r| r.mod_entities)
+                || self.entries[i].manifest.as_ref().is_none_or(|m| m.id != owner)
+            {
+                continue;
+            }
+            let _ = self.call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m.horizon_mods_server_events().call_mod_entity_died(&mut run.store, entity),
+                Hooks::Client(..) => Ok(()),
+            });
+            return;
+        }
+    }
     /// Each mod's own entities (`kind` of its namespace, at most [`MOD_ENTITIES_PER_CALL`]) tick: the updates, checked, of mods that
     /// asked for them.
     pub fn entities_tick(&mut self, tick: u64, entities: &[ModEntity]) -> Vec<ModEntityUpdate> {
@@ -1591,7 +1624,8 @@ impl Mods {
             });
             for u in updates.into_iter().flatten() {
                 let given = mine.iter().any(|e| e.dimension == u.dimension && e.id == u.id);
-                let finite = u.teleport.is_none_or(|t| t.0.is_finite() && t.1.is_finite() && t.2.is_finite());
+                let finite = u.teleport.is_none_or(|t| t.0.is_finite() && t.1.is_finite() && t.2.is_finite())
+                    && u.health.is_none_or(f32::is_finite);
                 if given
                     && finite
                     && u.data.as_ref().is_none_or(|d| d.len() <= BLOCK_ENTITY_BYTES)

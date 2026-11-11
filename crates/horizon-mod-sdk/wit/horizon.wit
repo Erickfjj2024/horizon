@@ -1523,6 +1523,8 @@ interface server-events {
         path-to: option<tuple<f64, f64, f64, f32>>,
         /// Stops walking.
         stop: bool,
+        /// Its health after the call (above 0, cut to the kind's maximum); none leaves it.
+        health: option<f32>,
         /// Takes it out of the world with no death and no drops.
         remove: bool,
     }
@@ -1582,6 +1584,14 @@ interface server-events {
     /// `height`, reached like an interaction entity, before the item in hand is used on it. Answer true to take the click (the arm swings,
     /// nothing else happens); false leaves it to the game, which does nothing with it. The first mod that owns the kind answers.
     mod-entity-used: func(player: player, entity: mod-entity, sneaking: bool) -> bool;
+    /// One of the mod's own entities is about to take `amount` damage from `source` (FORK-10 e; today a player's blow on its box,
+    /// `minecraft:player_attack`, the damage the player's weapon makes before armour, which a mod entity has none of). Returns the damage
+    /// to apply: the same to leave it, less to reduce it, 0 to cancel the blow. The first mod that owns the kind answers; a mod that does
+    /// not implement it takes the damage as it is. At 0 health the entity dies (`mod-entity-died`).
+    mod-entity-damaged: func(entity: mod-entity, source: damage-source, amount: f32) -> f32;
+    /// An entity of the mod's own kind died of damage (its health reached 0): last look at it, as it was. The game removes it right
+    /// after; its drops, if it has any, are the mod's to spawn.
+    mod-entity-died: func(entity: mod-entity);
     /// A player pressed button `id` of the menu of the block entity at `pos`
     /// (a `button` widget of the menu type's screen), with the entity as it
     /// is. Returns what to change in it, if anything.

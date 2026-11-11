@@ -2104,6 +2104,41 @@ mod run {
             took
         }
 
+        /// The acting player attacked entity `entity`: when it is the box of one of a mod's own entities (FORK-10 e), the blow is the
+        /// player's weapon damage as `melee_damage` works it out, the mod may change it (`mod-entity-damaged`), the entity loses that much
+        /// health and dies at 0 (`mod-entity-died`, then removed). True when the blow was for a mod entity (so the game goes no further).
+        pub(in crate::game) fn mod_entity_attacked(&mut self, entity: u32) -> bool {
+            if !self.mods.server || !self.mods.mods.hears_mod_entities() {
+                return false;
+            }
+            let Some(view) = self.mod_entity_of_hitbox(entity) else {
+                return false;
+            };
+            let (amount, ..) = self.melee_damage(&view.kind, true);
+            self.reset_attack_strength();
+            let source = horizon_mods::DamageSource {
+                damage_type: "minecraft:player_attack".into(),
+                causing: None,
+                is_magic: false,
+                is_fire: false,
+                is_fall: false,
+                is_explosion: false,
+                tags: vec!["minecraft:is_player_attack".into()],
+            };
+            self.lend_world();
+            let applied = self.mods.mods.mod_entity_damaged(&view, &source, amount);
+            self.return_world();
+            let dead = self.damage_mod_entity(view.id, applied);
+            if dead {
+                let mut last = view.clone();
+                last.health = 0.0;
+                self.mods.mods.mod_entity_died(&last);
+                self.native_remove_mod_entity(&view.dimension, view.id);
+            }
+            self.apply_mod_block_writes();
+            true
+        }
+
         /// The acting player hit entity `entity` of `kind` holding `stack`.
         pub(in crate::game) fn mod_item_hit(
             &mut self,

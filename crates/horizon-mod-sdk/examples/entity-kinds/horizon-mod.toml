@@ -5,5 +5,5 @@ description = "Test mod for mod-defined living entities (FORK-10): robits:robit 
 authors = ["Rust port"]
 api = "0.3"
 side = "server"
-capabilities = ["registries", "players", "entities", "net"]
+capabilities = ["registries", "players", "world", "entities", "net"]
 experimental = ["entities", "net"]

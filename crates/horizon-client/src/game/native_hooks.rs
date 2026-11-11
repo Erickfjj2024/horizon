@@ -2347,6 +2347,11 @@ impl Game<'_> {
         pos: [f64; 3],
         canceled: &mut bool,
     ) {
+        // A server mod's own entity: its box is an `interaction` the game keeps for it (FORK-10 e).
+        #[cfg(feature = "mods")]
+        if kind == "minecraft:interaction" && entity >= 0 && self.mod_entity_attacked(entity as u32) {
+            *canceled = true;
+        }
         let _ = (entity, kind, pos, canceled);
     }
     /// A message from `player`'s client on `channel` (`mod_id:name`), within

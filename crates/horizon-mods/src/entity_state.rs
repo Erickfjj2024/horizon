@@ -202,6 +202,12 @@ pub fn walk(pos: &mut [f64; 3], yaw: &mut f32, goal: [f64; 3], step: f64, height
     if go >= dist { Walk::Arrived } else { Walk::Moving }
 }
 
+/// What a hit of `amount` after the mod's say leaves: the health, and whether the entity dies (health at or under 0).
+pub fn after_damage(health: f32, amount: f32) -> (f32, bool) {
+    let left = health - amount.max(0.0);
+    (left.max(0.0), amount > 0.0 && left <= 0.0)
+}
+
 /// The compound (SNBT) of the `interaction` entity that is the box of an entity of `kind`: the kind's size, answering clicks (so the arm
 /// swings and the click goes to the server), with the carriers' tag.
 pub fn hitbox_snbt(kind: &EntityKind) -> String {
@@ -246,6 +252,9 @@ pub fn apply(e: &mut ModEntityState, kind: &EntityKind, u: &ModEntityUpdate) -> 
     if u.stop {
         e.goal = None;
     }
+    if let Some(h) = u.health.filter(|h| h.is_finite() && *h > 0.0) {
+        e.health = h.min(kind.max_health);
+    }
     u.remove
 }
 
@@ -283,6 +292,7 @@ mod tests {
             teleport: None,
             path_to: None,
             stop: false,
+            health: None,
             remove: false,
         }
     }
@@ -355,6 +365,26 @@ mod tests {
         bad.path_to = Some((f64::NAN, 0.0, 0.0, 1.0));
         apply(&mut e, &k, &bad);
         assert_eq!(e.goal, None);
+    }
+
+    #[test]
+    fn damage_takes_health_and_death_is_at_zero_and_a_cancelled_blow_does_nothing() {
+        assert_eq!(after_damage(1.0, 0.25), (0.75, false));
+        assert_eq!(after_damage(1.0, 1.0), (0.0, true));
+        assert_eq!(after_damage(1.0, 4.0), (0.0, true));
+        assert_eq!(after_damage(1.0, 0.0), (1.0, false));
+        assert_eq!(after_damage(1.0, -3.0), (1.0, false));
+        // A health the mod sets stays within the kind's maximum, and 0 or less is ignored.
+        let k = kind();
+        let mut e = ModEntityState::new(1, "minecraft:overworld", &k, [0.0; 3], vec![]);
+        e.health = 0.4;
+        let mut u = update(1);
+        u.health = Some(5.0);
+        apply(&mut e, &k, &u);
+        assert_eq!(e.health, 1.0);
+        u.health = Some(0.0);
+        apply(&mut e, &k, &u);
+        assert_eq!(e.health, 1.0);
     }
 
     #[test]

@@ -29,6 +29,14 @@ ticks = 1
 expect.mod-entities = ["1001 robits:robit 4.500 70.000 4.500 energy=30 data=[3] skin=red name=Bolt"]
 
 [[step]]
-# A wall of the script's own blocks in front of a new goal is not part of this mod; the sixth tick removes the robit.
-ticks = 3
+# FORK-10 e: it is red now, so a blow of 0.5 hurts for 0.25 (health 1 to 0.75), and the robit is still there.
+damage-mod-entity = { id = 1001, amount = 0.5 }
+expect.mod-entity-damage = 0.25
+expect.mod-entities = ["1001 robits:robit 4.500 70.000 4.500 energy=30 data=[3] skin=red name=Bolt"]
+
+[[step]]
+# A blow of 4 hurts for 2: more than the health left, so it dies, the mod hears of it (its words go to the menu text under it) and it is gone.
+damage-mod-entity = { id = 1001, amount = 4.0 }
+expect.mod-entity-damage = 2.0
 expect.mod-entities = []
+expect.menu-text = ["minecraft:overworld 4 69 4 died:1001"]

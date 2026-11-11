@@ -189,6 +189,16 @@ impl Game<'_> {
         }
     }
 
+    /// Takes `amount` of health from the mod entity `id`: whether it died of it.
+    pub(super) fn damage_mod_entity(&mut self, id: u32, amount: f32) -> bool {
+        let Some(e) = self.mod_entities.list.iter_mut().find(|e| e.id == id) else {
+            return false;
+        };
+        let (health, dead) = horizon_mods::entity_state::after_damage(e.health, amount);
+        e.health = health;
+        dead
+    }
+
     /// The entities of the level in place, as the mods see them.
     #[cfg(feature = "mods")]
     pub(super) fn mod_entities_view(&self) -> Vec<horizon_mods::ModEntity> {
