@@ -1180,6 +1180,20 @@ interface entities {
     kill-mob: func(dimension: string, id: u32) -> result<_, string>;
     /// Takes a mob out of the world with no death and no loot.
     remove-mob: func(dimension: string, id: u32) -> result<_, string>;
+    /// What a blow of `damage-entities-in-box` did to one entity.
+    record damage-result {
+        id: u32,
+        /// The damage it takes (the blow's, as asked; 0 when blocked or immune).
+        applied: f32,
+        /// Whether a shield or an immunity kept it off (always false until shields and immunity are in).
+        blocked: bool,
+    }
+    /// Hurts every living mob whose feet are in the box (`min` to `max`, at most 64 blocks across) of `dimension` (the level in place)
+    /// for `amount` of damage and sets it on fire for `amount` ticks unless it does not burn (Mekanism's lasers,
+    /// `TileEntityBasicLaser`: `mekanism:laser` damage that also ignites). `damage-type` names the damage; a mob takes it as
+    /// generic damage (armour counts, no knockback source), whatever the type. Returns each mob hit and the damage it takes, counted at
+    /// the call; the blows land after the call returns. Players, mod entities, shields and immunities are not in yet. API 44.
+    damage-entities-in-box: func(dimension: string, min: tuple<f64, f64, f64>, max: tuple<f64, f64, f64>, damage-type: string, amount: f32) -> list<damage-result>;
     /// The items lying in the box of `dimension` (the level in place; none for another) as of the start of the call: up to 256, the
     /// nearest to the box's centre first, whatever their pickup delay. The box is `min` to `max`, each at most 64 blocks across. API 37.
     items-in-box: func(dimension: string, min: tuple<f64, f64, f64>, max: tuple<f64, f64, f64>) -> list<dropped-item>;

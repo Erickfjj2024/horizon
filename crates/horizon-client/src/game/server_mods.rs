@@ -3023,6 +3023,7 @@ mod run {
                             self.native_set_display(&dimension, id, &d)
                         }
                         C::TakeDropped { id, count } => self.native_take_dropped(&dimension, id, count),
+                        C::Damage { ids, damage_type: _, amount } => self.native_damage_mobs(&dimension, &ids, amount),
                         C::SpawnModEntity { ticket, kind, pos, data } => {
                             let entity = self.native_spawn_mod_entity(&dimension, &kind, pos, data);
                             self.mods.spawn_answers.push((mod_id, ticket, entity));

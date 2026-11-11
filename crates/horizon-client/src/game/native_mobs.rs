@@ -172,6 +172,23 @@ impl Game<'_> {
         m.needs_sync = true;
         true
     }
+    /// A mod's `damage-entities-in-box`: each living mob of `ids` takes `amount` as generic damage and burns for `amount` ticks unless it
+    /// does not burn. False when none was there. API 44.
+    pub(super) fn native_damage_mobs(&mut self, dimension: &str, ids: &[u32], amount: f32) -> bool {
+        if !self.native_mob_level(dimension) {
+            return false;
+        }
+        let mut any = false;
+        for m in self.mobs.iter_mut().filter(|m| ids.contains(&m.id) && !m.removed && m.health > 0.0) {
+            m.damage(amount, horizon_client::mobs::Damage::of(horizon_client::mobs::DamageKind::Generic));
+            if !m.kind.flags.fire_immune {
+                m.fire_ticks = m.fire_ticks.max(amount as i32);
+            }
+            m.needs_sync = true;
+            any = true;
+        }
+        any
+    }
     /// Sets the mob `id`, or the projectile `id` in flight, on fire for `ticks` (`Entity.igniteForTicks`: a longer fire it has stays):
     /// false for none of them, another dimension or a mob that is immune. API 33.
     pub(super) fn native_set_fire(&mut self, dimension: &str, id: u32, ticks: u32) -> bool {

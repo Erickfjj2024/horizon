@@ -2437,6 +2437,7 @@ impl Step {
                         C::RemoveMob { id } => format!("remove-mob {id}"),
                         C::SetFire { id, ticks } => format!("fire {id} {ticks}"),
                         C::TakeDropped { id, count } => format!("take-dropped-item {id} {count}"),
+                        C::Damage { ids, damage_type, amount } => format!("damage {ids:?} {damage_type} {amount}"),
                         C::SpawnModEntity { ticket, kind, pos, data } => {
                             format!("spawn-mod-entity {kind} {} {} {} {} byte(s) #{ticket}", pos[0], pos[1], pos[2], data.len())
                         }

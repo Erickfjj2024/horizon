@@ -1,7 +1,7 @@
 //! Block Use (FORK-29): a mod that decides what a right click on one of its blocks does. Holding a block, the click
 //! passes (the block does not use itself; the held block is placed); sneaking with a hand held, or holding anything
 //! else, leaves it to the game; an empty hand and no sneaking is the block's own use, taken by the mod.
-use horizon_mod_sdk::server::{BlockPos, BlockUse, ItemStack, Player, Registration, ServerMod, menu_input, players, world};
+use horizon_mod_sdk::server::{BlockPos, BlockUse, ItemStack, Player, Registration, ServerMod, entities, menu_input, players, world};
 
 struct Gate;
 
@@ -80,6 +80,17 @@ impl ServerMod for Gate {
         if pos.y == 80 {
             let entry = |id: &str, label: &str| players::RadialEntry { id: id.into(), label: label.into(), icon: String::new() };
             let _ = players::open_radial_menu(&player.id, &[entry("off", "Off"), entry("vein", "Vein"), entry("extended", "Extended")], 1);
+        }
+        // API 44: the machine at y 81 fires a laser 5 blocks east of it: the mobs there take 4 damage; it says how many it hit.
+        if pos.y == 81 {
+            let hit = entities::damage_entities_in_box(
+                &player.dimension,
+                (f64::from(pos.x) + 1.0, f64::from(pos.y), f64::from(pos.z)),
+                (f64::from(pos.x) + 6.0, f64::from(pos.y) + 1.0, f64::from(pos.z) + 1.0),
+                "mekanism:laser",
+                4.0,
+            );
+            let _ = world::set_menu_text(&player.dimension, pos.x, pos.y, pos.z, &[format!("hit {}", hit.len())]);
         }
         // API 41: the machine at y 79 puts a line on the player's HUD: a redstone icon, a text and a bar half full.
         if pos.y == 79 {

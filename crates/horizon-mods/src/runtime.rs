@@ -244,6 +244,12 @@ pub enum EntityCommand {
         ticks: u32,
     },
     /// `entities.spawn-mod-entity` (FORK-10): a living entity of the mod's own kind.
+    /// `entities.damage-entities-in-box`: the mobs hit, the damage type and amount (also the fire ticks).
+    Damage {
+        ids: Vec<u32>,
+        damage_type: String,
+        amount: f32,
+    },
     /// `entities.take-dropped-item` (FORK-10 f).
     TakeDropped {
         id: u32,
@@ -3201,6 +3207,41 @@ impl entities::Host for State {
             .take(256)
             .map(|(id, stack, p)| entities::DroppedItem { id, stack, x: p[0], y: p[1], z: p[2] })
             .collect()
+    }
+    fn damage_entities_in_box(
+        &mut self,
+        dimension: String,
+        min: (f64, f64, f64),
+        max: (f64, f64, f64),
+        damage_type: String,
+        amount: f32,
+    ) -> Vec<entities::DamageResult> {
+        let (min, max) = ([min.0, min.1, min.2], [max.0, max.1, max.2]);
+        if min.iter().chain(&max).any(|v| !v.is_finite())
+            || (0..3).any(|i| max[i] - min[i] > 64.0)
+            || !amount.is_finite()
+            || amount <= 0.0
+            || damage_type.len() > 128
+            || self.snapshot.mobs_dimension != dimension
+        {
+            return Vec::new();
+        }
+        let ids: Vec<u32> = self
+            .snapshot
+            .mobs
+            .iter()
+            .filter(|m| m.health > 0.0 && (0..3).all(|i| m.pos[i] >= min[i] && m.pos[i] <= max[i]))
+            .map(|m| m.id)
+            .take(256)
+            .collect();
+        if ids.is_empty() {
+            return Vec::new();
+        }
+        let out = ids.iter().map(|id| entities::DamageResult { id: *id, applied: amount, blocked: false }).collect();
+        if self.entity_request(dimension, EntityCommand::Damage { ids, damage_type, amount: amount.min(1_000_000.0) }, &[]).is_err() {
+            return Vec::new();
+        }
+        out
     }
     fn take_dropped_item(&mut self, dimension: String, id: u32, count: u32) -> Result<(), String> {
         if count == 0 {

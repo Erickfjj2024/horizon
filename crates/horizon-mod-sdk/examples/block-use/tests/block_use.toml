@@ -132,3 +132,14 @@ expect.broken = ["3 with minecraft:diamond_pickaxe silk=false fortune=0"]
 # Another item, or vanilla's, is not the mod's to take: the game breaks the block.
 break-start = { pos = [5, 66, 5], state = "minecraft:stone", stack = "minecraft:diamond_pickaxe*1" }
 expect.break-start-result = false
+
+[[step]]
+# API 44: a laser east of the machine at y 81 hits the zombie in its box (not the one past it) for 4.
+mobs = [
+    { id = 7, kind = "minecraft:zombie", x = 4.5, y = 81.0, z = 1.5 },
+    { id = 8, kind = "minecraft:zombie", x = 20.5, y = 81.0, z = 1.5 },
+]
+use-block = { pos = [1, 81, 1] }
+ticks = 1
+expect.entity-commands = ["damage [7] mekanism:laser 4"]
+expect.menu-text = ["minecraft:overworld 1 81 1 hit 1"]
