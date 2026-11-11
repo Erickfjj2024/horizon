@@ -1511,6 +1511,8 @@ pub struct Expect {
     sounds: Option<Vec<String>>,
     /// Server mods (FORK-10): the mod's entities after the step, as `"id kind x y z energy=E data=[bytes] skin=S name=N"` (the coordinates with 3 decimals, name `-` for none).
     mod_entities: Option<Vec<String>>,
+    /// Server mods (FORK-10 d2): every `open-entity-menu`, as `"Name id"`.
+    entity_menu: Option<Vec<String>>,
     /// Server mods: every `open-radial-menu`, as `"Name: id=label,id=label current n"`.
     radial: Option<Vec<String>>,
     /// Server mods: every `set-hud-line`, as `"Name: id [icon] text fraction"`.
@@ -2540,6 +2542,17 @@ impl Step {
                 })
                 .collect();
             same("broken", want, &got)?;
+        }
+        if let Some(want) = &e.entity_menu {
+            let name = |id: &str| game.players.iter().find(|p| p.id == id).map_or(id.to_owned(), |p| p.name.clone());
+            let got: Vec<String> = out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::EntityMenu { player, id, .. } => Some(format!("{} {id}", name(player))),
+                    _ => None,
+                })
+                .collect();
+            same("entity-menu", want, &got)?;
         }
         if let Some(want) = &e.radial {
             let name = |id: &str| game.players.iter().find(|p| p.id == id).map_or(id.to_owned(), |p| p.name.clone());

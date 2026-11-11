@@ -1450,6 +1450,8 @@ impl Game<'_> {
                     .find(|b| b.id as i32 == id)
                     .map(|b| b.bounds())
             });
+        #[cfg(feature = "mods")]
+        let bounds = bounds.or_else(|| self.mod_entity_bounds(id));
         bounds.is_some_and(|b| guest_within_entity_range(g, &b, 4.0))
     }
 

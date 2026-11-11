@@ -283,6 +283,7 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
             Output::UnpackBlock { pos, .. } => format!("unpacked a block at {pos:?}"),
             Output::TellOverlay { text, .. } => format!("action bar: {text}"),
             Output::HudLine { id, text, .. } => format!("HUD line {id}: {text}"),
+            Output::EntityMenu { id, .. } => format!("opened the menu of entity {id}"),
             Output::Radial { entries, .. } => format!("radial menu of {} entries", entries.len()),
             Output::PlayerBody { change, .. } => format!("body: {change:?}"),
             Output::SetFood { food, saturation, .. } => format!("set food to {food} and saturation to {saturation}"),

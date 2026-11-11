@@ -689,6 +689,13 @@ interface players {
     /// back as a mod message on channel `<mod id>:radial` whose bytes are the entry's id (UTF-8): register `on_net` to hear it. False for a
     /// player who is not online or entries out of bounds. API 42.
     open-radial-menu: func(player: string, entries: list<radial-entry>, current: u32) -> bool;
+    /// Opens the container of one of the mod's own entities (FORK-10 d2, the Robit's inventory) for one player, as a chest of as many
+    /// rows of 9 as its `container_slots` fill (1 to 6; the slots past them stay out of the menu): the player moves items in and out as
+    /// in a chest, the entity's slots follow each tick (what the mod's `entities-tick` puts there shows in the menu, and what the
+    /// player puts there reaches the mod), and the menu closes when the player is more than 4 blocks from its box or the entity goes.
+    /// Titled with the entity's name, else the kind's (`entity.<ns>.<path>`). False for a player who is not online, an entity of another
+    /// mod, one with fewer than 9 slots, or one not in the level in place. API 43.
+    open-entity-menu: func(player: string, dimension: string, id: u32) -> bool;
     /// A system message to every player and the server's log, after the
     /// mod's name. Counts toward the same 8 per call.
     broadcast: func(text: string);

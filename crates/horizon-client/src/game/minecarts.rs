@@ -1641,6 +1641,10 @@ impl Game<'_> {
             c.items = items;
         } else if let Some(b) = self.boats.iter_mut().find(|b| b.id as i32 == key.2) {
             b.items = items;
+        } else {
+            // A mod entity's container (FORK-10 d2).
+            #[cfg(feature = "mods")]
+            self.store_mod_entity_menu(key);
         }
     }
     /// The open cart's kind when a cart container is shown.

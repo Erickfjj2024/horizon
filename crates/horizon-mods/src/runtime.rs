@@ -460,6 +460,8 @@ pub enum Output {
     UnpackBlock { name: String, dimension: String, box_pos: [i32; 3], pos: [i32; 3] },
     /// `world.break-blocks`: many blocks broken as a player holding a tool would.
     BreakBlocks { name: String, dimension: String, positions: Vec<[i32; 3]>, tool: String, silk_touch: bool, fortune: u32 },
+    /// `players.open-entity-menu`: the container of a mod entity, opened as a chest for a player.
+    EntityMenu { name: String, mod_id: String, player: String, dimension: String, id: u32 },
     /// `players.open-radial-menu`: a radial menu on one player's screen, whose choice comes back on `<mod id>:radial`.
     Radial { name: String, mod_id: String, player: String, entries: Vec<(String, String, String)>, current: u32 },
     /// `players.set-hud-line`: a line of the mod's HUD on one player's screen.
@@ -3566,6 +3568,13 @@ impl players::Host for State {
         }
         let entries = entries.into_iter().map(|e| (e.id, e.label, e.icon)).collect();
         self.out.push(Output::Radial { name: self.name.clone(), mod_id: self.id.clone(), player, entries, current });
+        true
+    }
+    fn open_entity_menu(&mut self, player: String, dimension: String, id: u32) -> bool {
+        if !self.snapshot.players.iter().any(|p| p.id == player) || self.out.iter().filter(|o| matches!(o, Output::EntityMenu { .. })).count() >= 8 {
+            return false;
+        }
+        self.out.push(Output::EntityMenu { name: self.name.clone(), mod_id: self.id.clone(), player, dimension, id });
         true
     }
     fn broadcast(&mut self, text: String) {

@@ -876,6 +876,7 @@ impl Game<'_> {
                 | Output::TellOverlay { .. }
                 | Output::HudLine { .. }
                 | Output::Radial { .. }
+                | Output::EntityMenu { .. }
                 | Output::PackBlock { .. }
                 | Output::UnpackBlock { .. }
                 | Output::PlayerBody { .. }

@@ -552,10 +552,22 @@ mod run {
             } else {
                 self.mods.mods.block_entities_tick(self.ticks, &entities)
             };
+            // An open menu's slots are what the entity holds now (the player may have moved items), before the mod sees it.
+            let menus: Vec<(i32, i32, i32)> = self
+                .world
+                .block_entities
+                .keys()
+                .filter(|k| k.0 == i32::MAX - 16 && k.1 == crate::game::minecarts::CART_KEY_Y)
+                .copied()
+                .collect();
+            for key in menus {
+                self.store_mod_entity_menu(key);
+            }
             let kept = if self.mods.mods.hears_mod_entities() { self.mod_entities_view() } else { Vec::new() };
             let kept = if kept.is_empty() { Vec::new() } else { self.mods.mods.entities_tick(self.ticks, &kept) };
             self.return_world();
             self.apply_mod_entity_ticks(kept);
+            self.mirror_mod_entity_menus();
             self.walk_mod_entities();
             self.sync_mod_entity_carriers();
             self.apply_mod_entity_updates(updates);
@@ -2185,6 +2197,110 @@ mod run {
             self.mods.mods.item_shot(&player, &stack, ids);
         }
 
+        /// The key the open menu of mod entity `id` keeps its slots under (a vehicle's placeholder kind, FORK-10 d2).
+        pub(in crate::game) fn mod_entity_menu_key(id: u32) -> (i32, i32, i32) {
+            (i32::MAX - 16, crate::game::minecarts::CART_KEY_Y, id as i32)
+        }
+
+        /// A mod's `open-entity-menu`: the entity's first rows of 9 slots open as a chest for the player, under a placeholder the menu edits.
+        pub(in crate::game) fn open_mod_entity_menu(&mut self, mod_id: &str, player: &str, dimension: &str, id: u32) -> bool {
+            if self.remote.is_some() || dimension != self.dim.id() {
+                return false;
+            }
+            let Some(e) = self.mod_entities.list.iter().find(|e| e.id == id && e.dimension == dimension).cloned() else {
+                return false;
+            };
+            if e.kind.split_once(':').map(|(ns, _)| ns) != Some(mod_id) {
+                return false;
+            }
+            let rows = (e.items.len() / 9).min(6);
+            if rows == 0 {
+                return false;
+            }
+            let uuid = u128::from_str_radix(&player.replace('-', ""), 16).unwrap_or(0);
+            let Some(conn) = self.native_conn(uuid) else {
+                return false;
+            };
+            let key = Self::mod_entity_menu_key(id);
+            let items: Vec<Option<horizon_client::items::ItemStack>> =
+                e.items.iter().take(rows * 9).map(|s| s.as_ref().and_then(|s| self.game_stack(s))).collect();
+            self.world.block_entities.insert(key, horizon_client_render::containers::BlockEntity::Chest(items.clone()));
+            let title = match &e.name {
+                Some(n) => horizon_protocol::text::literal(n),
+                None => horizon_protocol::text::translatable(&format!("entity.{}", e.kind.replace(':', ".")), &[]),
+            };
+            let Some(mut host) = self.lan.take() else {
+                return false;
+            };
+            self.guest_close_all(&mut host, conn);
+            host.hub.open_container(
+                conn,
+                &format!("minecraft:generic_9x{rows}"),
+                title,
+                key,
+                horizon_client::lan::menu::Slots::Block(key),
+                items,
+            );
+            self.lan = Some(host);
+            true
+        }
+
+        /// The open menu of a mod entity went (closed, or its entity is gone): what it holds goes back to the entity's first slots.
+        pub(in crate::game) fn store_mod_entity_menu(&mut self, key: (i32, i32, i32)) {
+            if key.0 != i32::MAX - 16 {
+                return;
+            }
+            let Some(horizon_client_render::containers::BlockEntity::Chest(items)) = self.world.block_entities.get(&key) else {
+                return;
+            };
+            let shown: Vec<Option<horizon_mods::ModItemStack>> = items.iter().map(|s| s.as_ref().map(Self::mod_stack)).collect();
+            if let Some(e) = self.mod_entities.list.iter_mut().find(|e| e.id as i32 == key.2) {
+                for (slot, s) in e.items.iter_mut().zip(shown) {
+                    *slot = s;
+                }
+            }
+        }
+
+        /// While a mod entity's menu is open, what the mod's tick put in the entity's slots shows in the menu.
+        fn mirror_mod_entity_menus(&mut self) {
+            let open: Vec<u32> = self
+                .world
+                .block_entities
+                .keys()
+                .filter(|k| k.0 == i32::MAX - 16 && k.1 == crate::game::minecarts::CART_KEY_Y)
+                .map(|k| k.2 as u32)
+                .collect();
+            for id in open {
+                let key = Self::mod_entity_menu_key(id);
+                let Some(e) = self.mod_entities.list.iter().find(|e| e.id == id) else {
+                    continue;
+                };
+                let items: Vec<Option<horizon_client::items::ItemStack>> =
+                    e.items.iter().map(|s| s.as_ref().and_then(|s| self.game_stack(s))).collect();
+                if let Some(horizon_client_render::containers::BlockEntity::Chest(open)) = self.world.block_entities.get_mut(&key) {
+                    let changed = open.iter().zip(&items).any(|(a, b)| a != b);
+                    if changed {
+                        for (to, from) in open.iter_mut().zip(items) {
+                            *to = from;
+                        }
+                        self.container_changed(key);
+                    }
+                }
+            }
+        }
+
+        /// The box of mod entity `id` (its kind's size at its place), for the reach of its menu.
+        pub(in crate::game) fn mod_entity_bounds(&self, id: i32) -> Option<horizon_core::geometry::Aabb> {
+            use horizon_core::geometry::{Aabb, Vec3};
+            let e = self.mod_entities.list.iter().find(|e| e.id as i32 == id)?;
+            let kind = crate::game::mod_entities::MOD_KINDS.get()?.get(&e.kind)?;
+            let half = f64::from(kind.width) / 2.0;
+            Some(Aabb::new(
+                Vec3::new(e.pos[0] - half, e.pos[1], e.pos[2] - half),
+                Vec3::new(e.pos[0] + half, e.pos[1] + f64::from(kind.height), e.pos[2] + half),
+            ))
+        }
+
         /// The acting player right-clicked entity `entity`: when it is the box of one of a mod's own entities (FORK-10 d), whether the
         /// mod that owns the kind takes the click.
         pub(in crate::game) fn mod_entity_click(&mut self, entity: u32) -> bool {
@@ -2463,6 +2579,11 @@ mod run {
                 Output::UnpackBlock { name, dimension, box_pos, pos } => {
                     if dimension != self.dim.id() || !self.native_unpack_block(box_pos, pos) {
                         log::debug!("Horizon: mod {name} could not unpack into {pos:?}");
+                    }
+                }
+                Output::EntityMenu { name, mod_id, player, dimension, id } => {
+                    if !self.open_mod_entity_menu(&mod_id, &player, &dimension, id) {
+                        log::debug!("Horizon: mod {name} could not open the menu of entity {id} for {player}");
                     }
                 }
                 Output::Radial { name, mod_id, player, entries, current } => {

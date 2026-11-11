@@ -8,6 +8,7 @@ expect.mod-entities = ["1001 robits:robit 3.500 70.000 4.500 energy=0 data=[0] s
 # FORK-10 d: a right click on the robit is taken by the mod; sneaking, it is left to the game.
 use-mod-entity = { id = 1001 }
 expect.mod-entity-used = true
+expect.entity-menu = ["Alex 1001"]
 
 [[step]]
 use-mod-entity = { id = 1001, sneaking = true }
