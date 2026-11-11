@@ -26,6 +26,8 @@ pub struct ModEntityState {
     pub carrier: Option<u32>,
     /// The skin and the name that carrier was made with, to make it again when either changes; not saved.
     pub shown: Option<(String, Option<String>)>,
+    /// Where it walks to (the point and the speed multiplier), until it arrives, is blocked or is told to stop; not saved.
+    pub goal: Option<([f64; 3], f32)>,
 }
 
 /// The entities and whether the save was read.
@@ -54,6 +56,7 @@ impl ModEntityState {
             name: None,
             carrier: None,
             shown: None,
+            goal: None,
         }
     }
 }
@@ -107,6 +110,7 @@ pub fn decode(text: &str) -> Vec<ModEntityState> {
                 name: r["name"].as_str().map(str::to_owned),
                 carrier: None,
                 shown: None,
+                goal: None,
                 items: r["items"]
                     .as_array()?
                     .iter()
@@ -144,6 +148,56 @@ pub fn carrier_snbt(kind: &EntityKind, skin: &str, name: Option<&str>) -> String
     )
 }
 
+/// Blocks a tick a mob of movement speed 1 walks (a player's 0.1 is 4.317 blocks a second): `speed * WALK_FACTOR` is the step.
+pub const WALK_FACTOR: f64 = 2.158;
+
+/// What a step toward a goal came to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Walk {
+    /// Moved and is not there yet.
+    Moving,
+    /// Is at the goal (its x and z), so it stops.
+    Arrived,
+    /// A wall it cannot climb is in the way: it stays and stops.
+    Blocked,
+}
+
+/// One tick of walking from `pos` toward `goal` (x and z; the ground decides y) by `step` blocks over ground: it climbs one block, drops up
+/// to 3, and needs `height` blocks of room above its feet. `solid(x, y, z)` says whether a block cell stops it. It turns toward where
+/// it goes (`yaw` in degrees, 0 facing south). Straight steering, not a path search.
+pub fn walk(pos: &mut [f64; 3], yaw: &mut f32, goal: [f64; 3], step: f64, height: f64, solid: &dyn Fn(i32, i32, i32) -> bool) -> Walk {
+    let (dx, dz) = (goal[0] - pos[0], goal[2] - pos[2]);
+    let dist = dx.hypot(dz);
+    if dist < 0.1 {
+        pos[0] = goal[0];
+        pos[2] = goal[2];
+        return Walk::Arrived;
+    }
+    let go = step.min(dist);
+    let (nx, nz) = (pos[0] + dx / dist * go, pos[2] + dz / dist * go);
+    let (cx, cz) = (nx.floor() as i32, nz.floor() as i32);
+    let rooms = height.ceil().max(1.0) as i32;
+    let free = |y: i32| (0..rooms).all(|k| !solid(cx, y + k, cz));
+    let feet = pos[1].floor() as i32;
+    let new_y = if free(feet) {
+        // Open ahead: drops while there is no floor, up to 3 blocks (else it stays on its level and falls back by the game's own gravity).
+        let mut y = feet;
+        while y > feet - 3 && !solid(cx, y - 1, cz) {
+            y -= 1;
+        }
+        if !solid(cx, y - 1, cz) { feet } else { y }
+    } else if free(feet + 1) {
+        feet + 1
+    } else {
+        return Walk::Blocked;
+    };
+    pos[0] = nx;
+    pos[2] = nz;
+    pos[1] = f64::from(new_y);
+    *yaw = (-dx.atan2(dz).to_degrees()) as f32;
+    if go >= dist { Walk::Arrived } else { Walk::Moving }
+}
+
 /// The tag every carrier has, for the game to tell them from other displays.
 pub const CARRIER_TAG: &str = "horizon_mod_entity";
 
@@ -171,6 +225,16 @@ pub fn apply(e: &mut ModEntityState, kind: &EntityKind, u: &ModEntityUpdate) -> 
     }
     if let Some((x, y, z)) = u.teleport {
         e.pos = [x, y, z];
+        e.goal = None;
+    }
+    if let Some((x, y, z, speed)) = u.path_to
+        && [x, y, z].iter().all(|v| v.is_finite())
+        && speed.is_finite()
+    {
+        e.goal = Some(([x, y, z], speed.clamp(0.0, 8.0)));
+    }
+    if u.stop {
+        e.goal = None;
     }
     u.remove
 }
@@ -207,6 +271,8 @@ mod tests {
             skin: None,
             name: None,
             teleport: None,
+            path_to: None,
+            stop: false,
             remove: false,
         }
     }
@@ -224,6 +290,61 @@ mod tests {
             carrier_snbt(&k, "red", Some("Bo'lt")),
             r#"{item:{id:"minecraft:stick",count:1,components:{"minecraft:item_model":"robits:robit_red"}},teleport_duration:2,Tags:["horizon_mod_entity"],CustomName:'{"text":"Bo\'lt"}',CustomNameVisible:1b}"#
         );
+    }
+
+    #[test]
+    fn walking_goes_over_flat_ground_climbs_a_block_drops_and_stops_at_a_wall() {
+        // A floor at y 63: cells at y 63 and below are solid; y 64 and above is air, but for the scene's own blocks.
+        let floor = |_: i32, y: i32, _: i32| y <= 63;
+        let (mut pos, mut yaw) = ([0.5, 64.0, 0.5], 0.0f32);
+        // 10 blocks east at 0.5 a tick: arrives on the 20th step, facing east (-90).
+        let mut steps = 0;
+        while walk(&mut pos, &mut yaw, [10.5, 64.0, 0.5], 0.5, 0.65, &floor) == Walk::Moving {
+            steps += 1;
+        }
+        assert_eq!((steps, pos), (19, [10.5, 64.0, 0.5]));
+        assert_eq!(yaw, -90.0);
+        // A step up of one block: the cell at x 2 is raised to y 64.
+        let step_up = |x: i32, y: i32, _: i32| y <= 63 || (x == 2 && y == 64);
+        let (mut pos, mut yaw) = ([1.9, 64.0, 0.5], 0.0f32);
+        walk(&mut pos, &mut yaw, [5.5, 64.0, 0.5], 0.5, 0.65, &step_up);
+        assert_eq!(pos[1], 65.0, "it climbs onto the block");
+        // A wall two blocks high stops it, and so does a ceiling that leaves too little room for its height.
+        let wall = |x: i32, y: i32, _: i32| y <= 63 || (x == 2 && (64..=65).contains(&y));
+        let (mut pos, mut yaw) = ([1.9, 64.0, 0.5], 0.0f32);
+        assert_eq!(walk(&mut pos, &mut yaw, [5.5, 64.0, 0.5], 0.5, 0.65, &wall), Walk::Blocked);
+        assert_eq!(pos, [1.9, 64.0, 0.5]);
+        let low = |x: i32, y: i32, _: i32| y <= 63 || (x == 2 && y == 65);
+        assert_eq!(walk(&mut [1.9, 64.0, 0.5], &mut yaw, [5.5, 64.0, 0.5], 0.5, 1.8, &low), Walk::Blocked);
+        // A drop of one block: the floor ends at x 2 (the cell below is air down to 62).
+        let pit = |x: i32, y: i32, _: i32| y <= 62 || (x != 2 && y == 63);
+        let (mut pos, mut yaw) = ([1.9, 64.0, 0.5], 0.0f32);
+        walk(&mut pos, &mut yaw, [5.5, 64.0, 0.5], 0.5, 0.65, &pit);
+        assert_eq!(pos[1], 63.0, "it drops into the pit");
+    }
+
+    #[test]
+    fn a_path_to_sets_the_goal_a_teleport_or_a_stop_clears_it() {
+        let k = kind();
+        let mut e = ModEntityState::new(1, "minecraft:overworld", &k, [0.0; 3], vec![]);
+        let mut u = update(1);
+        u.path_to = Some((5.0, 64.0, 5.0, 1.5));
+        apply(&mut e, &k, &u);
+        assert_eq!(e.goal, Some(([5.0, 64.0, 5.0], 1.5)));
+        let mut stop = update(1);
+        stop.stop = true;
+        apply(&mut e, &k, &stop);
+        assert_eq!(e.goal, None);
+        apply(&mut e, &k, &u);
+        let mut tp = update(1);
+        tp.teleport = Some((9.0, 70.0, 9.0));
+        apply(&mut e, &k, &tp);
+        assert_eq!((e.goal, e.pos), (None, [9.0, 70.0, 9.0]));
+        // A goal that is not a number is ignored.
+        let mut bad = update(1);
+        bad.path_to = Some((f64::NAN, 0.0, 0.0, 1.0));
+        apply(&mut e, &k, &bad);
+        assert_eq!(e.goal, None);
     }
 
     #[test]

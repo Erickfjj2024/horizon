@@ -1284,6 +1284,8 @@ What the mod makes of an entity in a tick; a none leaves that as it is.
 | `skin` | `option<string>` | A skin id of the kind; an unknown one is ignored. |
 | `name` | `option<option<string>>` | `some(none)` takes the name away. |
 | `teleport` | `option<tuple<f64, f64, f64>>` | Moves it at once (as `/tp` does). |
+| `path-to` | `option<tuple<f64, f64, f64, f32>>` | Sets where it walks to (FORK-10 c): the point `x, y, z` and a speed multiplier of the kind's `speed` (1 is its walk). It walks there each tick over the ground, climbing a block and dropping up to 3, and stops when it arrives or a wall is in its way; `some` of a new goal replaces the old, and a teleport clears it. The path is a straight line, not a search. |
+| `stop` | `bool` | Stops walking. |
 | `remove` | `bool` | Takes it out of the world with no death and no drops. |
 
 ### record `block-entity-update`

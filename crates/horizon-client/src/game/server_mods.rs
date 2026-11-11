@@ -537,6 +537,7 @@ mod run {
             let kept = if kept.is_empty() { Vec::new() } else { self.mods.mods.entities_tick(self.ticks, &kept) };
             self.return_world();
             self.apply_mod_entity_ticks(kept);
+            self.walk_mod_entities();
             self.sync_mod_entity_carriers();
             self.apply_mod_entity_updates(updates);
             self.apply_mod_entity_updates(menu_updates);

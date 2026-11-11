@@ -2,24 +2,24 @@
 join = "Alex"
 # The message spawns a robit of the mod's own kind (declared in content): it exists as the step ends, untouched.
 net = { channel = "robits:spawn", data = [3, 0, 0, 0, 70, 0, 0, 0, 4, 0, 0, 0] }
-expect.mod-entities = ["1001 robits:robit 3.5 70 4.5 energy=0 data=[0] skin=default name=-"]
+expect.mod-entities = ["1001 robits:robit 3.500 70.000 4.500 energy=0 data=[0] skin=default name=-"]
 
 [[step]]
-# One tick: the robit exists, the mod counted once and gave it energy; its skin is still the first.
+# One tick: the mod counted once, gave it energy and a goal a block east; it walked a first step (0.25 speed * 2.158 = 0.5395 a tick).
 ticks = 1
-expect.mod-entities = ["1001 robits:robit 3.5 70 4.5 energy=10 data=[1] skin=default name=-"]
+expect.mod-entities = ["1001 robits:robit 4.040 70.000 4.500 energy=10 data=[1] skin=default name=-"]
 
 [[step]]
-# The second tick takes the red skin.
+# The second tick takes the red skin and arrives at the goal, which ends the walk.
 ticks = 1
-expect.mod-entities = ["1001 robits:robit 3.5 70 4.5 energy=20 data=[2] skin=red name=-"]
+expect.mod-entities = ["1001 robits:robit 4.500 70.000 4.500 energy=20 data=[2] skin=red name=-"]
 
 [[step]]
-# The third names it Bolt and moves it a block up.
+# The third names it Bolt; it stays where it arrived.
 ticks = 1
-expect.mod-entities = ["1001 robits:robit 3.5 71 4.5 energy=30 data=[3] skin=red name=Bolt"]
+expect.mod-entities = ["1001 robits:robit 4.500 70.000 4.500 energy=30 data=[3] skin=red name=Bolt"]
 
 [[step]]
-# The fifth removes it, and nothing is left.
-ticks = 2
+# A wall of the script's own blocks in front of a new goal is not part of this mod; the sixth tick removes the robit.
+ticks = 3
 expect.mod-entities = []

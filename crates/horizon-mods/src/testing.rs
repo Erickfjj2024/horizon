@@ -73,6 +73,7 @@ pub struct TestGame {
     pub mod_entities: Vec<crate::ModEntity>,
     pub entity_kinds: Vec<crate::content::EntityKind>,
     next_mod_entity: u32,
+    entity_goals: std::collections::BTreeMap<u32, ([f64; 3], f32)>,
     /// What the last `can_place` answered.
     pub can_place_result: Option<bool>,
     /// The blocks packed into boxes (`world.pack-block`), by the box's position.
@@ -278,6 +279,7 @@ impl TestGame {
             mod_entities: Vec::new(),
             entity_kinds: Vec::new(),
             next_mod_entity: 1000,
+            entity_goals: Default::default(),
             can_place_result: None,
             packed: Default::default(),
             crafts: Vec::new(),
@@ -355,7 +357,10 @@ impl TestGame {
     }
     /// `entities-tick` with the mod's entities, and what it answers applied (as the game does: data, slots, energy, skin, name, a teleport, a removal).
     fn tick_mod_entities(&mut self) {
-        if self.mod_entities.is_empty() || !self.mods.hears_mod_entities() {
+        if self.mod_entities.is_empty() {
+            return;
+        }
+        if !self.mods.hears_mod_entities() {
             return;
         }
         let list = self.mod_entities.clone();
@@ -393,6 +398,27 @@ impl TestGame {
             }
             if let Some((x, y, z)) = u.teleport {
                 (e.x, e.y, e.z) = (x, y, z);
+                self.entity_goals.remove(&u.id);
+            }
+            if let Some((x, y, z, speed)) = u.path_to {
+                self.entity_goals.insert(u.id, ([x, y, z], speed));
+            }
+            if u.stop {
+                self.entity_goals.remove(&u.id);
+            }
+        }
+        // Walking, over the script's blocks (a cell with a block that is not air stops it), as the game does.
+        let world = self.world.clone();
+        let solid = |x: i32, y: i32, z: i32| world.get(&(x, y, z)).is_some_and(|s| !s.starts_with("minecraft:air"));
+        for e in &mut self.mod_entities {
+            let Some((goal, mult)) = self.entity_goals.get(&e.id).copied() else { continue };
+            let Some(kind) = self.entity_kinds.iter().find(|k| k.id == e.kind) else { continue };
+            let (mut pos, mut yaw) = ([e.x, e.y, e.z], e.yaw);
+            let step = f64::from(kind.speed) * f64::from(mult) * crate::entity_state::WALK_FACTOR;
+            let r = crate::entity_state::walk(&mut pos, &mut yaw, goal, step, f64::from(kind.height), &solid);
+            (e.x, e.y, e.z, e.yaw) = (pos[0], pos[1], pos[2], yaw);
+            if r != crate::entity_state::Walk::Moving {
+                self.entity_goals.remove(&e.id);
             }
         }
     }
@@ -1405,7 +1431,7 @@ pub struct Expect {
     teleports: Option<Vec<String>>,
     xp_taken: Option<Vec<String>>,
     sounds: Option<Vec<String>>,
-    /// Server mods (FORK-10): the mod's entities after the step, as `"id kind x y z energy=E data=[bytes] skin=S name=N"` (name `-` for none).
+    /// Server mods (FORK-10): the mod's entities after the step, as `"id kind x y z energy=E data=[bytes] skin=S name=N"` (the coordinates with 3 decimals, name `-` for none).
     mod_entities: Option<Vec<String>>,
     /// Server mods (FORK-20): every `set-menu-text`, as `"dimension x y z text|text"`.
     menu_text: Option<Vec<String>>,
@@ -1877,7 +1903,10 @@ impl Step {
                     game.snapshot();
                     game.mods.entity_spawned(&game.mod_id(), *ticket, Some(id));
                 }
-                crate::EntityCommand::RemoveEntity { id } => game.mod_entities.retain(|e| e.id != *id),
+                crate::EntityCommand::RemoveEntity { id } => {
+                    game.mod_entities.retain(|e| e.id != *id);
+                    game.entity_goals.remove(id);
+                }
                 _ => {}
             }
         }
@@ -2327,7 +2356,7 @@ impl Step {
                 .iter()
                 .map(|m| {
                     format!(
-                        "{} {} {} {} {} energy={} data={:?} skin={} name={}",
+                        "{} {} {:.3} {:.3} {:.3} energy={} data={:?} skin={} name={}",
                         m.id, m.kind, m.x, m.y, m.z, m.energy, m.data, m.skin, m.name.as_deref().unwrap_or("-")
                     )
                 })

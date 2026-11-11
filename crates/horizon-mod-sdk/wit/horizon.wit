@@ -1517,6 +1517,12 @@ interface server-events {
         name: option<option<string>>,
         /// Moves it at once (as `/tp` does).
         teleport: option<tuple<f64, f64, f64>>,
+        /// Sets where it walks to (FORK-10 c): the point `x, y, z` and a speed multiplier of the kind's `speed` (1 is its walk). It walks
+        /// there each tick over the ground, climbing a block and dropping up to 3, and stops when it arrives or a wall is in its way;
+        /// `some` of a new goal replaces the old, and a teleport clears it. The path is a straight line, not a search.
+        path-to: option<tuple<f64, f64, f64, f32>>,
+        /// Stops walking.
+        stop: bool,
         /// Takes it out of the world with no death and no drops.
         remove: bool,
     }

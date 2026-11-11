@@ -4,7 +4,7 @@
 use super::Game;
 use horizon_mods::{
     content::EntityKind,
-    entity_state::{CARRIER_TAG, FILE, ModEntityState, apply, carrier_snbt, decode, encode},
+    entity_state::{CARRIER_TAG, FILE, ModEntityState, WALK_FACTOR, Walk, apply, carrier_snbt, decode, encode, walk},
 };
 use std::{collections::HashMap, sync::OnceLock};
 
@@ -82,6 +82,40 @@ impl Game<'_> {
         let before = self.mod_entities.list.len();
         self.mod_entities.list.retain(|e| !(e.id == id && e.dimension == dimension));
         self.mod_entities.list.len() != before
+    }
+
+    /// One tick of walking for the entities of the level in place that have a goal (FORK-10 c): `walk` over the loaded blocks, at the
+    /// kind's `speed` times the goal's multiplier; arriving or being blocked ends the goal.
+    pub(super) fn walk_mod_entities(&mut self) {
+        let Some(kinds) = MOD_KINDS.get() else {
+            return;
+        };
+        let dim = self.dim.id().to_owned();
+        for i in 0..self.mod_entities.list.len() {
+            let e = &self.mod_entities.list[i];
+            let (Some((goal, mult)), true) = (e.goal, e.dimension == dim) else {
+                continue;
+            };
+            let Some(kind) = kinds.get(&e.kind) else {
+                continue;
+            };
+            let (mut pos, mut yaw) = (e.pos, e.yaw);
+            // A chunk that is not loaded stops it where it is (its blocks read as air).
+            if !self.world.chunks.contains_key(&((pos[0].floor() as i32) >> 4, (pos[2].floor() as i32) >> 4)) {
+                continue;
+            }
+            let facts = self.res.facts();
+            let world = &self.world;
+            let solid = |x: i32, y: i32, z: i32| facts.get(world.block(x, y, z)).full_collision;
+            let step = f64::from(kind.speed) * f64::from(mult) * WALK_FACTOR;
+            let result = walk(&mut pos, &mut yaw, goal, step, f64::from(kind.height), &solid);
+            let e = &mut self.mod_entities.list[i];
+            e.pos = pos;
+            e.yaw = yaw;
+            if result != Walk::Moving {
+                e.goal = None;
+            }
+        }
     }
 
     /// Makes each entity of the level in place stand for itself on the clients (FORK-10 b): an `item_display` of the skin's model (see
