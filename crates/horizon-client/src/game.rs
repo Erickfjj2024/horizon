@@ -203,6 +203,8 @@ mod native_explosions;
 mod native_falling;
 mod block_renderers;
 mod menu_screens;
+#[cfg(feature = "mods")]
+mod mod_entities;
 mod native_hooks;
 #[cfg(target_os = "android")]
 use android_bundled::{
@@ -2835,6 +2837,8 @@ struct Game<'a> {
     score: scoreboard::ScoreState,
     fns: functions::FnState,
     bosses: bossbars::BossState,
+    #[cfg(feature = "mods")]
+    mod_entities: horizon_mods::entity_state::ModEntities,
     /// `Hud.bossOverlay`: the bars this window is showing.
     boss_overlay: horizon_client::boss_overlay::BossOverlay,
     exec: commands::execute::ExecState,
@@ -11373,6 +11377,8 @@ impl Game<'_> {
         self.tick_stats();
         self.tick_scoreboard();
         self.load_bossbars();
+        #[cfg(feature = "mods")]
+        self.load_mod_entities();
         self.tick_worldborder();
         self.tick_subtitles();
         self.spawn_phantoms();
@@ -13187,6 +13193,7 @@ impl Game<'_> {
             return;
         };
         // A mod's bow-like item may cancel the shot (`item-released`): nothing is shot or used.
+        #[cfg(feature = "mods")]
         if let Some(held) = self.held().cloned()
             && self.res.items().get(&held.item).is_some_and(|i| i.behaves_as.is_some())
             && !self.mod_item_released(&held, ticks)
@@ -13245,6 +13252,7 @@ impl Game<'_> {
         );
         self.add_projectile(arrow);
         // The arrow's id is the last one added; a mod's bow-like item hears it (`item-shot`).
+        #[cfg(feature = "mods")]
         if let Some(held) = self.held().cloned()
             && self.res.items().get(&held.item).is_some_and(|i| i.behaves_as.is_some())
             && let Some(id) = self.creatures.projectiles.last().map(|p| p.id)
@@ -14542,6 +14550,8 @@ impl Game<'_> {
         self.save_advancements();
         self.save_scoreboard();
         self.save_bossbars();
+        #[cfg(feature = "mods")]
+        self.save_mod_entities();
         self.save_schedule();
         self.save_warden_tracker();
         self.sync_level();
@@ -18490,6 +18500,8 @@ impl<'a> Game<'a> {
             score: Default::default(),
             fns: Default::default(),
             bosses: Default::default(),
+            #[cfg(feature = "mods")]
+            mod_entities: Default::default(),
             boss_overlay: Default::default(),
             exec: Default::default(),
             rand_sequences: Default::default(),

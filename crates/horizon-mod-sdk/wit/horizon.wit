@@ -1128,6 +1128,10 @@ interface entities {
     kill-mob: func(dimension: string, id: u32) -> result<_, string>;
     /// Takes a mob out of the world with no death and no loot.
     remove-mob: func(dimension: string, id: u32) -> result<_, string>;
+    /// Spawns a living entity of the mod's own kind `kind` (`mymod:robit`, declared in `data/<id>/horizon/entity_kind/`) at the position
+    /// with the saved bytes `data` (at most 64 KiB), kept and ticked by `entities-tick`. Returns the ticket `entity-spawned` answers with.
+    /// An error for a kind that is not a plain id or too many bytes. API 36.
+    spawn-mod-entity: func(dimension: string, kind: string, x: f64, y: f64, z: f64, data: list<u8>) -> result<u64, string>;
     /// Sets an entity on fire for `ticks` (`Entity.igniteForTicks`: it keeps a longer fire it already has): a mob, or a projectile in
     /// flight, which is how a mod's bow lights the arrow it just shot (Flame). API 33.
     set-entity-fire: func(dimension: string, id: u32, ticks: u32) -> result<_, string>;
@@ -1315,6 +1319,8 @@ interface server-events {
         damage: bool,
         /// Call `item-released` and `item-shot` (a bow-like item of the mod, whose template is `minecraft:bow`).
         item-release: bool,
+        /// Call `entities-tick` with the living entities of the mod's own kinds (`data/<id>/horizon/entity_kind/`).
+        mod-entities: bool,
         /// Blocks of the mod that stand for another block (FORK-35): a click on
         /// them, or breaking them, reaches the block they name.
         redirects: list<redirect-spec>,
@@ -1475,6 +1481,45 @@ interface server-events {
         /// south, west, east); empty for a block that is not one.
         transmitter-faces: list<bool>,
     }
+    /// A living entity of one of the mod's kinds (FORK-10, the Robit): the game keeps it, its container and its saved bytes, and the
+    /// mod decides what it does each tick.
+    record mod-entity {
+        id: u32,
+        dimension: string,
+        /// The kind's id, `mymod:robit`.
+        kind: string,
+        x: f64,
+        y: f64,
+        z: f64,
+        yaw: f32,
+        health: f32,
+        /// The mod's own saved bytes (at most 64 KiB).
+        data: list<u8>,
+        /// The container's slots (the kind's `container_slots`).
+        items: list<option<item-stack>>,
+        energy: u64,
+        /// The id of the kind's skin it shows.
+        skin: string,
+        /// The name it was given, shown over it.
+        name: option<string>,
+    }
+    /// What the mod makes of an entity in a tick; a none leaves that as it is.
+    record mod-entity-update {
+        dimension: string,
+        id: u32,
+        data: option<list<u8>>,
+        /// The slots after the call; extra slots past the container's, and stacks of unknown items, are dropped.
+        items: option<list<option<item-stack>>>,
+        energy: option<u64>,
+        /// A skin id of the kind; an unknown one is ignored.
+        skin: option<string>,
+        /// `some(none)` takes the name away.
+        name: option<option<string>>,
+        /// Moves it at once (as `/tp` does).
+        teleport: option<tuple<f64, f64, f64>>,
+        /// Takes it out of the world with no death and no drops.
+        remove: bool,
+    }
     /// New bytes and slots for the block entity at `pos` in `dimension`.
     record block-entity-update {
         dimension: string,
@@ -1524,6 +1569,9 @@ interface server-events {
     /// turn). Returns the entities whose bytes changed; the chunk is then
     /// saved with them.
     block-entities-tick: func(tick: u64, entities: list<block-entity>) -> list<block-entity-update>;
+    /// Each tick, the living entities of the mod's own kinds (`registration.mod-entities`, FORK-10) in the level in place, up to 256: what
+    /// the mod answers is applied at once. Not asked of an entity whose chunk is not loaded. API 36.
+    entities-tick: func(tick: u64, entities: list<mod-entity>) -> list<mod-entity-update>;
     /// A player pressed button `id` of the menu of the block entity at `pos`
     /// (a `button` widget of the menu type's screen), with the entity as it
     /// is. Returns what to change in it, if anything.

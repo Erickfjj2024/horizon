@@ -276,6 +276,93 @@ pub struct EntityType {
     pub damage: f32,
 }
 
+/// Most strings a menu carries and bytes each holds (`world.set-menu-text`, a screen's `text_data` and lists).
+pub const MENU_TEXTS: usize = 64;
+pub const MENU_TEXT_BYTES: usize = 256;
+
+/// A living entity the mod adds (FORK-10, the Robit): its size, health and speed, its skins and the slots of its container. The game
+/// keeps the entities of a kind with a state of the mod's own (`data`, items, energy, skin, name) and asks the mod to tick them.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EntityKind {
+    /// `<mod id>:<path>`.
+    #[serde(skip)]
+    pub id: String,
+    pub width: f32,
+    pub height: f32,
+    /// Eye height; the entity's own height times 0.85 (a living entity's usual) when unset.
+    #[serde(default)]
+    pub eye_height: Option<f32>,
+    #[serde(default = "default_kind_health")]
+    pub max_health: f32,
+    #[serde(default = "default_kind_speed")]
+    pub speed: f32,
+    /// Kept when its chunk unloads and never despawned (`persistent`).
+    #[serde(default = "default_true")]
+    pub persistent: bool,
+    /// What it can look like: a texture and optionally a model of the mod's own. The first is the default.
+    pub skins: Vec<EntitySkin>,
+    /// Slots of its container (the Robit's 30); 0 for none.
+    #[serde(default)]
+    pub container_slots: u16,
+}
+
+fn default_kind_health() -> f32 {
+    20.0
+}
+fn default_kind_speed() -> f32 {
+    0.25
+}
+fn default_true() -> bool {
+    true
+}
+
+/// One look of an entity kind.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct EntitySkin {
+    pub id: String,
+    /// A sprite (`mymod:entity/robit`, from `assets/mymod/textures/entity/`).
+    pub texture: String,
+    /// A model of the mod's own (`assets/<ns>/horizon/entity_model/<name>.json`), the kind's default when unset.
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+impl EntityKind {
+    fn check(&self, name: &str) -> Result<(), String> {
+        let finite = |v: f32| v.is_finite();
+        if !(finite(self.width) && finite(self.height) && (0.1..=16.0).contains(&self.width) && (0.1..=16.0).contains(&self.height)) {
+            return Err(format!("{name}: width and height are 0.1 to 16"));
+        }
+        if self.eye_height.is_some_and(|e| !finite(e) || !(0.0..=16.0).contains(&e)) {
+            return Err(format!("{name}: eye_height is 0 to 16"));
+        }
+        if !finite(self.max_health) || !(0.5..=1024.0).contains(&self.max_health) {
+            return Err(format!("{name}: max_health is 0.5 to 1024"));
+        }
+        if !finite(self.speed) || !(0.0..=4.0).contains(&self.speed) {
+            return Err(format!("{name}: speed is 0 to 4"));
+        }
+        if self.skins.is_empty() || self.skins.len() > 64 {
+            return Err(format!("{name}: 1 to 64 skins"));
+        }
+        for (i, s) in self.skins.iter().enumerate() {
+            let ok = |t: &str| t.split_once(':').is_some_and(|(n, p)| !n.is_empty() && !p.is_empty() && !t.contains(".."));
+            if s.id.is_empty() || s.id.len() > 64 || self.skins[..i].iter().any(|o| o.id == s.id) {
+                return Err(format!("{name}: skin ids are 1 to 64 bytes and not repeated"));
+            }
+            if !ok(&s.texture) || s.model.as_deref().is_some_and(|m| !ok(m)) {
+                return Err(format!("{name}: a skin's texture and model are <mod id>:<path>"));
+            }
+        }
+        if self.container_slots > 256 {
+            return Err(format!("{name}: container_slots is 256 at most"));
+        }
+        Ok(())
+    }
+}
+
 /// a menu type the mod adds (vanilla's `MenuType`, NeoForge's
 /// `IMenuTypeExtension.create`): its container's slot count, the
 /// `ContainerData` count its menu syncs, and its take-only slots
@@ -838,8 +925,8 @@ fn check_widget(
             }
         }
         Widget::Text { x, y, text, color, scale, text_data } => {
-            if text_data.is_some_and(|n| usize::from(n) >= crate::runtime::MENU_TEXTS) {
-                return Err(format!("{name}: text_data is a string of the menu, 0 to {}", crate::runtime::MENU_TEXTS - 1));
+            if text_data.is_some_and(|n| usize::from(n) >= MENU_TEXTS) {
+                return Err(format!("{name}: text_data is a string of the menu, 0 to {}", MENU_TEXTS - 1));
             }
             if scale.is_some_and(|s| !(10..=400).contains(&s)) {
                 return Err(format!("{name}: a text's scale is 10 to 400 percent"));
@@ -921,8 +1008,8 @@ fn check_widget(
             if !(8..=64).contains(row_height) || *row_height > *h {
                 return Err(format!("{name}: a list's row_height is 8 to 64 and at most its height"));
             }
-            if usize::from(*first) >= crate::runtime::MENU_TEXTS {
-                return Err(format!("{name}: a list's first string is 0 to {}", crate::runtime::MENU_TEXTS - 1));
+            if usize::from(*first) >= MENU_TEXTS {
+                return Err(format!("{name}: a list's first string is 0 to {}", MENU_TEXTS - 1));
             }
             data(count)?;
             if let Some(c) = color {
@@ -934,8 +1021,8 @@ fn check_widget(
             if !(1..=256).contains(max_length) {
                 return Err(format!("{name}: a text field's max_length is 1 to 256"));
             }
-            if text_data.is_some_and(|n| usize::from(n) >= crate::runtime::MENU_TEXTS) {
-                return Err(format!("{name}: text_data is a string of the menu, 0 to {}", crate::runtime::MENU_TEXTS - 1));
+            if text_data.is_some_and(|n| usize::from(n) >= MENU_TEXTS) {
+                return Err(format!("{name}: text_data is a string of the menu, 0 to {}", MENU_TEXTS - 1));
             }
         }
         Widget::Item { x, y, item } => {
@@ -1256,6 +1343,8 @@ pub struct Content {
     /// Its creative inventory tabs, by id.
     pub creative_tabs: Vec<CreativeTab>,
     pub entity_types: Vec<EntityType>,
+    /// Its own living entity kinds (FORK-10), by id.
+    pub entity_kinds: Vec<EntityKind>,
     pub menu_types: Vec<MenuType>,
     /// Its block entity renderers, by block id.
     pub renderers: Vec<BlockRenderer>,
@@ -1348,6 +1437,7 @@ impl Content {
             effects: Vec::new(),
             creative_tabs: Vec::new(),
             entity_types: Vec::new(),
+            entity_kinds: Vec::new(),
             menu_types: Vec::new(),
             renderers: Vec::new(),
             namespaces: manifest.owned_namespaces().map(str::to_owned).collect(),
@@ -1397,6 +1487,7 @@ impl Content {
         let mut types = Vec::new();
         let mut menus = Vec::new();
         let mut renderers = Vec::new();
+        let mut kinds = Vec::new();
         for name in &self.files {
             let mut parts = name.splitn(3, '/');
             let (top, namespace, rest) = (
@@ -1443,13 +1534,15 @@ impl Content {
                 tabs.push((tab, name.clone()));
             } else if let Some(kind) = parse("entity_type") {
                 types.push((kind, name.clone()));
+            } else if let Some(kind) = parse("entity_kind") {
+                kinds.push((kind, name.clone()));
             } else if let Some(menu) = parse("menu") {
                 menus.push((menu, name.clone()));
             } else if let Some(block) = parse("renderer") {
                 renderers.push((block, name.clone()));
             } else {
                 return Err(format!(
-                    "{name}: data/{id}/horizon/ holds block/, item/, mob_effect/, creative_tab/, entity_type/, menu/ and renderer/*.json only"
+                    "{name}: data/{id}/horizon/ holds block/, item/, mob_effect/, creative_tab/, entity_type/, entity_kind/, menu/ and renderer/*.json only"
                 ));
             }
         }
@@ -1615,6 +1708,12 @@ impl Content {
                 screen.check(&name, file.slots, file.data_slots)?;
             }
             self.menu_types.push(MenuType { id: menu, ..file });
+        }
+        for (kind, name) in kinds {
+            let file: EntityKind =
+                serde_json::from_slice(&self.file(&name)?).map_err(|e| format!("{name}: {e}"))?;
+            file.check(&name)?;
+            self.entity_kinds.push(EntityKind { id: kind, ..file });
         }
         Ok(())
     }
@@ -2035,6 +2134,29 @@ capabilities = ["registries"]
             ("menu-missing", r#"{"data_slots": 1}"#, "missing field"),
         ] {
             let files: &[(&str, &[u8])] = &[("data/ruby/horizon/menu/a.json", file.as_bytes())];
+            let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();
+            assert!(e.contains(why), "{case}: {e}");
+        }
+    }
+
+    #[test]
+    fn an_entity_kind_is_declared_in_content_and_bad_ones_are_refused() {
+        let good = br##"{"width": 0.6, "height": 0.65, "max_health": 1, "speed": 0.3, "container_slots": 30,
+            "skins": [{"id": "default", "texture": "ruby:entity/robit"}, {"id": "gold", "texture": "ruby:entity/gold", "model": "ruby:robit_gold"}]}"##;
+        let files: &[(&str, &[u8])] = &[("data/ruby/horizon/entity_kind/robit.json", good)];
+        let content = hmod("kind-ok", MANIFEST_TEXT, files).unwrap();
+        let k = &content.entity_kinds[0];
+        assert_eq!((k.id.as_str(), k.container_slots, k.skins.len(), k.persistent), ("ruby:robit", 30, 2, true));
+        for (case, file, why) in [
+            ("kind-size", r#"{"width":0,"height":1,"skins":[{"id":"a","texture":"ruby:a"}]}"#, "width and height are 0.1 to 16"),
+            ("kind-health", r#"{"width":1,"height":1,"max_health":0,"skins":[{"id":"a","texture":"ruby:a"}]}"#, "max_health is 0.5 to 1024"),
+            ("kind-skins", r#"{"width":1,"height":1,"skins":[]}"#, "1 to 64 skins"),
+            ("kind-twice", r#"{"width":1,"height":1,"skins":[{"id":"a","texture":"ruby:a"},{"id":"a","texture":"ruby:b"}]}"#, "not repeated"),
+            ("kind-texture", r#"{"width":1,"height":1,"skins":[{"id":"a","texture":"nope"}]}"#, "<mod id>:<path>"),
+            ("kind-slots", r#"{"width":1,"height":1,"container_slots":300,"skins":[{"id":"a","texture":"ruby:a"}]}"#, "256 at most"),
+            ("kind-key", r#"{"width":1,"height":1,"legs":4,"skins":[{"id":"a","texture":"ruby:a"}]}"#, "unknown field"),
+        ] {
+            let files: &[(&str, &[u8])] = &[("data/ruby/horizon/entity_kind/a.json", file.as_bytes())];
             let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();
             assert!(e.contains(why), "{case}: {e}");
         }

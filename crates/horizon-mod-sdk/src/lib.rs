@@ -235,7 +235,7 @@ pub mod server {
 
     pub use exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
-        BlockPos, BlockUse, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,
+        BlockPos, BlockUse, ModEntity, ModEntityUpdate, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,
     };
     pub use horizon::mods::players::{self, GameMode, Player};
     pub use horizon::mods::player_control::{self, Motion};
@@ -304,6 +304,10 @@ pub mod server {
         }
         /// The arrows of a shot exist, with these entity ids. When [`Registration::on_item_release`] is set.
         fn item_shot(&mut self, _player: &Player, _stack: ItemStack, _projectiles: Vec<u32>) {}
+        /// The living entities of the mod's own kinds, each tick (FORK-10): what to do with them. When [`Registration::on_mod_entities`] is set.
+        fn entities_tick(&mut self, _tick: u64, _entities: Vec<ModEntity>) -> Vec<ModEntityUpdate> {
+            Vec::new()
+        }
         /// A mod's block was placed at `pos`: false takes it away again (`BlockItem.canPlace`). When [`Registration::blocks`] is set.
         fn can_place(&mut self, _player: &Player, _pos: BlockPos, _state: &str) -> bool {
             true
@@ -398,6 +402,7 @@ pub mod server {
                 chunks: false,
                 damage: false,
                 item_release: false,
+                mod_entities: false,
                 redirects: Vec::new(),
             }
         }
@@ -485,6 +490,11 @@ pub mod server {
         /// Call [`ServerMod::item_released`] and [`ServerMod::item_shot`] for bow-like items.
         pub fn on_item_release(mut self) -> Self {
             self.item_release = true;
+            self
+        }
+        /// Call [`ServerMod::entities_tick`] for the mod's own entity kinds.
+        pub fn on_mod_entities(mut self) -> Self {
+            self.mod_entities = true;
             self
         }
         /// Call [`ServerMod::chunk_loaded`].
@@ -622,7 +632,7 @@ macro_rules! export_server_mod {
             use ::std::cell::RefCell;
             use $crate::server::{
                 Args, ArgumentValue, BlockEntity, BlockEntityUpdate, BlockPos, BlockUse, DamageSource, Player, Registration,
-                ItemStack, ServerMod, Structure,
+                ItemStack, ModEntity, ModEntityUpdate, ServerMod, Structure,
             };
             ::std::thread_local! {
                 static STATE: RefCell<Option<$t>> = const { RefCell::new(None) };
@@ -696,6 +706,11 @@ macro_rules! export_server_mod {
                 fn item_released(player: Player, stack: ItemStack, hand: String, ticks_held: u32) -> bool {
                     let mut out = true;
                     with(|m| out = m.item_released(&player, stack, &hand, ticks_held));
+                    out
+                }
+                fn entities_tick(tick: u64, entities: Vec<ModEntity>) -> Vec<ModEntityUpdate> {
+                    let mut out = Vec::new();
+                    with(|m| out = m.entities_tick(tick, entities));
                     out
                 }
                 fn item_shot(player: Player, stack: ItemStack, projectiles: Vec<u32>) {

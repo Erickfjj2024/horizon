@@ -401,6 +401,8 @@ fn register_menu_types(mods: &[horizon_client::mod_content::ContentMod]) {
         .filter_map(|m| Some((m.id.clone(), m.screen.clone()?)))
         .collect();
     let _ = super::menu_screens::MENU_SCREENS.set(screens);
+    #[cfg(feature = "mods")]
+    super::mod_entities::register_kinds(mods);
     let armor = menus
         .iter()
         .filter_map(|m| Some((m.id.clone(), m.armor.clone()?)))

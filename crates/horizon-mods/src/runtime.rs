@@ -54,7 +54,7 @@ use bindings::{
 pub use server_bindings::{
     exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
-        BlockPos, BlockUse, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
+        BlockPos, BlockUse, ModEntity, ModEntityUpdate, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
     },
     horizon::mods::player_control::{EffectState, Motion, PlayerState},
     horizon::mods::players::{GameMode, Player as ServerPlayer},
@@ -63,6 +63,8 @@ pub use server_bindings::{
 /// Block entities handed to one mod in one tick, and the most bytes one keeps.
 pub const BLOCK_ENTITIES_PER_CALL: usize = 4096;
 pub const BLOCK_ENTITY_BYTES: usize = 65536;
+/// Most entities of one mod's kinds a tick call carries.
+pub const MOD_ENTITIES_PER_CALL: usize = 256;
 type ClientEvents = bindings::exports::horizon::mods::events::Guest;
 type ServerEvents = server_bindings::exports::horizon::mods::server_events::Guest;
 /// The widget model a `ui` screen or settings page shows (WIT `interface
@@ -240,6 +242,13 @@ pub enum EntityCommand {
     SetFire {
         id: u32,
         ticks: u32,
+    },
+    /// `entities.spawn-mod-entity` (FORK-10): a living entity of the mod's own kind.
+    SpawnModEntity {
+        ticket: u64,
+        kind: String,
+        pos: [f64; 3],
+        data: Vec<u8>,
     },
 }
 
@@ -1529,6 +1538,47 @@ impl Mods {
                     && u.items.as_ref().is_none_or(|s| s.len() <= 256)
                     && u.tanks.as_ref().is_none_or(|s| s.len() <= 16)
                     && u.menu_data.as_ref().is_none_or(|s| s.len() <= 256)
+                {
+                    out.push(u);
+                }
+            }
+        }
+        out
+    }
+    /// Whether a running server mod asked for `mod-entities`.
+    pub fn hears_mod_entities(&self) -> bool {
+        self.entries.iter().filter_map(|e| e.run.as_ref()?.hooks.server()).any(|r| r.mod_entities)
+    }
+    /// Each mod's own entities (`kind` of its namespace, at most [`MOD_ENTITIES_PER_CALL`]) tick: the updates, checked, of mods that
+    /// asked for them.
+    pub fn entities_tick(&mut self, tick: u64, entities: &[ModEntity]) -> Vec<ModEntityUpdate> {
+        let mut out = Vec::new();
+        for i in 0..self.entries.len() {
+            if !self.entries[i].run.as_ref().and_then(|r| r.hooks.server()).is_some_and(|r| r.mod_entities) {
+                continue;
+            }
+            let Some(id) = self.entries[i].manifest.as_ref().map(|m| m.id.clone()) else { continue };
+            let mine: Vec<ModEntity> = entities
+                .iter()
+                .filter(|e| e.kind.split_once(':').map(|(ns, _)| ns) == Some(id.as_str()))
+                .take(MOD_ENTITIES_PER_CALL)
+                .cloned()
+                .collect();
+            if mine.is_empty() {
+                continue;
+            }
+            let updates = self.call(i, FUEL_TICK, |run| match &run.hooks {
+                Hooks::Server(m, _) => m.horizon_mods_server_events().call_entities_tick(&mut run.store, tick, &mine),
+                Hooks::Client(..) => Ok(Vec::new()),
+            });
+            for u in updates.into_iter().flatten() {
+                let given = mine.iter().any(|e| e.dimension == u.dimension && e.id == u.id);
+                let finite = u.teleport.is_none_or(|t| t.0.is_finite() && t.1.is_finite() && t.2.is_finite());
+                if given
+                    && finite
+                    && u.data.as_ref().is_none_or(|d| d.len() <= BLOCK_ENTITY_BYTES)
+                    && u.items.as_ref().is_none_or(|s| s.len() <= 256)
+                    && u.name.as_ref().is_none_or(|n| n.as_ref().is_none_or(|n| n.len() <= 128))
                 {
                     out.push(u);
                 }
@@ -3006,13 +3056,27 @@ impl entities::Host for State {
     fn remove_mob(&mut self, dimension: String, id: u32) -> Result<(), String> {
         self.entity_request(dimension, EntityCommand::RemoveMob { id }, &[])
     }
+    fn spawn_mod_entity(&mut self, dimension: String, kind: String, x: f64, y: f64, z: f64, data: Vec<u8>) -> Result<u64, String> {
+        if !kind_ok(&kind) {
+            return Err(format!("{kind:?} is not an entity kind"));
+        }
+        if kind.split_once(':').map(|(ns, _)| ns) != Some(self.id.as_str()) {
+            return Err(format!("{kind} is not a kind of this mod ({}:...)", self.id));
+        }
+        if data.len() > BLOCK_ENTITY_BYTES {
+            return Err(format!("data is {BLOCK_ENTITY_BYTES} bytes at most"));
+        }
+        let ticket = self.next_ticket;
+        self.entity_request(dimension, EntityCommand::SpawnModEntity { ticket, kind, pos: [x, y, z], data }, &[x, y, z])?;
+        self.next_ticket += 1;
+        Ok(ticket)
+    }
     fn set_entity_fire(&mut self, dimension: String, id: u32, ticks: u32) -> Result<(), String> {
         self.entity_request(dimension, EntityCommand::SetFire { id, ticks: ticks.min(72_000) }, &[])
     }
 }
 /// Most strings a menu carries and bytes each holds (`world.set-menu-text`).
-pub const MENU_TEXTS: usize = 64;
-pub const MENU_TEXT_BYTES: usize = 256;
+pub use crate::content::{MENU_TEXT_BYTES, MENU_TEXTS};
 /// Most bytes a mod message holds, and messages a call may send.
 const NET_BYTES: usize = 30_000;
 const NET_PER_CALL: usize = 32;

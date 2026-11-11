@@ -906,6 +906,7 @@ A display entity's transformation (`block_display`, `item_display`, `text_displa
 | `set-mob-health` | `func(dimension: string, id: u32, health: f32) -> result<_, string>` | Sets a living mob's health (above 0, cut to its maximum). |
 | `kill-mob` | `func(dimension: string, id: u32) -> result<_, string>` | Kills a mob as `/kill` does: it falls and drops its loot. |
 | `remove-mob` | `func(dimension: string, id: u32) -> result<_, string>` | Takes a mob out of the world with no death and no loot. |
+| `spawn-mod-entity` | `func(dimension: string, kind: string, x: f64, y: f64, z: f64, data: list<u8>) -> result<u64, string>` | Spawns a living entity of the mod's own kind `kind` (`mymod:robit`, declared in `data/<id>/horizon/entity_kind/`) at the position with the saved bytes `data` (at most 64 KiB), kept and ticked by `entities-tick`. Returns the ticket `entity-spawned` answers with. An error for a kind that is not a plain id or too many bytes. API 36. |
 | `set-entity-fire` | `func(dimension: string, id: u32, ticks: u32) -> result<_, string>` | Sets an entity on fire for `ticks` (`Entity.igniteForTicks`: it keeps a longer fire it already has): a mob, or a projectile in flight, which is how a mod's bow lights the arrow it just shot (Flame). API 33. |
 
 ## `item-types`
@@ -1228,6 +1229,7 @@ The slots of a block entity. Slot numbers start at 0; at most 256 slots.
 | `chunks` | `bool` | Call `chunk-loaded`. |
 | `damage` | `bool` | Call `player-damaged` and `item-hit-damage`. |
 | `item-release` | `bool` | Call `item-released` and `item-shot` (a bow-like item of the mod, whose template is `minecraft:bow`). |
+| `mod-entities` | `bool` | Call `entities-tick` with the living entities of the mod's own kinds (`data/<id>/horizon/entity_kind/`). |
 | `redirects` | `list<redirect-spec>` | Blocks of the mod that stand for another block (FORK-35): a click on them, or breaking them, reaches the block they name. |
 
 ### record `block-entity`
@@ -1247,6 +1249,42 @@ A block entity of the mod, as the server holds it.
 | `tank-faces` | `list<list<flow-side>>` |  |
 | `menu-data` | `list<s32>` | The data slots its menu shows (progress, a mode), 16 bits each on the wire. |
 | `transmitter-faces` | `list<bool>` | The faces a transmitter connects through now (down, up, north, south, west, east); empty for a block that is not one. |
+
+### record `mod-entity`
+
+A living entity of one of the mod's kinds (FORK-10, the Robit): the game keeps it, its container and its saved bytes, and the mod decides what it does each tick.
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | `u32` |  |
+| `dimension` | `string` |  |
+| `kind` | `string` | The kind's id, `mymod:robit`. |
+| `x` | `f64` |  |
+| `y` | `f64` |  |
+| `z` | `f64` |  |
+| `yaw` | `f32` |  |
+| `health` | `f32` |  |
+| `data` | `list<u8>` | The mod's own saved bytes (at most 64 KiB). |
+| `items` | `list<option<item-stack>>` | The container's slots (the kind's `container_slots`). |
+| `energy` | `u64` |  |
+| `skin` | `string` | The id of the kind's skin it shows. |
+| `name` | `option<string>` | The name it was given, shown over it. |
+
+### record `mod-entity-update`
+
+What the mod makes of an entity in a tick; a none leaves that as it is.
+
+| Field | Type | |
+| --- | --- | --- |
+| `dimension` | `string` |  |
+| `id` | `u32` |  |
+| `data` | `option<list<u8>>` |  |
+| `items` | `option<list<option<item-stack>>>` | The slots after the call; extra slots past the container's, and stacks of unknown items, are dropped. |
+| `energy` | `option<u64>` |  |
+| `skin` | `option<string>` | A skin id of the kind; an unknown one is ignored. |
+| `name` | `option<option<string>>` | `some(none)` takes the name away. |
+| `teleport` | `option<tuple<f64, f64, f64>>` | Moves it at once (as `/tp` does). |
+| `remove` | `bool` | Takes it out of the world with no death and no drops. |
 
 ### record `block-entity-update`
 
@@ -1276,6 +1314,7 @@ New bytes and slots for the block entity at `pos` in `dimension`.
 | `block-broken` | `func(player: player, pos: block-pos, state: string)` | A player broke the block at `pos` in their dimension: `state` is what was there, as `minecraft:oak_log[axis=y]`. |
 | `block-placed` | `func(player: player, pos: block-pos, state: string)` | A player placed `state` at `pos` in their dimension. |
 | `block-entities-tick` | `func(tick: u64, entities: list<block-entity>) -> list<block-entity-update>` | Each server tick, for the loaded block entities of blocks `registration.block-entities` marked `ticks` (those of the level the server is simulating; at most 4096 a call, the rest wait their turn). Returns the entities whose bytes changed; the chunk is then saved with them. |
+| `entities-tick` | `func(tick: u64, entities: list<mod-entity>) -> list<mod-entity-update>` | Each tick, the living entities of the mod's own kinds (`registration.mod-entities`, FORK-10) in the level in place, up to 256: what the mod answers is applied at once. Not asked of an entity whose chunk is not loaded. API 36. |
 | `menu-button` | `func(player: player, dimension: string, pos: block-pos, id: s32, entity: block-entity) -> option<block-entity-update>` | A player pressed button `id` of the menu of the block entity at `pos` (a `button` widget of the menu type's screen), with the entity as it is. Returns what to change in it, if anything. |
 | `net-message` | `func(player: player, channel: string, data: list<u8>)` | What `player`'s client half sent on `channel` (the mod's own), when `registration.net` is set. The bytes are the player's own: check them. |
 | `multiblock-changed` | `func(group: string, dimension: string, structures: list<structure>) -> list<block-entity-update>` | The structure candidates of `group` in `dimension` changed (they are all of them, in the order of their least corner, empty when none is left). Called at the end of the tick, with the world lent, before the tick's transfers. Returns what to change in member blocks: updates for other blocks are dropped. |

@@ -533,7 +533,10 @@ mod run {
             } else {
                 self.mods.mods.block_entities_tick(self.ticks, &entities)
             };
+            let kept = if self.mods.mods.hears_mod_entities() { self.mod_entities_view() } else { Vec::new() };
+            let kept = if kept.is_empty() { Vec::new() } else { self.mods.mods.entities_tick(self.ticks, &kept) };
             self.return_world();
+            self.apply_mod_entity_ticks(kept);
             self.apply_mod_entity_updates(updates);
             self.apply_mod_entity_updates(menu_updates);
             self.transfer_mod_energy();
@@ -2692,7 +2695,12 @@ mod run {
                             };
                             self.native_set_display(&dimension, id, &d)
                         }
-                        C::RemoveEntity { id } => self.native_remove_entity(&dimension, id),
+                        C::SpawnModEntity { ticket, kind, pos, data } => {
+                            let entity = self.native_spawn_mod_entity(&dimension, &kind, pos, data);
+                            self.mods.spawn_answers.push((mod_id, ticket, entity));
+                            entity.is_some()
+                        }
+                        C::RemoveEntity { id } => self.native_remove_entity(&dimension, id) || self.native_remove_mod_entity(&dimension, id),
                         C::TeleportMob { id, pos } => self.native_teleport_mob(&dimension, id, pos),
                         C::PushMob { id, velocity } => self.native_push_mob(&dimension, id, velocity),
                         C::SetMobHealth { id, health } => self.native_set_mob_health(&dimension, id, health),

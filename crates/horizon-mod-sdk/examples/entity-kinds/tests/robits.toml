@@ -1,0 +1,25 @@
+[[step]]
+join = "Alex"
+# The message spawns a robit of the mod's own kind (declared in content): it exists as the step ends, untouched.
+net = { channel = "robits:spawn", data = [3, 0, 0, 0, 70, 0, 0, 0, 4, 0, 0, 0] }
+expect.mod-entities = ["1001 robits:robit 3.5 70 4.5 energy=0 data=[0] skin=default name=-"]
+
+[[step]]
+# One tick: the robit exists, the mod counted once and gave it energy; its skin is still the first.
+ticks = 1
+expect.mod-entities = ["1001 robits:robit 3.5 70 4.5 energy=10 data=[1] skin=default name=-"]
+
+[[step]]
+# The second tick takes the red skin.
+ticks = 1
+expect.mod-entities = ["1001 robits:robit 3.5 70 4.5 energy=20 data=[2] skin=red name=-"]
+
+[[step]]
+# The third names it Bolt and moves it a block up.
+ticks = 1
+expect.mod-entities = ["1001 robits:robit 3.5 71 4.5 energy=30 data=[3] skin=red name=Bolt"]
+
+[[step]]
+# The fifth removes it, and nothing is left.
+ticks = 2
+expect.mod-entities = []

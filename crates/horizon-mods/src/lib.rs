@@ -12,6 +12,8 @@ pub mod commands;
 #[cfg(feature = "runtime")]
 pub mod energy;
 #[cfg(feature = "runtime")]
+pub mod entity_state;
+#[cfg(feature = "runtime")]
 pub mod flow;
 #[cfg(feature = "runtime")]
 pub mod multiblock;

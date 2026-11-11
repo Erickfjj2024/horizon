@@ -69,6 +69,10 @@ pub struct TestGame {
     pub hit_damage_result: Option<f32>,
     /// What the last `item_released` answered.
     pub release_result: Option<bool>,
+    /// The living entities of the mod's own kinds (FORK-10) and the kinds its content declares.
+    pub mod_entities: Vec<crate::ModEntity>,
+    pub entity_kinds: Vec<crate::content::EntityKind>,
+    next_mod_entity: u32,
     /// What the last `can_place` answered.
     pub can_place_result: Option<bool>,
     /// The blocks packed into boxes (`world.pack-block`), by the box's position.
@@ -271,6 +275,9 @@ impl TestGame {
             damage_result: None,
             hit_damage_result: None,
             release_result: None,
+            mod_entities: Vec::new(),
+            entity_kinds: Vec::new(),
+            next_mod_entity: 1000,
             can_place_result: None,
             packed: Default::default(),
             crafts: Vec::new(),
@@ -283,6 +290,11 @@ impl TestGame {
     }
 
     fn start(&mut self) -> Result<(), String> {
+        if let Ok(package) = crate::manifest::Package::read(&self.hmod)
+            && let Ok(content) = crate::Content::read(&self.hmod, &package.manifest)
+        {
+            self.entity_kinds = content.entity_kinds.clone();
+        }
         self.mods = Mods::load(std::slice::from_ref(&self.hmod), |_| true, |_| false);
         match &self.mods.entries()[0].status {
             Status::Failed(reason) => Err(format!("the mod didn't start: {reason}")),
@@ -338,6 +350,50 @@ impl TestGame {
             self.mods.tick(self.tick);
             self.mods.server_tick(self.tick);
             self.tick_block_entities();
+            self.tick_mod_entities();
+        }
+    }
+    /// `entities-tick` with the mod's entities, and what it answers applied (as the game does: data, slots, energy, skin, name, a teleport, a removal).
+    fn tick_mod_entities(&mut self) {
+        if self.mod_entities.is_empty() || !self.mods.hears_mod_entities() {
+            return;
+        }
+        let list = self.mod_entities.clone();
+        for u in self.mods.entities_tick(self.tick, &list) {
+            let Some(i) = self.mod_entities.iter().position(|e| e.id == u.id && e.dimension == u.dimension) else {
+                continue;
+            };
+            if u.remove {
+                self.mod_entities.remove(i);
+                continue;
+            }
+            let slots = self.entity_kinds.iter().find(|k| k.id == self.mod_entities[i].kind).map_or(0, |k| usize::from(k.container_slots));
+            let skins: Vec<String> = self
+                .entity_kinds
+                .iter()
+                .find(|k| k.id == self.mod_entities[i].kind)
+                .map(|k| k.skins.iter().map(|s| s.id.clone()).collect())
+                .unwrap_or_default();
+            let e = &mut self.mod_entities[i];
+            if let Some(d) = u.data {
+                e.data = d;
+            }
+            if let Some(mut items) = u.items {
+                items.resize(slots, None);
+                e.items = items;
+            }
+            if let Some(energy) = u.energy {
+                e.energy = energy;
+            }
+            if let Some(skin) = u.skin.filter(|s| skins.contains(s)) {
+                e.skin = skin;
+            }
+            if let Some(name) = u.name {
+                e.name = name;
+            }
+            if let Some((x, y, z)) = u.teleport {
+                (e.x, e.y, e.z) = (x, y, z);
+            }
         }
     }
     /// Makes and drops block entities to match `world`, then runs
@@ -1349,6 +1405,8 @@ pub struct Expect {
     teleports: Option<Vec<String>>,
     xp_taken: Option<Vec<String>>,
     sounds: Option<Vec<String>>,
+    /// Server mods (FORK-10): the mod's entities after the step, as `"id kind x y z energy=E data=[bytes] skin=S name=N"` (name `-` for none).
+    mod_entities: Option<Vec<String>>,
     /// Server mods (FORK-20): every `set-menu-text`, as `"dimension x y z text|text"`.
     menu_text: Option<Vec<String>>,
     /// Server mods (FORK-34): every `set-capabilities-enabled`, as `"dimension x y z items=true fluids=true energy=false"`.
@@ -1790,6 +1848,39 @@ impl Step {
                 }
             }
         }
+        // A mod entity spawned or removed (FORK-10): the spawn is answered with its id, as the game does.
+        for o in &out {
+            let Output::Entity { dimension, command, .. } = o else { continue };
+            match command {
+                crate::EntityCommand::SpawnModEntity { ticket, kind, pos, data } => {
+                    let Some(k) = game.entity_kinds.iter().find(|k| &k.id == kind).cloned() else {
+                        game.mods.entity_spawned(&game.mod_id(), *ticket, None);
+                        continue;
+                    };
+                    game.next_mod_entity += 1;
+                    let id = game.next_mod_entity;
+                    game.mod_entities.push(crate::ModEntity {
+                        id,
+                        dimension: dimension.clone(),
+                        kind: kind.clone(),
+                        x: pos[0],
+                        y: pos[1],
+                        z: pos[2],
+                        yaw: 0.0,
+                        health: k.max_health,
+                        data: data.clone(),
+                        items: vec![None; usize::from(k.container_slots)],
+                        energy: 0,
+                        skin: k.skins.first().map(|s| s.id.clone()).unwrap_or_default(),
+                        name: None,
+                    });
+                    game.snapshot();
+                    game.mods.entity_spawned(&game.mod_id(), *ticket, Some(id));
+                }
+                crate::EntityCommand::RemoveEntity { id } => game.mod_entities.retain(|e| e.id != *id),
+                _ => {}
+            }
+        }
         // A block packed goes into its box (the scripts keep its state), and comes out at the place it is unpacked.
         for o in &out {
             match o {
@@ -2122,6 +2213,9 @@ impl Step {
                         C::KillMob { id } => format!("kill-mob {id}"),
                         C::RemoveMob { id } => format!("remove-mob {id}"),
                         C::SetFire { id, ticks } => format!("fire {id} {ticks}"),
+                        C::SpawnModEntity { ticket, kind, pos, data } => {
+                            format!("spawn-mod-entity {kind} {} {} {} {} byte(s) #{ticket}", pos[0], pos[1], pos[2], data.len())
+                        }
                     }),
                     _ => None,
                 })
@@ -2226,6 +2320,19 @@ impl Step {
                 })
                 .collect();
             same("particles", want, &got)?;
+        }
+        if let Some(want) = &e.mod_entities {
+            let got: Vec<String> = game
+                .mod_entities
+                .iter()
+                .map(|m| {
+                    format!(
+                        "{} {} {} {} {} energy={} data={:?} skin={} name={}",
+                        m.id, m.kind, m.x, m.y, m.z, m.energy, m.data, m.skin, m.name.as_deref().unwrap_or("-")
+                    )
+                })
+                .collect();
+            same("mod-entities", want, &got)?;
         }
         if let Some(want) = &e.menu_text {
             let got: Vec<String> = out
