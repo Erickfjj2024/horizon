@@ -23,6 +23,10 @@ impl ServerMod for Robits {
             &[0],
         );
     }
+    /// A right click takes the robit's click unless the player sneaks (FORK-10 d): a real mod would open its menu or pick it up.
+    fn mod_entity_used(&mut self, _player: &Player, _entity: ModEntity, sneaking: bool) -> bool {
+        !sneaking
+    }
     fn entities_tick(&mut self, _tick: u64, list: Vec<ModEntity>) -> Vec<ModEntityUpdate> {
         list.into_iter()
             .map(|e| {

@@ -5,6 +5,15 @@ net = { channel = "robits:spawn", data = [3, 0, 0, 0, 70, 0, 0, 0, 4, 0, 0, 0] }
 expect.mod-entities = ["1001 robits:robit 3.500 70.000 4.500 energy=0 data=[0] skin=default name=-"]
 
 [[step]]
+# FORK-10 d: a right click on the robit is taken by the mod; sneaking, it is left to the game.
+use-mod-entity = { id = 1001 }
+expect.mod-entity-used = true
+
+[[step]]
+use-mod-entity = { id = 1001, sneaking = true }
+expect.mod-entity-used = false
+
+[[step]]
 # One tick: the mod counted once, gave it energy and a goal a block east; it walked a first step (0.25 speed * 2.158 = 0.5395 a tick).
 ticks = 1
 expect.mod-entities = ["1001 robits:robit 4.040 70.000 4.500 energy=10 data=[1] skin=default name=-"]

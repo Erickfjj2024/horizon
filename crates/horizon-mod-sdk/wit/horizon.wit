@@ -1578,6 +1578,10 @@ interface server-events {
     /// Each tick, the living entities of the mod's own kinds (`registration.mod-entities`, FORK-10) in the level in place, up to 256: what
     /// the mod answers is applied at once. Not asked of an entity whose chunk is not loaded. API 36.
     entities-tick: func(tick: u64, entities: list<mod-entity>) -> list<mod-entity-update>;
+    /// A player right-clicked one of the mod's own entities (`registration.mod-entities`, FORK-10 d): its box is the kind's `width` by
+    /// `height`, reached like an interaction entity, before the item in hand is used on it. Answer true to take the click (the arm swings,
+    /// nothing else happens); false leaves it to the game, which does nothing with it. The first mod that owns the kind answers.
+    mod-entity-used: func(player: player, entity: mod-entity, sneaking: bool) -> bool;
     /// A player pressed button `id` of the menu of the block entity at `pos`
     /// (a `button` widget of the menu type's screen), with the entity as it
     /// is. Returns what to change in it, if anything.

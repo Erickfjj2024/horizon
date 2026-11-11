@@ -1251,6 +1251,11 @@ impl Game<'_> {
         stack: Option<&ItemStack>,
         claimed: &mut bool,
     ) {
+        // A server mod's own entity: its box is an `interaction` the game keeps for it (FORK-10 d).
+        #[cfg(feature = "mods")]
+        if kind == "minecraft:interaction" && entity >= 0 && self.mod_entity_click(entity as u32) {
+            *claimed = true;
+        }
         let _ = (entity, kind, stack, claimed);
     }
     /// A player left-clicks the block `state` at `pos`, `face` the face hit

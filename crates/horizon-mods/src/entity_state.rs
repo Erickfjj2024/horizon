@@ -26,6 +26,8 @@ pub struct ModEntityState {
     pub carrier: Option<u32>,
     /// The skin and the name that carrier was made with, to make it again when either changes; not saved.
     pub shown: Option<(String, Option<String>)>,
+    /// The `interaction` entity that is its box for clicks and blows (FORK-10 d), once it has one; not saved.
+    pub hitbox: Option<u32>,
     /// Where it walks to (the point and the speed multiplier), until it arrives, is blocked or is told to stop; not saved.
     pub goal: Option<([f64; 3], f32)>,
 }
@@ -56,6 +58,7 @@ impl ModEntityState {
             name: None,
             carrier: None,
             shown: None,
+            hitbox: None,
             goal: None,
         }
     }
@@ -110,6 +113,7 @@ pub fn decode(text: &str) -> Vec<ModEntityState> {
                 name: r["name"].as_str().map(str::to_owned),
                 carrier: None,
                 shown: None,
+                hitbox: None,
                 goal: None,
                 items: r["items"]
                     .as_array()?
@@ -196,6 +200,12 @@ pub fn walk(pos: &mut [f64; 3], yaw: &mut f32, goal: [f64; 3], step: f64, height
     pos[1] = f64::from(new_y);
     *yaw = (-dx.atan2(dz).to_degrees()) as f32;
     if go >= dist { Walk::Arrived } else { Walk::Moving }
+}
+
+/// The compound (SNBT) of the `interaction` entity that is the box of an entity of `kind`: the kind's size, answering clicks (so the arm
+/// swings and the click goes to the server), with the carriers' tag.
+pub fn hitbox_snbt(kind: &EntityKind) -> String {
+    format!("{{width:{:?}f,height:{:?}f,response:1b,Tags:[\"{CARRIER_TAG}\"]}}", kind.width, kind.height)
 }
 
 /// The tag every carrier has, for the game to tell them from other displays.
@@ -345,6 +355,11 @@ mod tests {
         bad.path_to = Some((f64::NAN, 0.0, 0.0, 1.0));
         apply(&mut e, &k, &bad);
         assert_eq!(e.goal, None);
+    }
+
+    #[test]
+    fn the_hitbox_is_an_interaction_of_the_kinds_size() {
+        assert_eq!(hitbox_snbt(&kind()), r#"{width:0.6f,height:0.65f,response:1b,Tags:["horizon_mod_entity"]}"#);
     }
 
     #[test]

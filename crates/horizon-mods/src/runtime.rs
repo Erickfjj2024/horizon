@@ -1549,6 +1549,24 @@ impl Mods {
     pub fn hears_mod_entities(&self) -> bool {
         self.entries.iter().filter_map(|e| e.run.as_ref()?.hooks.server()).any(|r| r.mod_entities)
     }
+    /// `player` right-clicked `entity` (of a mod's own kind): whether the mod that owns the kind took the click.
+    pub fn mod_entity_used(&mut self, player: &ServerPlayer, entity: &ModEntity, sneaking: bool) -> bool {
+        let Some((owner, _)) = entity.kind.split_once(':') else { return false };
+        for i in 0..self.entries.len() {
+            if !self.entries[i].run.as_ref().and_then(|r| r.hooks.server()).is_some_and(|r| r.mod_entities)
+                || self.entries[i].manifest.as_ref().is_none_or(|m| m.id != owner)
+            {
+                continue;
+            }
+            return self
+                .call(i, FUEL_EVENT, |run| match &run.hooks {
+                    Hooks::Server(m, _) => m.horizon_mods_server_events().call_mod_entity_used(&mut run.store, player, entity, sneaking),
+                    Hooks::Client(..) => Ok(false),
+                })
+                .unwrap_or(false);
+        }
+        false
+    }
     /// Each mod's own entities (`kind` of its namespace, at most [`MOD_ENTITIES_PER_CALL`]) tick: the updates, checked, of mods that
     /// asked for them.
     pub fn entities_tick(&mut self, tick: u64, entities: &[ModEntity]) -> Vec<ModEntityUpdate> {

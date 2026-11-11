@@ -69,6 +69,8 @@ pub struct TestGame {
     pub hit_damage_result: Option<f32>,
     /// What the last `item_released` answered.
     pub release_result: Option<bool>,
+    /// What the last `mod_entity_used` answered.
+    pub entity_used_result: Option<bool>,
     /// The living entities of the mod's own kinds (FORK-10) and the kinds its content declares.
     pub mod_entities: Vec<crate::ModEntity>,
     pub entity_kinds: Vec<crate::content::EntityKind>,
@@ -276,6 +278,7 @@ impl TestGame {
             damage_result: None,
             hit_damage_result: None,
             release_result: None,
+            entity_used_result: None,
             mod_entities: Vec::new(),
             entity_kinds: Vec::new(),
             next_mod_entity: 1000,
@@ -1142,6 +1145,15 @@ pub struct HitDamageSet {
     damage: f32,
 }
 
+/// A right click on one of the mod's entities.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntityUseSet {
+    id: u32,
+    #[serde(default)]
+    sneaking: bool,
+}
+
 /// A bow-like item let go: `item-released`, and when the mod lets the shot stand, `item-shot` with the arrows' ids.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1342,6 +1354,8 @@ pub struct Step {
     hit_damage: Option<HitDamageSet>,
     /// Server mods: the actor let go of a bow-like item.
     release_item: Option<ReleaseSet>,
+    /// Server mods (FORK-10 d): the actor right-clicks one of the mod's entities.
+    use_mod_entity: Option<EntityUseSet>,
     /// Server mods, capability `entities`: the mobs of the Overworld from now on.
     mobs: Option<Vec<MobSet>>,
     /// Server mods: a spawn ticket is answered after the ticks.
@@ -1402,6 +1416,8 @@ pub struct Expect {
     hit_damage_result: Option<f32>,
     /// Server mods: whether the mod let the step's `release-item` shoot.
     release_result: Option<bool>,
+    /// Server mods (FORK-10 d): whether the mod took the step's `use-mod-entity` click.
+    mod_entity_used: Option<bool>,
     /// Server mods, capability `player-items`: every request, as `"set-slot Name 3 stack"`
     /// (`-` for an empty slot), `"hurt Name type amount"` and `"effect Name id ticks level"`.
     player_items: Option<Vec<String>>,
@@ -1657,6 +1673,7 @@ impl Step {
             || self.place_mod_block.is_some()
             || self.hit_damage.is_some()
             || self.release_item.is_some()
+            || self.use_mod_entity.is_some()
             || self.hit_with.is_some()
             || self.press.is_some()
             || self.net.is_some()
@@ -1792,6 +1809,11 @@ impl Step {
             game.snapshot();
             let stack = parse_stack(&h.stack).ok_or("hit-damage: a stack is item*count")?;
             game.hit_damage_result = Some(game.mods.item_hit_damage(who, &stack, &h.kind, h.damage));
+        }
+        if let (Some(u), Some(who)) = (&self.use_mod_entity, &who) {
+            game.snapshot();
+            let entity = game.mod_entities.iter().find(|e| e.id == u.id).cloned().ok_or("use-mod-entity: no such entity")?;
+            game.entity_used_result = Some(game.mods.mod_entity_used(who, &entity, u.sneaking));
         }
         if let (Some(r), Some(who)) = (&self.release_item, &who) {
             game.snapshot();
@@ -2148,6 +2170,11 @@ impl Step {
         if let Some(want) = e.hit_damage_result {
             if game.hit_damage_result != Some(want) {
                 return Err(format!("hit-damage-result: expected {want}, got {:?}", game.hit_damage_result));
+            }
+        }
+        if let Some(want) = e.mod_entity_used {
+            if game.entity_used_result != Some(want) {
+                return Err(format!("mod-entity-used: expected {want}, got {:?}", game.entity_used_result));
             }
         }
         if let Some(want) = e.release_result {

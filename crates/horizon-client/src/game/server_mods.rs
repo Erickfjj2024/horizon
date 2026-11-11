@@ -2084,6 +2084,26 @@ mod run {
             self.mods.mods.item_shot(&player, &stack, ids);
         }
 
+        /// The acting player right-clicked entity `entity`: when it is the box of one of a mod's own entities (FORK-10 d), whether the
+        /// mod that owns the kind takes the click.
+        pub(in crate::game) fn mod_entity_click(&mut self, entity: u32) -> bool {
+            if !self.mods.server || !self.mods.mods.hears_mod_entities() {
+                return false;
+            }
+            let Some(view) = self.mod_entity_of_hitbox(entity) else {
+                return false;
+            };
+            let Some(player) = self.acting_server_player() else {
+                return false;
+            };
+            let sneaking = self.keys.contains(&winit::keyboard::KeyCode::ShiftLeft);
+            self.lend_world();
+            let took = self.mods.mods.mod_entity_used(&player, &view, sneaking);
+            self.return_world();
+            self.apply_mod_block_writes();
+            took
+        }
+
         /// The acting player hit entity `entity` of `kind` holding `stack`.
         pub(in crate::game) fn mod_item_hit(
             &mut self,

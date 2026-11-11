@@ -4,7 +4,7 @@
 use super::Game;
 use horizon_mods::{
     content::EntityKind,
-    entity_state::{CARRIER_TAG, FILE, ModEntityState, WALK_FACTOR, Walk, apply, carrier_snbt, decode, encode, walk},
+    entity_state::{CARRIER_TAG, FILE, ModEntityState, WALK_FACTOR, Walk, apply, carrier_snbt, decode, encode, hitbox_snbt, walk},
 };
 use std::{collections::HashMap, sync::OnceLock};
 
@@ -73,7 +73,8 @@ impl Game<'_> {
             .list
             .iter()
             .filter(|e| e.id == id && e.dimension == dimension)
-            .filter_map(|e| e.carrier)
+            .flat_map(|e| [e.carrier, e.hitbox])
+            .flatten()
             .collect();
         for c in carriers {
             self.others.retain(|o| o.id != c);
@@ -134,7 +135,7 @@ impl Game<'_> {
             let stale: Vec<u32> = self
                 .others
                 .iter()
-                .filter(|o| o.kind == "minecraft:item_display")
+                .filter(|o| matches!(o.kind.as_str(), "minecraft:item_display" | "minecraft:interaction"))
                 .filter(|o| self.persist.raw.get(&o.id).is_some_and(|t| has_carrier_tag(t)))
                 .map(|o| o.id)
                 .collect();
@@ -159,6 +160,17 @@ impl Game<'_> {
                     self.others.retain(|o| o.id != c);
                     self.persist.raw.remove(&c);
                 }
+            }
+            // Its box: an interaction of the kind's size, made again when its chunk comes back, moved with it.
+            let box_alive = e.hitbox.is_some_and(|h| self.others.iter().any(|o| o.id == h));
+            if !box_alive {
+                let hitbox_tag = hitbox_snbt(kind);
+                if let Ok((horizon_world::nbt::Tag::Compound(compound), _)) = horizon_world::nbt::parse_snbt(&hitbox_tag) {
+                    let made = self.native_summon(&dim, "minecraft:interaction", e.pos, compound);
+                    self.mod_entities.list[i].hitbox = made;
+                }
+            } else if let Some(h) = e.hitbox {
+                let _ = self.native_move_entity(&dim, h, e.pos, e.yaw, 0.0);
             }
             if alive && current {
                 if let Some(c) = e.carrier {
@@ -185,22 +197,14 @@ impl Game<'_> {
             .list
             .iter()
             .filter(|e| e.dimension == dim)
-            .map(|e| horizon_mods::ModEntity {
-                id: e.id,
-                dimension: e.dimension.clone(),
-                kind: e.kind.clone(),
-                x: e.pos[0],
-                y: e.pos[1],
-                z: e.pos[2],
-                yaw: e.yaw,
-                health: e.health,
-                data: e.data.clone(),
-                items: e.items.clone(),
-                energy: e.energy,
-                skin: e.skin.clone(),
-                name: e.name.clone(),
-            })
+            .map(wire)
             .collect()
+    }
+
+    /// The mod entity whose box (`interaction` entity) is entity `id`, as the mods see it.
+    #[cfg(feature = "mods")]
+    pub(super) fn mod_entity_of_hitbox(&self, id: u32) -> Option<horizon_mods::ModEntity> {
+        self.mod_entities.list.iter().find(|e| e.hitbox == Some(id)).map(wire)
     }
 
     /// Applies what the mods answered to `entities-tick`.
@@ -220,6 +224,26 @@ impl Game<'_> {
                 self.mod_entities.list.remove(i);
             }
         }
+    }
+}
+
+/// An entity as the mods get it.
+#[cfg(feature = "mods")]
+fn wire(e: &ModEntityState) -> horizon_mods::ModEntity {
+    horizon_mods::ModEntity {
+        id: e.id,
+        dimension: e.dimension.clone(),
+        kind: e.kind.clone(),
+        x: e.pos[0],
+        y: e.pos[1],
+        z: e.pos[2],
+        yaw: e.yaw,
+        health: e.health,
+        data: e.data.clone(),
+        items: e.items.clone(),
+        energy: e.energy,
+        skin: e.skin.clone(),
+        name: e.name.clone(),
     }
 }
 

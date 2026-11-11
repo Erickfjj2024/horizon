@@ -304,6 +304,10 @@ pub mod server {
         }
         /// The arrows of a shot exist, with these entity ids. When [`Registration::on_item_release`] is set.
         fn item_shot(&mut self, _player: &Player, _stack: ItemStack, _projectiles: Vec<u32>) {}
+        /// A player right-clicked one of the mod's own entities: true takes the click. When [`Registration::on_mod_entities`] is set.
+        fn mod_entity_used(&mut self, _player: &Player, _entity: ModEntity, _sneaking: bool) -> bool {
+            false
+        }
         /// The living entities of the mod's own kinds, each tick (FORK-10): what to do with them. When [`Registration::on_mod_entities`] is set.
         fn entities_tick(&mut self, _tick: u64, _entities: Vec<ModEntity>) -> Vec<ModEntityUpdate> {
             Vec::new()
@@ -706,6 +710,11 @@ macro_rules! export_server_mod {
                 fn item_released(player: Player, stack: ItemStack, hand: String, ticks_held: u32) -> bool {
                     let mut out = true;
                     with(|m| out = m.item_released(&player, stack, &hand, ticks_held));
+                    out
+                }
+                fn mod_entity_used(player: Player, entity: ModEntity, sneaking: bool) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.mod_entity_used(&player, entity, sneaking));
                     out
                 }
                 fn entities_tick(tick: u64, entities: Vec<ModEntity>) -> Vec<ModEntityUpdate> {
