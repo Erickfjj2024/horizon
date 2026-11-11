@@ -212,31 +212,8 @@ impl Mob {
         }
     }
     /// GroundPathNavigation.findSurfacePosition.
-    fn surface_position(&self, w: &MobWorld, mut p: [i32; 3]) -> [i32; 3] {
-        let air = |p: [i32; 3]| w.facts.is_air(w.world.block(p[0], p[1], p[2]));
-        let solid = |p: [i32; 3]| w.solid(p[0], p[1], p[2]);
-        if air(p) {
-            let mut q = [p[0], p[1] - 1, p[2]];
-            while q[1] >= w.world.bottom_y() && air(q) {
-                q[1] -= 1;
-            }
-            if q[1] >= w.world.bottom_y() {
-                return [q[0], q[1] + 1, q[2]];
-            }
-            q[1] = p[1] + 1;
-            while q[1] <= 319 && air(q) {
-                q[1] += 1;
-            }
-            p = q;
-        }
-        if !solid(p) {
-            return p;
-        }
-        let mut q = [p[0], p[1] + 1, p[2]];
-        while q[1] <= 319 && solid(q) {
-            q[1] += 1;
-        }
-        q
+    fn surface_position(&self, w: &MobWorld, p: [i32; 3]) -> [i32; 3] {
+        surface_position(w, p)
     }
     pub(super) fn create_path_raw(
         &mut self,
@@ -663,6 +640,73 @@ impl Mob {
     }
 }
 
+/// GroundPathNavigation.findSurfacePosition: the ground surface at or above `p`.
+fn surface_position(w: &MobWorld, mut p: [i32; 3]) -> [i32; 3] {
+    let air = |p: [i32; 3]| w.facts.is_air(w.world.block(p[0], p[1], p[2]));
+    let solid = |p: [i32; 3]| w.solid(p[0], p[1], p[2]);
+    if air(p) {
+        let mut q = [p[0], p[1] - 1, p[2]];
+        while q[1] >= w.world.bottom_y() && air(q) {
+            q[1] -= 1;
+        }
+        if q[1] >= w.world.bottom_y() {
+            return [q[0], q[1] + 1, q[2]];
+        }
+        q[1] = p[1] + 1;
+        while q[1] <= 319 && air(q) {
+            q[1] += 1;
+        }
+        p = q;
+    }
+    if !solid(p) {
+        return p;
+    }
+    let mut q = [p[0], p[1] + 1, p[2]];
+    while q[1] <= 319 && solid(q) {
+        q[1] += 1;
+    }
+    q
+}
+
+/// The walking path of a mod's own entity (FORK-10 5c, the Robit) of `width` by `height` from `from` to `goal`: vanilla's
+/// `GroundPathNavigation.createPath` with a ground mob's defaults (a step of 0.6, falls of 3, doors it cannot open but can pass
+/// when open, no floating, vanilla's maluses), the goal brought to the ground surface as `findSurfacePosition` does, a follow
+/// range of 16 blocks or the distance and 8 more, up to 64. The waypoints are where its feet go (`Path.getEntityPosAtNode`); a
+/// path that ends short of the goal (the nearest reachable point) is still a path, as in vanilla; none when nothing is reachable.
+pub fn mod_entity_path(w: &MobWorld, from: Vec3, width: f32, height: f32, goal: [f64; 3]) -> Option<Vec<[f64; 3]>> {
+    let target = [goal[0].floor() as i32, goal[1].floor() as i32, goal[2].floor() as i32];
+    if !w.world.loaded(target[0], target[2]) || from.y < f64::from(w.world.bottom_y()) {
+        return None;
+    }
+    let target = surface_position(w, target);
+    let distance = ((from.x - goal[0]).powi(2) + (from.y - goal[1]).powi(2) + (from.z - goal[2]).powi(2)).sqrt() as f32;
+    let range = (distance + 8.0).clamp(16.0, 64.0);
+    let mob = PathMob {
+        position: from,
+        width,
+        height,
+        on_ground: true,
+        in_water: false,
+        max_up_step: 0.6,
+        max_fall_distance: 3,
+        malus: [None; super::path::PATH_TYPES],
+        can_float: false,
+        can_open_doors: false,
+        can_pass_doors: true,
+        can_walk_over_fences: false,
+        stands_on_lava: false,
+    };
+    let path = Finder::new(w, &mob, Evaluator::Walk).find(&[target], range, 1, (range * 16.0) as i32)?;
+    Some(
+        (0..path.nodes.len())
+            .map(|i| {
+                let p = path.entity_pos_at(i, width);
+                [p.x, p.y, p.z]
+            })
+            .collect(),
+    )
+}
+
 #[cfg(test)]
 mod recompute_tests {
     use super::*;
@@ -743,5 +787,101 @@ mod tests {
                 prefers_shallow: false
             }
         ));
+    }
+}
+
+#[cfg(test)]
+mod mod_entity_path_tests {
+    use super::*;
+
+    /// FORK-10 5c: a mod entity's path goes round a wall through its gap, passes an open door and not a closed one.
+    #[test]
+    fn a_mod_entity_path_goes_round_a_wall_and_through_an_open_door_only() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.local/horizon-client").join(horizon_core::VANILLA_VERSION);
+        if !root.join("entity-types.json").exists() || !root.join("movement-properties.nbt").exists() {
+            return;
+        }
+        let assets = crate::assets::Assets::load(&root).unwrap();
+        let render = assets.reload(&root).unwrap();
+        let registry = assets.registry;
+        let facts = crate::blocks::BlockFacts::load(&root, registry).unwrap();
+        let motion = crate::motion::MotionResources::load(&root, &assets).unwrap();
+        let data = crate::mobs::MobData::load(&root, &facts);
+        let biomes = crate::biome::Biomes::load(&root).unwrap();
+        let items = crate::items::Items::load(&root, registry, &facts, &horizon_world::loot::PackOverlay::NONE).unwrap();
+        let collision = crate::collisions::load(&root, registry).unwrap();
+        let mut world = crate::world::World::test_scene(&assets, &render, 3).unwrap();
+        let stone = registry.default_state("minecraft:stone").unwrap();
+        let air = registry.default_state("minecraft:air").unwrap();
+        let door = |half: &str, open: bool| {
+            let mut s = registry.state(registry.default_state("minecraft:oak_door").unwrap()).unwrap().clone();
+            s.properties.insert("half".into(), half.into());
+            s.properties.insert("open".into(), open.to_string());
+            s.properties.insert("facing".into(), "east".into());
+            registry.id(&s).unwrap()
+        };
+        // The scene's ground tops out at y 3 (it stands at y 4). A wall two high at x 25, from z -6 to 6, with a gap at z 4.
+        let floor_y = (0..20).rev().find(|&y| facts.get(world.block(22, y, 0)).full_collision).unwrap();
+        let feet = floor_y + 1;
+        let wall = |world: &mut crate::world::World, gap: [horizon_world::registry::BlockStateId; 2]| {
+            for z in -6..=6 {
+                for (k, y) in [feet, feet + 1].into_iter().enumerate() {
+                    world.set(25, y, z, if z == 4 { gap[k] } else { stone }).unwrap();
+                }
+            }
+        };
+        let lid_openers = std::collections::HashMap::new();
+        let find = |world: &crate::world::World| {
+            let w = MobWorld {
+                teams: Default::default(),
+                world,
+                registry,
+                facts: &facts,
+                fluid_tables: &motion.fluids,
+                movement: &motion.blocks,
+                collision: &collision,
+                data: &data,
+                player: None,
+                nearest_player: None,
+                others: &[],
+                leash_boats: &[],
+                others_grid: None,
+                others_index: None,
+                daylight: true,
+                monsters_burn: false,
+                game_time: 1000,
+                day_time: 1000,
+                raining: false,
+                thundering: false,
+                nether: false,
+                block_tags: &items.block_tags,
+                biomes: &biomes,
+                mob_griefing: true,
+                universal_anger: false,
+                mob_drops: true,
+                max_entity_cramming: 24,
+                difficulty: super::super::spawning::LocalDifficulty::new(2, 1000, 0, 0.0),
+                end: false,
+                world_seed: 0,
+                sea_level: 63,
+                items: Some(&items),
+                lid_openers: &lid_openers,
+                mod_effects: None,
+            };
+            mod_entity_path(&w, Vec3::new(22.5, f64::from(feet), 0.5), 0.6, 0.65, [28.5, f64::from(feet), 0.5])
+        };
+        let past = |path: &[[f64; 3]]| path.last().is_some_and(|p| p[0] > 26.0);
+        // An open gap: the path reaches the far side, through the gap (a waypoint at z 4).
+        wall(&mut world, [air, air]);
+        let path = find(&world).expect("a path");
+        assert!(past(&path), "{path:?}");
+        assert!(path.iter().any(|p| p[0] == 25.5 && p[2] == 4.5), "through the gap: {path:?}");
+        // A closed door in the gap: it cannot open doors, so the path ends on its own side, as near as it gets.
+        wall(&mut world, [door("lower", false), door("upper", false)]);
+        assert!(find(&world).is_none_or(|p| !past(&p)));
+        // An open door: through it.
+        wall(&mut world, [door("lower", true), door("upper", true)]);
+        let path = find(&world).expect("a path");
+        assert!(past(&path), "{path:?}");
     }
 }

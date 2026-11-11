@@ -1333,7 +1333,7 @@ What the mod makes of an entity in a tick; a none leaves that as it is.
 | `skin` | `option<string>` | A skin id of the kind; an unknown one is ignored. |
 | `name` | `option<option<string>>` | `some(none)` takes the name away. |
 | `teleport` | `option<tuple<f64, f64, f64>>` | Moves it at once (as `/tp` does). |
-| `path-to` | `option<tuple<f64, f64, f64, f32>>` | Sets where it walks to (FORK-10 c): the point `x, y, z` and a speed multiplier of the kind's `speed` (1 is its walk). It walks there each tick over the ground, climbing a block and dropping up to 3, and stops when it arrives or a wall is in its way; `some` of a new goal replaces the old, and a teleport clears it. The path is a straight line, not a search. |
+| `path-to` | `option<tuple<f64, f64, f64, f32>>` | Sets where it walks to (FORK-10 c): the point `x, y, z` and a speed multiplier of the kind's `speed` (1 is its walk). The way is vanilla's path search for a ground mob (FORK-10 5c, `GroundPathNavigation`: round walls, through open doors and not closed ones, over water and away from lava and fences, up a block and down at most 3, up to 64 blocks); it walks it waypoint by waypoint and stops when it arrives, when nothing is reachable, or after 3 blocked steps in a row. A goal that keeps moving (an owner it follows) gets a new path at most every 10 ticks; a teleport or a stop clears it. |
 | `stop` | `bool` | Stops walking. |
 | `health` | `option<f32>` | Its health after the call (above 0, cut to the kind's maximum); none leaves it. |
 | `remove` | `bool` | Takes it out of the world with no death and no drops. |

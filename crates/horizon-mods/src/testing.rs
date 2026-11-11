@@ -524,9 +524,10 @@ impl TestGame {
         for u in self.mods.entities_tick(self.tick, &list) {
             self.apply_entity_update(u);
         }
-        // Walking, over the script's blocks (a cell with a block that is not air stops it), as the game does.
+        // Walking, over the script's blocks (a cell with a block that is not air stops it), in a straight line: the game's path
+        // search (FORK-10 5c) needs its block tables, which a script does not have.
         let world = self.world.clone();
-        let solid = |x: i32, y: i32, z: i32| world.get(&(x, y, z)).is_some_and(|s| !s.starts_with("minecraft:air"));
+        let solid = |x: i32, y: i32, z: i32| if world.get(&(x, y, z)).is_some_and(|s| !s.starts_with("minecraft:air")) { 1.0 } else { 0.0 };
         for e in &mut self.mod_entities {
             let Some((goal, mult)) = self.entity_goals.get(&e.id).copied() else { continue };
             let Some(kind) = self.entity_kinds.iter().find(|k| k.id == e.kind) else { continue };

@@ -36,6 +36,13 @@ pub struct ModEntityState {
     /// Ticks of fire left, and ticks before an environmental hurt (lava, fire) can land again; not saved.
     pub burning: i32,
     pub hurt_cooldown: u8,
+    /// The path it follows to its goal (the waypoints its feet go to), the goal it was found for and its age in ticks (FORK-10 5c);
+    /// not saved.
+    pub path: Vec<[f64; 3]>,
+    pub path_goal: Option<[f64; 3]>,
+    pub path_age: u32,
+    /// Steps in a row it could not make along its path: a new path is found after each, and at 3 it stops.
+    pub stuck: u8,
     /// The data slots and strings of its menu, as the mod last set them (FORK-10 5b); not saved.
     pub menu_data: Vec<i32>,
     pub menu_text: Vec<String>,
@@ -75,6 +82,10 @@ impl ModEntityState {
             fall_distance: 0.0,
             burning: 0,
             hurt_cooldown: 0,
+            path: Vec::new(),
+            path_goal: None,
+            path_age: 0,
+            stuck: 0,
             menu_data: Vec::new(),
             menu_text: Vec::new(),
         }
@@ -136,6 +147,10 @@ pub fn decode(text: &str) -> Vec<ModEntityState> {
                 fall_distance: 0.0,
                 burning: 0,
                 hurt_cooldown: 0,
+                path: Vec::new(),
+                path_goal: None,
+                path_age: 0,
+                stuck: 0,
                 menu_data: Vec::new(),
                 menu_text: Vec::new(),
                 items: r["items"]
@@ -189,10 +204,13 @@ pub enum Walk {
     Blocked,
 }
 
-/// One tick of walking from `pos` toward `goal` (x and z; the ground decides y) by `step` blocks over ground: it climbs one block, drops up
-/// to 3, and needs `height` blocks of room above its feet. `solid(x, y, z)` says whether a block cell stops it. It turns toward where
-/// it goes (`yaw` in degrees, 0 facing south). Straight steering, not a path search.
-pub fn walk(pos: &mut [f64; 3], yaw: &mut f32, goal: [f64; 3], step: f64, height: f64, solid: &dyn Fn(i32, i32, i32) -> bool) -> Walk {
+/// One tick of walking from `pos` toward `goal` (x and z; the ground decides y) by `step` blocks over ground, with `height` blocks of
+/// room above its feet. `top(x, y, z)` is how high the collision of a block cell reaches, 0 to 1.5 of the cell (0 for a cell it walks
+/// through: air, water, an open door; 0.5 a slab, 1 a full block or a stair, 1.5 a fence or a wall). It goes up a surface at most a block
+/// over its feet (a slab, a stair, a block), drops up to 3 (else it stays on its level and the game's gravity takes it), and turns
+/// toward where it goes (`yaw` in degrees, 0 facing south).
+pub fn walk(pos: &mut [f64; 3], yaw: &mut f32, goal: [f64; 3], step: f64, height: f64, top: &dyn Fn(i32, i32, i32) -> f64) -> Walk {
+    const EPS: f64 = 1.0e-6;
     let (dx, dz) = (goal[0] - pos[0], goal[2] - pos[2]);
     let dist = dx.hypot(dz);
     if dist < 0.1 {
@@ -203,26 +221,77 @@ pub fn walk(pos: &mut [f64; 3], yaw: &mut f32, goal: [f64; 3], step: f64, height
     let go = step.min(dist);
     let (nx, nz) = (pos[0] + dx / dist * go, pos[2] + dz / dist * go);
     let (cx, cz) = (nx.floor() as i32, nz.floor() as i32);
-    let rooms = height.ceil().max(1.0) as i32;
-    let free = |y: i32| (0..rooms).all(|k| !solid(cx, y + k, cz));
-    let feet = pos[1].floor() as i32;
-    let new_y = if free(feet) {
-        // Open ahead: drops while there is no floor, up to 3 blocks (else it stays on its level and falls back by the game's own gravity).
-        let mut y = feet;
-        while y > feet - 3 && !solid(cx, y - 1, cz) {
+    let feet = pos[1];
+    let fy = (feet + EPS).floor() as i32;
+    // The surface it would stand on in the new column: what is at its feet and the cell over them, or the floor under.
+    let surface = if top(cx, fy, cz) > 0.0 || top(cx, fy + 1, cz) > 0.0 {
+        let over = top(cx, fy + 1, cz);
+        if over > 0.0 { f64::from(fy + 1) + over } else { f64::from(fy) + top(cx, fy, cz) }
+    } else {
+        let mut y = fy;
+        while y > fy - 3 && top(cx, y - 1, cz) <= 0.0 {
             y -= 1;
         }
-        if !solid(cx, y - 1, cz) { feet } else { y }
-    } else if free(feet + 1) {
-        feet + 1
-    } else {
-        return Walk::Blocked;
+        if top(cx, y - 1, cz) > 0.0 { f64::from(y - 1) + top(cx, y - 1, cz) } else { feet }
     };
+    if surface - feet > 1.0 + EPS {
+        return Walk::Blocked;
+    }
+    // Room for its height over the surface.
+    let first = (surface - EPS).ceil() as i32;
+    let last = (surface + height - EPS).floor() as i32;
+    if (first..=last).any(|y| top(cx, y, cz) > 0.0) {
+        return Walk::Blocked;
+    }
     pos[0] = nx;
     pos[2] = nz;
-    pos[1] = f64::from(new_y);
+    pos[1] = surface;
     *yaw = (-dx.atan2(dz).to_degrees()) as f32;
     if go >= dist { Walk::Arrived } else { Walk::Moving }
+}
+
+/// How close (blocks, across) an entity of `width` gets to a waypoint before it takes the next (`PathNavigation.maxDistanceToWaypoint`).
+pub fn waypoint_reach(width: f64) -> f64 {
+    if width > 0.75 { width / 2.0 } else { 0.75 - width / 2.0 }
+}
+
+/// One tick along a found path (FORK-10 5c, `PathNavigation.followThePath`): the waypoints it is near (within [`waypoint_reach`]
+/// across and a block up or down) are passed, then it walks toward the next by `step` (see [`walk`]). Arrived when none is left;
+/// blocked when a step cannot be made (the game finds a new path or stops it).
+pub fn follow(
+    pos: &mut [f64; 3],
+    yaw: &mut f32,
+    path: &mut Vec<[f64; 3]>,
+    step: f64,
+    width: f64,
+    height: f64,
+    top: &dyn Fn(i32, i32, i32) -> f64,
+) -> Walk {
+    let reach = waypoint_reach(width);
+    let near = |pos: &[f64; 3], w: &[f64; 3]| (w[0] - pos[0]).hypot(w[2] - pos[2]) < reach && (w[1] - pos[1]).abs() < 1.0;
+    while path.first().is_some_and(|w| near(pos, w)) {
+        path.remove(0);
+    }
+    let Some(&next) = path.first() else {
+        return Walk::Arrived;
+    };
+    match walk(pos, yaw, next, step, height, top) {
+        Walk::Blocked => Walk::Blocked,
+        Walk::Arrived => {
+            path.remove(0);
+            if path.is_empty() { Walk::Arrived } else { Walk::Moving }
+        }
+        Walk::Moving => Walk::Moving,
+    }
+}
+
+/// Whether an entity walking to `goal` needs a new path: none was made for it, or the goal moved more than a block from the one the
+/// path was made for and the path is at least 10 ticks old (`FollowOwnerGoal`'s recalculation every 10 ticks).
+pub fn needs_path(goal: [f64; 3], made_for: Option<[f64; 3]>, age: u32) -> bool {
+    match made_for {
+        None => true,
+        Some(g) => age >= 10 && (0..3).map(|i| (g[i] - goal[i]).powi(2)).sum::<f64>() > 1.0,
+    }
 }
 
 /// One tick of falling for an entity at `y` whose next cell below holds a floor at `floor_top` (the top of the highest blocking cell under
@@ -293,6 +362,8 @@ pub fn apply(e: &mut ModEntityState, kind: &EntityKind, u: &ModEntityUpdate) -> 
     if let Some((x, y, z)) = u.teleport {
         e.pos = [x, y, z];
         e.goal = None;
+        e.path.clear();
+        e.path_goal = None;
     }
     if let Some((x, y, z, speed)) = u.path_to
         && [x, y, z].iter().all(|v| v.is_finite())
@@ -302,6 +373,8 @@ pub fn apply(e: &mut ModEntityState, kind: &EntityKind, u: &ModEntityUpdate) -> 
     }
     if u.stop {
         e.goal = None;
+        e.path.clear();
+        e.path_goal = None;
     }
     if let Some(h) = u.health.filter(|h| h.is_finite() && *h > 0.0) {
         e.health = h.min(kind.max_health);
@@ -446,6 +519,72 @@ mod tests {
         );
     }
 
+    /// A cell's collision top from a solid-or-not answer.
+    fn full(solid: impl Fn(i32, i32, i32) -> bool) -> impl Fn(i32, i32, i32) -> f64 {
+        move |x, y, z| if solid(x, y, z) { 1.0 } else { 0.0 }
+    }
+
+    #[test]
+    fn walking_goes_up_slabs_and_stairs_but_not_over_a_fence() {
+        // A floor at y 63, a slab (0.5) at x 2 and a full block at x 3, both at y 64: it steps up half, then the other half.
+        let stairs = |x: i32, y: i32, _: i32| match (x, y) {
+            (_, ..=63) => 1.0,
+            (2, 64) => 0.5,
+            (3.., 64) => 1.0,
+            _ => 0.0,
+        };
+        let (mut pos, mut yaw) = ([1.9, 64.0, 0.5], 0.0f32);
+        walk(&mut pos, &mut yaw, [6.5, 64.0, 0.5], 0.2, 0.65, &stairs);
+        assert_eq!(pos[1], 64.5, "onto the slab");
+        while pos[0] < 3.0 {
+            walk(&mut pos, &mut yaw, [6.5, 64.0, 0.5], 0.2, 0.65, &stairs);
+        }
+        assert_eq!(pos[1], 65.0, "onto the block");
+        // A fence (1.5) is more than a block over its feet: it stops.
+        let fence = |x: i32, y: i32, _: i32| match (x, y) {
+            (_, ..=63) => 1.0,
+            (2, 64) => 1.5,
+            _ => 0.0,
+        };
+        let (mut pos, mut yaw) = ([1.9, 64.0, 0.5], 0.0f32);
+        assert_eq!(walk(&mut pos, &mut yaw, [6.5, 64.0, 0.5], 0.2, 0.65, &fence), Walk::Blocked);
+    }
+
+    #[test]
+    fn following_a_path_passes_its_waypoints_in_turn_and_stops_when_blocked() {
+        let floor = full(|_, y, _| y <= 63);
+        // Round a corner: east 3 blocks, then south 2 (the waypoints a path search gives, at the cells' middles).
+        let mut path = vec![[0.5, 64.0, 0.5], [1.5, 64.0, 0.5], [2.5, 64.0, 0.5], [3.5, 64.0, 0.5], [3.5, 64.0, 1.5], [3.5, 64.0, 2.5]];
+        let (mut pos, mut yaw) = ([0.5, 64.0, 0.5], 0.0f32);
+        let mut ticks = 0;
+        while follow(&mut pos, &mut yaw, &mut path, 0.3, 0.6, 0.65, &floor) == Walk::Moving {
+            ticks += 1;
+            // It goes east along the row first and turns south only near the corner (the reach of a 0.6 wide entity is 0.45).
+            assert!(pos[2] < 0.6 || pos[0] > 3.0, "it cut the corner at {pos:?}");
+            assert!(ticks < 100);
+        }
+        // As in vanilla, the last waypoint is passed too once it is within reach: it stops within 0.45 of it.
+        assert!((pos[0] - 3.5).hypot(pos[2] - 2.5) < 0.45 && pos[1] == 64.0, "{pos:?}");
+        assert!(path.is_empty());
+        assert!(yaw.abs() < 45.0, "it faces south at the end, {yaw}");
+        // A wall where the path goes: blocked, and the path is kept for the game to find a new one.
+        let wall = full(|x, y, _| y <= 63 || x == 2 && y <= 65);
+        let mut path = vec![[1.5, 64.0, 0.5], [2.5, 64.0, 0.5]];
+        let (mut pos, mut yaw) = ([1.9, 64.0, 0.5], 0.0f32);
+        assert_eq!(follow(&mut pos, &mut yaw, &mut path, 0.3, 0.6, 0.65, &wall), Walk::Blocked);
+        assert_eq!(path, [[2.5, 64.0, 0.5]]);
+        assert_eq!(waypoint_reach(1.4), 0.7);
+    }
+
+    #[test]
+    fn a_new_path_is_found_for_a_new_goal_at_most_every_10_ticks() {
+        assert!(needs_path([5.0, 64.0, 5.0], None, 0), "none yet");
+        assert!(!needs_path([5.0, 64.0, 5.0], Some([5.0, 64.0, 5.0]), 50), "the same goal");
+        assert!(!needs_path([5.5, 64.0, 5.5], Some([5.0, 64.0, 5.0]), 50), "a goal less than a block away");
+        assert!(!needs_path([9.0, 64.0, 5.0], Some([5.0, 64.0, 5.0]), 9), "too soon");
+        assert!(needs_path([9.0, 64.0, 5.0], Some([5.0, 64.0, 5.0]), 10));
+    }
+
     #[test]
     fn walking_goes_over_flat_ground_climbs_a_block_drops_and_stops_at_a_wall() {
         // A floor at y 63: cells at y 63 and below are solid; y 64 and above is air, but for the scene's own blocks.
@@ -453,7 +592,7 @@ mod tests {
         let (mut pos, mut yaw) = ([0.5, 64.0, 0.5], 0.0f32);
         // 10 blocks east at 0.5 a tick: arrives on the 20th step, facing east (-90).
         let mut steps = 0;
-        while walk(&mut pos, &mut yaw, [10.5, 64.0, 0.5], 0.5, 0.65, &floor) == Walk::Moving {
+        while walk(&mut pos, &mut yaw, [10.5, 64.0, 0.5], 0.5, 0.65, &full(floor)) == Walk::Moving {
             steps += 1;
         }
         assert_eq!((steps, pos), (19, [10.5, 64.0, 0.5]));
@@ -461,19 +600,19 @@ mod tests {
         // A step up of one block: the cell at x 2 is raised to y 64.
         let step_up = |x: i32, y: i32, _: i32| y <= 63 || (x == 2 && y == 64);
         let (mut pos, mut yaw) = ([1.9, 64.0, 0.5], 0.0f32);
-        walk(&mut pos, &mut yaw, [5.5, 64.0, 0.5], 0.5, 0.65, &step_up);
+        walk(&mut pos, &mut yaw, [5.5, 64.0, 0.5], 0.5, 0.65, &full(step_up));
         assert_eq!(pos[1], 65.0, "it climbs onto the block");
         // A wall two blocks high stops it, and so does a ceiling that leaves too little room for its height.
         let wall = |x: i32, y: i32, _: i32| y <= 63 || (x == 2 && (64..=65).contains(&y));
         let (mut pos, mut yaw) = ([1.9, 64.0, 0.5], 0.0f32);
-        assert_eq!(walk(&mut pos, &mut yaw, [5.5, 64.0, 0.5], 0.5, 0.65, &wall), Walk::Blocked);
+        assert_eq!(walk(&mut pos, &mut yaw, [5.5, 64.0, 0.5], 0.5, 0.65, &full(wall)), Walk::Blocked);
         assert_eq!(pos, [1.9, 64.0, 0.5]);
         let low = |x: i32, y: i32, _: i32| y <= 63 || (x == 2 && y == 65);
-        assert_eq!(walk(&mut [1.9, 64.0, 0.5], &mut yaw, [5.5, 64.0, 0.5], 0.5, 1.8, &low), Walk::Blocked);
+        assert_eq!(walk(&mut [1.9, 64.0, 0.5], &mut yaw, [5.5, 64.0, 0.5], 0.5, 1.8, &full(low)), Walk::Blocked);
         // A drop of one block: the floor ends at x 2 (the cell below is air down to 62).
         let pit = |x: i32, y: i32, _: i32| y <= 62 || (x != 2 && y == 63);
         let (mut pos, mut yaw) = ([1.9, 64.0, 0.5], 0.0f32);
-        walk(&mut pos, &mut yaw, [5.5, 64.0, 0.5], 0.5, 0.65, &pit);
+        walk(&mut pos, &mut yaw, [5.5, 64.0, 0.5], 0.5, 0.65, &full(pit));
         assert_eq!(pos[1], 63.0, "it drops into the pit");
     }
 

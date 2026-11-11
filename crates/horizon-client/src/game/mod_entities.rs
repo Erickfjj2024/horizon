@@ -4,7 +4,7 @@
 use super::Game;
 use horizon_mods::{
     content::EntityKind,
-    entity_state::{CARRIER_TAG, FILE, ModEntityState, WALK_FACTOR, Walk, apply, carrier_snbt, decode, encode, hitbox_snbt, walk},
+    entity_state::{CARRIER_TAG, FILE, ModEntityState, WALK_FACTOR, Walk, apply, carrier_snbt, decode, encode, follow, hitbox_snbt, needs_path},
 };
 use std::{collections::HashMap, sync::OnceLock};
 
@@ -85,38 +85,83 @@ impl Game<'_> {
         self.mod_entities.list.len() != before
     }
 
-    /// One tick of walking for the entities of the level in place that have a goal (FORK-10 c): `walk` over the loaded blocks, at the
-    /// kind's `speed` times the goal's multiplier; arriving or being blocked ends the goal.
+    /// One tick of walking for the entities of the level in place that have a goal (FORK-10 c, 5c): a path found by vanilla's search
+    /// (`mod_entity_path`) followed waypoint by waypoint (`follow`), at the kind's `speed` times the goal's multiplier; arriving ends
+    /// the goal, and so do nothing reachable and three blocked steps in a row.
     pub(super) fn walk_mod_entities(&mut self) {
+        use horizon_client::mobs::path::PathType;
         let Some(kinds) = MOD_KINDS.get() else {
             return;
         };
         let dim = self.dim.id().to_owned();
-        for i in 0..self.mod_entities.list.len() {
-            let e = &self.mod_entities.list[i];
-            let (Some((goal, mult)), true) = (e.goal, e.dimension == dim) else {
-                continue;
+        let mut list = std::mem::take(&mut self.mod_entities.list);
+        {
+            let w = self.mob_world_base(&[]);
+            // A cell's collision top for walking: 0 where it walks through (air, water, an open door, a plant).
+            let top = |x: i32, y: i32, z: i32| {
+                let st = w.data.state(w.world.block(x, y, z));
+                if matches!(st.path, PathType::Open | PathType::DoorOpen | PathType::Water | PathType::Lava) {
+                    0.0
+                } else {
+                    f64::from(st.top)
+                }
             };
-            let Some(kind) = kinds.get(&e.kind) else {
-                continue;
-            };
-            let (mut pos, mut yaw) = (e.pos, e.yaw);
-            // A chunk that is not loaded stops it where it is (its blocks read as air).
-            if !self.world.chunks.contains_key(&((pos[0].floor() as i32) >> 4, (pos[2].floor() as i32) >> 4)) {
-                continue;
-            }
-            let facts = self.res.facts();
-            let world = &self.world;
-            let solid = |x: i32, y: i32, z: i32| facts.get(world.block(x, y, z)).full_collision;
-            let step = f64::from(kind.speed) * f64::from(mult) * WALK_FACTOR;
-            let result = walk(&mut pos, &mut yaw, goal, step, f64::from(kind.height), &solid);
-            let e = &mut self.mod_entities.list[i];
-            e.pos = pos;
-            e.yaw = yaw;
-            if result != Walk::Moving {
-                e.goal = None;
+            for e in &mut list {
+                let (Some((goal, mult)), true) = (e.goal, e.dimension == dim) else {
+                    continue;
+                };
+                let Some(kind) = kinds.get(&e.kind) else {
+                    continue;
+                };
+                // A chunk that is not loaded stops it where it is (its blocks read as air).
+                if !self.world.chunks.contains_key(&((e.pos[0].floor() as i32) >> 4, (e.pos[2].floor() as i32) >> 4)) {
+                    continue;
+                }
+                // FORK-10 5c: vanilla's path search (`GroundPathNavigation`) for a new goal, at most every 10 ticks for a moving one;
+                // nothing reachable stops it, as a mob's failed `moveTo` does.
+                if needs_path(goal, e.path_goal, e.path_age) {
+                    let from = horizon_core::geometry::Vec3::new(e.pos[0], e.pos[1], e.pos[2]);
+                    match horizon_client::mobs::nav::mod_entity_path(&w, from, kind.width, kind.height, goal) {
+                        Some(path) => {
+                            e.path = path;
+                            e.path_goal = Some(goal);
+                            e.path_age = 0;
+                        }
+                        None => {
+                            e.goal = None;
+                            e.path.clear();
+                            e.path_goal = None;
+                            continue;
+                        }
+                    }
+                }
+                e.path_age = e.path_age.saturating_add(1);
+                let step = f64::from(kind.speed) * f64::from(mult) * WALK_FACTOR;
+                let (mut pos, mut yaw) = (e.pos, e.yaw);
+                let result = follow(&mut pos, &mut yaw, &mut e.path, step, f64::from(kind.width), f64::from(kind.height), &top);
+                e.pos = pos;
+                e.yaw = yaw;
+                match result {
+                    Walk::Moving => e.stuck = 0,
+                    Walk::Arrived => {
+                        e.goal = None;
+                        e.path_goal = None;
+                        e.stuck = 0;
+                    }
+                    // A step it cannot make: a new path next tick, and after 3 in a row it gives up (vanilla's stuck check).
+                    Walk::Blocked => {
+                        e.stuck += 1;
+                        e.path.clear();
+                        e.path_goal = None;
+                        if e.stuck >= 3 {
+                            e.goal = None;
+                            e.stuck = 0;
+                        }
+                    }
+                }
             }
         }
+        self.mod_entities.list = list;
     }
 
     /// Makes each entity of the level in place stand for itself on the clients (FORK-10 b): an `item_display` of the skin's model (see
