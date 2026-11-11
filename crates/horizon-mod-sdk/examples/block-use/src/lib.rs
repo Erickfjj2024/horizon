@@ -1,17 +1,26 @@
 //! Block Use (FORK-29): a mod that decides what a right click on one of its blocks does. Holding a block, the click
 //! passes (the block does not use itself; the held block is placed); sneaking with a hand held, or holding anything
 //! else, leaves it to the game; an empty hand and no sneaking is the block's own use, taken by the mod.
-use horizon_mod_sdk::server::{BlockPos, BlockUse, ItemStack, Player, Registration, ServerMod, world};
+use horizon_mod_sdk::server::{BlockPos, BlockUse, ItemStack, Player, Registration, ServerMod, menu_input, world};
 
 struct Gate;
 
 impl ServerMod for Gate {
     fn init() -> Result<(Self, Registration), String> {
-        Ok((Gate, Registration::new().on_blocks().redirect("blockuse:bound", 0, 1)))
+        Ok((Gate, Registration::new().on_blocks().on_net().redirect("blockuse:bound", 0, 1)))
     }
     /// FORK-35: a machine of the mod needs the block above it free: with one over it (y 81 over a block at 80), the placement is refused.
     fn can_place(&mut self, _player: &Player, pos: BlockPos, _state: &str) -> bool {
         world::get_block("minecraft:overworld", pos.x, pos.y + 1, pos.z).is_none_or(|b| b == "minecraft:air")
+    }
+    /// FORK-20: what a text box of the machine's screen confirms (widget 7800) comes back as the menu's first string.
+    fn net_message(&mut self, player: &Player, channel: &str, data: &[u8]) {
+        if channel != menu_input::channel("blockuse") {
+            return;
+        }
+        if let Some(input) = menu_input::decode(data).filter(|i| i.id == 7800) {
+            let _ = world::set_menu_text(&player.dimension, input.pos.x, input.pos.y, input.pos.z, &[input.text]);
+        }
     }
     fn block_used(&mut self, player: &Player, pos: BlockPos, sneaking: bool, stack: Option<ItemStack>) -> BlockUse {
         // FORK-34: the gate at y 70 is a structure that is not formed: its items, tanks and energy are closed to the outside.

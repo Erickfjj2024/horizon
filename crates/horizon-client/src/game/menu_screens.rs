@@ -6,7 +6,7 @@
 use super::{Game, native_hooks::NativeScreen};
 use horizon_client::hud::{HudBatch, rgba};
 use horizon_mods::{
-    content::{ArmorSlots, Direction, MenuScreen, Widget, parse_color},
+    content::{ArmorSlots, Direction, MenuScreen, Validator, Widget, find_field, parse_color},
     screen::{DRAG_HEIGHT, Locals, Press, press_with, fill_text, neighbor_step, window_origin, filled, fraction, hovered, open_window, press, read, showing},
 };
 use std::{
@@ -37,6 +37,28 @@ static SCREEN_AT: Mutex<Option<[i32; 3]>> = Mutex::new(None);
 
 /// Most blocks whose strings a client keeps (the oldest are dropped).
 const MENU_TEXT_BLOCKS: usize = 64;
+
+/// The text box of the open mod screen that has the focus (FORK-20): its widget `id`, what it takes and the edit box.
+struct ModField {
+    id: i32,
+    validator: Validator,
+    edit: horizon_client::ui::EditBox,
+}
+static FIELD: Mutex<Option<ModField>> = Mutex::new(None);
+/// A text box just took the focus: a touch screen opens its keyboard once (`take_field_keyboard`).
+static FIELD_KEYBOARD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether a text box took the focus since the last call.
+pub(super) fn take_field_keyboard() -> bool {
+    FIELD_KEYBOARD.swap(false, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// A new screen opened or the old one closed: no text box has the focus.
+pub(super) fn drop_field() {
+    if let Ok(mut f) = FIELD.lock() {
+        *f = None;
+    }
+}
 
 /// A `horizon:menu_text` message arrived: the strings of the block at its position.
 pub(super) fn remember_menu_text(data: &[u8]) {
@@ -70,6 +92,7 @@ pub(super) const LOCAL_PRESS: i32 = i32::MIN;
 
 /// A new screen opened: its windows are closed and its variables unset.
 pub(super) fn reset_locals() {
+    drop_field();
     if let Ok(mut l) = LOCALS.lock() {
         *l = None;
     }
@@ -231,6 +254,25 @@ impl Game<'_> {
                     let on = cursor[0] >= ox + *x as f32 && cursor[1] >= oy + *y as f32 && cursor[0] < ox + (*x + *w) as f32 && cursor[1] < oy + (*y + *h) as f32;
                     if on && let Some(argb) = parse_color(c) {
                         self.native_fill(batch, [ox + *x as f32, oy + *y as f32, *w as f32, *h as f32], argb);
+                    }
+                }
+                Widget::TextField { x, y, w, h, id, max_length, text_data, .. } => {
+                    let rect = [ox + *x as f32, oy + *y as f32, *w as f32, *h as f32];
+                    let mut focused = false;
+                    if let Ok(mut f) = FIELD.lock()
+                        && let Some(field) = f.as_mut().filter(|f| f.id == *id)
+                    {
+                        let edit = &mut field.edit;
+                        [edit.x, edit.y, edit.width, edit.height] = rect;
+                        edit.focused = true;
+                        edit.draw(batch, &self.gui.atlas, None);
+                        focused = true;
+                    }
+                    if !focused {
+                        let mut edit = horizon_client::ui::EditBox::new(rect[0], rect[1], rect[2], rect[3]);
+                        edit.max_length = usize::from(*max_length);
+                        edit.set_value(&text_data.and_then(|n| menu_string(usize::from(n))).unwrap_or_default());
+                        edit.draw(batch, &self.gui.atlas, None);
                     }
                 }
                 Widget::Button { .. } | Widget::Show { .. } => {}
@@ -405,7 +447,25 @@ impl Game<'_> {
         });
         let result = press_with(screen, data, &mut now, at, alt, self.has_shift_down());
         *l = Some(now);
+        // A press anywhere but on the text box that has the focus lets it go.
+        let on_field = matches!(result, Some(Press::Field(_)));
+        if !on_field {
+            drop_field();
+        }
         let result = result?;
+        if let Press::Field(id) = result {
+            if let Some(Widget::TextField { max_length, validator, text_data, .. }) = find_field(screen, id) {
+                let mut edit = horizon_client::ui::EditBox::new(0.0, 0.0, 100.0, 20.0);
+                edit.max_length = usize::from(*max_length);
+                edit.set_value(&text_data.and_then(|n| menu_string(usize::from(n))).unwrap_or_default());
+                edit.move_cursor_to_end(false);
+                if let Ok(mut f) = FIELD.lock() {
+                    *f = Some(ModField { id, validator: *validator, edit });
+                    FIELD_KEYBOARD.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+            return Some(LOCAL_PRESS);
+        }
         if let (Press::Local, (true, offset), false) = (&result, grab.unwrap_or((false, [0.0; 2])), alt)
             && let Ok(mut d) = DRAG.lock()
         {
@@ -413,8 +473,64 @@ impl Game<'_> {
         }
         match result {
             Press::Send(id) => Some(id),
-            Press::Local => Some(LOCAL_PRESS),
+            Press::Local | Press::Field(_) => Some(LOCAL_PRESS),
         }
+    }
+
+    /// Whether a text box of the open mod screen has the focus (FORK-20).
+    pub(super) fn mod_field_typing(&self) -> bool {
+        self.screen == super::Screen::Inventory && FIELD.lock().is_ok_and(|f| f.is_some())
+    }
+
+    /// The focused text box's text, for the touch keyboard's first value.
+    pub(super) fn mod_field_value(&self) -> String {
+        FIELD.lock().ok().and_then(|mut f| f.as_mut().map(|f| {
+            f.edit.move_cursor_to_end(false);
+            f.edit.value.clone()
+        })).unwrap_or_default()
+    }
+
+    /// Typed text (what the validator allows) or a backspace in the focused text box.
+    pub(super) fn mod_field_text(&mut self, text: Option<&str>, backspace: bool) {
+        let Ok(mut f) = FIELD.lock() else {
+            return;
+        };
+        let Some(field) = f.as_mut() else {
+            return;
+        };
+        if backspace {
+            field.edit.delete_chars(-1);
+        } else if let Some(t) = text {
+            let allowed: String = t.chars().filter(|c| field.validator.allows(*c)).collect();
+            if !allowed.is_empty() {
+                field.edit.insert_text(&allowed);
+            }
+        }
+    }
+
+    /// A key in the focused text box (cursor, delete, select...): Enter confirms, and false lets the key go on.
+    pub(super) fn mod_field_key(&mut self, key: winit::keyboard::KeyCode) -> bool {
+        if key == winit::keyboard::KeyCode::Enter || key == winit::keyboard::KeyCode::NumpadEnter {
+            self.mod_field_confirm();
+            return true;
+        }
+        let (ctrl, shift) = (self.has_control_down(), self.has_shift_down());
+        FIELD.lock().ok().and_then(|mut f| f.as_mut().map(|f| f.edit.key(key, ctrl, shift))).unwrap_or(false)
+    }
+
+    /// Enter: the text goes to the server, as a mod message on `<mod id>:menu_text`, and the box lets go of the focus.
+    pub(super) fn mod_field_confirm(&mut self) {
+        let Some((id, text)) = FIELD.lock().ok().and_then(|mut f| f.take()).map(|f| (f.id, f.edit.value)) else {
+            return;
+        };
+        let (Some(at), Some(block)) = (*SCREEN_AT.lock().ok().as_deref().unwrap_or(&None), self.native_open_block()) else {
+            return;
+        };
+        let Some((namespace, _)) = block.split_once(':') else {
+            return;
+        };
+        let data = horizon_mods::screen::encode_menu_input(at, id, &text);
+        let _ = self.native_net_send_to_server(&format!("{namespace}:menu_text"), &data);
     }
 
     /// The tooltip under `at` on block `block`'s declared screen.

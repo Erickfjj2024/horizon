@@ -207,6 +207,32 @@ pub mod server {
         },
     });
 
+    /// What a mod screen's `textfield` sends the server when the player confirms it (FORK-20): a mod message on channel
+    /// `<mod id>:menu_text`, which [`menu_input::decode`] reads. Needs [`Registration::on_net`].
+    pub mod menu_input {
+        use super::BlockPos;
+        /// The block whose menu has the box, the box's widget `id` and the confirmed text.
+        #[derive(Clone, Debug, PartialEq)]
+        pub struct MenuInput {
+            pub pos: BlockPos,
+            pub id: i32,
+            pub text: String,
+        }
+        /// The channel of the mod `mod_id`.
+        pub fn channel(mod_id: &str) -> String {
+            format!("{mod_id}:menu_text")
+        }
+        /// The message's position, widget id and text; None for bytes that are not one.
+        pub fn decode(data: &[u8]) -> Option<MenuInput> {
+            let int = |at: usize| data.get(at..at + 4).map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+            Some(MenuInput {
+                pos: BlockPos { x: int(0)?, y: int(4)?, z: int(8)? },
+                id: int(12)?,
+                text: String::from_utf8(data.get(16..)?.to_vec()).ok()?,
+            })
+        }
+    }
+
     pub use exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
         BlockPos, BlockUse, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,

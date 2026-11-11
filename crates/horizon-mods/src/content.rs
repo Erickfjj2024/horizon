@@ -604,6 +604,64 @@ pub enum Widget {
     },
     /// The icon of item `item` (`minecraft:iron_ingot`), drawn 16 by 16 at `x`, `y`; nothing when the item is unknown.
     Item { x: i32, y: i32, item: String },
+    /// A text box (`GuiTextField`, FORK-20): a press focuses it (and opens the keyboard on a touch screen), typing fills it
+    /// up to `max_length` characters that `validator` allows, Enter confirms. The confirmed text goes to the server as a mod
+    /// message on channel `<mod id>:menu_text` (`horizon_mod_sdk::server::menu_input` reads it), with this widget's `id`. It
+    /// starts with string `text_data` of the menu text (`world.set-menu-text`) when it has one.
+    #[serde(rename = "textfield")]
+    TextField {
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        id: i32,
+        #[serde(default = "default_field_length")]
+        max_length: u16,
+        #[serde(default)]
+        validator: Validator,
+        #[serde(default)]
+        text_data: Option<u16>,
+    },
+}
+
+fn default_field_length() -> u16 {
+    32
+}
+
+/// What a text box lets be typed (`TextValidator`).
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Validator {
+    /// Any printable character.
+    #[default]
+    Any,
+    /// Digits only.
+    Digit,
+    /// Lower case letters, digits and `_ . / : - #` (a tag or a block, item or entity id).
+    Id,
+}
+
+impl Validator {
+    /// Whether `c` may be typed.
+    pub fn allows(self, c: char) -> bool {
+        match self {
+            Validator::Any => !c.is_control(),
+            Validator::Digit => c.is_ascii_digit(),
+            Validator::Id => c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '.' | '/' | ':' | '-' | '#'),
+        }
+    }
+}
+
+/// The text box of `id` in `widgets` and what they hold (groups and windows too).
+pub fn find_field<'a>(screen: &'a MenuScreen, id: i32) -> Option<&'a Widget> {
+    fn walk<'a>(widgets: &'a [Widget], id: i32) -> Option<&'a Widget> {
+        widgets.iter().find_map(|w| match w {
+            Widget::TextField { id: i, .. } if *i == id => Some(w),
+            Widget::Show { widgets, .. } => walk(widgets, id),
+            _ => None,
+        })
+    }
+    walk(&screen.widgets, id).or_else(|| screen.windows.iter().find_map(|w| walk(&w.widgets, id)))
 }
 
 /// `#RRGGBB` (opaque) or `#AARRGGBB` as `0xAARRGGBB`.
@@ -822,6 +880,15 @@ fn check_widget(
             }
             if *side > 5 {
                 return Err(format!("{name}: a neighbour's side is 0 to 5"));
+            }
+        }
+        Widget::TextField { x, y, w, h, max_length, text_data, .. } => {
+            rect(*x, *y, *w, *h)?;
+            if !(1..=256).contains(max_length) {
+                return Err(format!("{name}: a text field's max_length is 1 to 256"));
+            }
+            if text_data.is_some_and(|n| usize::from(n) >= crate::runtime::MENU_TEXTS) {
+                return Err(format!("{name}: text_data is a string of the menu, 0 to {}", crate::runtime::MENU_TEXTS - 1));
             }
         }
         Widget::Item { x, y, item } => {

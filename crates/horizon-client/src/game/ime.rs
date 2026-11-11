@@ -30,7 +30,10 @@ impl Game<'_> {
             Screen::WorldOptions => self.world_options_typing(),
             Screen::Creative => self.creative_screen.tab().search,
             Screen::Inventory => {
-                self.mod_browser_typing() || self.recipe_search_focused() || self.station_typing()
+                self.mod_field_typing()
+                    || self.mod_browser_typing()
+                    || self.recipe_search_focused()
+                    || self.station_typing()
             }
             _ => false,
         }
@@ -128,6 +131,7 @@ impl Game<'_> {
                 Screen::DebugOptions => self.debug_options_type(&text),
                 Screen::WorldOptions => self.world_options_text(Some(&text)),
                 Screen::Creative => self.creative_search_edit(Some(&text)),
+                Screen::Inventory if self.mod_field_typing() => self.mod_field_text(Some(&text), false),
                 Screen::Inventory if self.mod_browser_typing() => {
                     self.mod_browser_text(Some(&text), false)
                 }

@@ -1413,6 +1413,12 @@ impl Game<'_> {
             if key != Some(KeyCode::Enter) {
                 self.recipe_text(text, backspace);
             }
+        } else if self.mod_field_typing() {
+            if key == Some(KeyCode::Enter) {
+                self.mod_field_confirm();
+            } else {
+                self.mod_field_text(text, backspace);
+            }
         } else if self.mod_browser_typing() {
             if key != Some(KeyCode::Enter) {
                 self.mod_browser_text(text, backspace);

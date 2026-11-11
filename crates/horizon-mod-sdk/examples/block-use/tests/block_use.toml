@@ -64,3 +64,9 @@ expect.blocks = [{ x = 51, y = 74, z = 0, state = "blockuse:box" }]
 use-block = { pos = [1, 75, 1] }
 ticks = 1
 expect.menu-text = ["minecraft:overworld 1 75 1 forge:ores/iron|Alex"]
+
+[[step]]
+# FORK-20: the text box (widget 7800) of the machine at 3 76 4 confirmed "forge:ores/gold": the mod answers with it as the menu's first string.
+net = { channel = "blockuse:menu_text", data = [3, 0, 0, 0, 76, 0, 0, 0, 4, 0, 0, 0, 120, 30, 0, 0, 102, 111, 114, 103, 101, 58, 111, 114, 101, 115, 47, 103, 111, 108, 100] }
+ticks = 1
+expect.menu-text = ["minecraft:overworld 3 76 4 forge:ores/gold"]

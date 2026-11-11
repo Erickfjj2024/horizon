@@ -17432,12 +17432,21 @@ impl Game<'_> {
                     self.mod_browser_key(&event);
                 }
                 WindowEvent::KeyboardInput { event, .. }
-                    if self.station_typing()
+                    if (self.station_typing() || self.mod_field_typing())
                         && event.state == ElementState::Pressed
                         && !matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) =>
                 {
                     // The anvil rename box takes every key but Escape (AnvilScreen.keyPressed).
-                    if let Some(shortcut) = self.edit_shortcut(&event) {
+                    if self.mod_field_typing() {
+                        // A mod screen's text box (FORK-20).
+                        if let PhysicalKey::Code(key) = event.physical_key
+                            && self.mod_field_key(key)
+                        {
+                        } else {
+                            let backspace = event.physical_key == PhysicalKey::Code(KeyCode::Backspace);
+                            self.mod_field_text(event.text.as_deref(), backspace);
+                        }
+                    } else if let Some(shortcut) = self.edit_shortcut(&event) {
                         self.station_shortcut(shortcut);
                     } else if let PhysicalKey::Code(key) = event.physical_key
                         && self.station_key(key)

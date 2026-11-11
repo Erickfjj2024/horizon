@@ -92,6 +92,8 @@ pub const DRAG_HEIGHT: f32 = 18.0;
 /// What a press did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Press {
+    /// The text box `id` was pressed (FORK-20): it takes the focus.
+    Field(i32),
     /// Menu button `id`, for the server.
     Send(i32),
     /// Something here: a local action, or a press a window took.
@@ -111,6 +113,12 @@ fn press_in(
     alt: bool,
     shift: bool,
 ) -> Option<Press> {
+    if let Some(id) = showing(widgets, data, locals).into_iter().find_map(|w| match w {
+        Widget::TextField { x, y, w, h, id, .. } if inside(at, *x, *y, *w, *h) => Some(*id),
+        _ => None,
+    }) {
+        return Some(Press::Field(id));
+    }
     let hit = showing(widgets, data, locals).into_iter().find_map(|w| match w {
         Widget::Button { x, y, w, h, id, alt_id, shift_id, local, .. } if inside(at, *x, *y, *w, *h) => {
             Some((*id, *alt_id, *shift_id, local.clone()))
@@ -478,6 +486,24 @@ mod tests {
     }
 }
 
+/// What a confirmed text box sends the server, on `<mod id>:menu_text`: the block's position (three little-endian whole numbers),
+/// the widget's `id` (one more) and the text (UTF-8, the rest of the message).
+pub fn encode_menu_input(pos: [i32; 3], id: i32, text: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    for v in pos {
+        out.extend(v.to_le_bytes());
+    }
+    out.extend(id.to_le_bytes());
+    out.extend(text.as_bytes());
+    out
+}
+
+/// The position, widget id and text of [`encode_menu_input`].
+pub fn decode_menu_input(data: &[u8]) -> Option<([i32; 3], i32, String)> {
+    let int = |at: usize| data.get(at..at + 4).map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    Some(([int(0)?, int(4)?, int(8)?], int(12)?, String::from_utf8(data.get(16..)?.to_vec()).ok()?))
+}
+
 /// The channel a block entity's menu strings travel on, host to client (`world.set-menu-text`).
 pub const MENU_TEXT_CHANNEL: &str = "horizon:menu_text";
 
@@ -517,6 +543,44 @@ pub fn decode_menu_text(data: &[u8]) -> Option<([i32; 3], Vec<String>)> {
 #[cfg(test)]
 mod menu_text_tests {
     use super::*;
+
+    #[test]
+    fn menu_input_round_trips_and_a_short_message_is_refused() {
+        let bytes = encode_menu_input([5, -64, 9], 7800, "forge:ores/iron");
+        assert_eq!(decode_menu_input(&bytes), Some(([5, -64, 9], 7800, "forge:ores/iron".to_owned())));
+        assert_eq!(decode_menu_input(&bytes[..15]), None);
+        // An empty text is a message too (a cleared box).
+        assert_eq!(decode_menu_input(&encode_menu_input([0; 3], 1, "")), Some(([0; 3], 1, String::new())));
+    }
+
+    #[test]
+    fn a_press_on_a_text_field_focuses_it_and_one_beside_it_is_not_a_field_press() {
+        use crate::content::{MenuScreen, Widget};
+        let screen: MenuScreen = serde_json::from_str(
+            r#"{"slots": [], "widgets": [
+                {"type": "textfield", "x": 10, "y": 20, "w": 60, "h": 12, "id": 7800, "validator": "digit", "max_length": 7},
+                {"type": "button", "x": 10, "y": 40, "w": 20, "h": 10, "id": 3}]}"#,
+        )
+        .unwrap();
+        let mut locals = Locals::default();
+        assert_eq!(press(&screen, &[], &mut locals, [12.0, 22.0], false), Some(Press::Field(7800)));
+        assert_eq!(press(&screen, &[], &mut locals, [12.0, 42.0], false), Some(Press::Send(3)));
+        assert_eq!(press(&screen, &[], &mut locals, [100.0, 22.0], false), None);
+        let Some(Widget::TextField { max_length, validator, .. }) = crate::content::find_field(&screen, 7800) else {
+            panic!("the field is found by its id");
+        };
+        assert_eq!(*max_length, 7);
+        assert!(validator.allows('5') && !validator.allows('a'));
+    }
+
+    #[test]
+    fn validators_filter_what_is_typed() {
+        use crate::content::Validator;
+        assert!(Validator::Id.allows('a') && Validator::Id.allows('/') && Validator::Id.allows('#'));
+        assert!(!Validator::Id.allows('A') && !Validator::Id.allows(' '));
+        assert!(Validator::Any.allows('ñ') && !Validator::Any.allows('\n'));
+        assert!(Validator::Digit.allows('0') && !Validator::Digit.allows('-'));
+    }
 
     #[test]
     fn menu_text_round_trips_and_a_cut_message_is_refused() {

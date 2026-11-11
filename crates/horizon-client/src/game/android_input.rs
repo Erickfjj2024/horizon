@@ -454,6 +454,8 @@ impl Game<'_> {
             self.ui.options.android_edit_value(&self.gui.atlas)
         } else if self.screen == Screen::WorldOptions {
             self.world_options_edit_value()
+        } else if self.mod_field_typing() {
+            self.mod_field_value()
         } else if self.mod_browser_typing() {
             self.mod_browser_edit_value()
         } else if self.station_typing() {
@@ -492,6 +494,10 @@ impl Game<'_> {
             self.system_message(horizon_client::text::Text::literal(
                 result.unwrap_or_else(|e| format!("File export failed: {e}")),
             ));
+        }
+        // A text box of a mod screen took the focus by a touch: its keyboard opens.
+        if super::menu_screens::take_field_keyboard() && self.mod_field_typing() {
+            self.android_show_keyboard();
         }
         for out in crate::platform::poll() {
             let next_sign_line = self.sign_edit.is_some() && matches!(out, Output::Enter);

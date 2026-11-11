@@ -4211,6 +4211,10 @@ impl Game<'_> {
     pub(super) fn native_screen_block(&self) -> Option<String> {
         self.shown_native_screen().map(|s| s.block.clone())
     }
+    /// The block id of the mod screen showing now (a text box's message is named after its namespace).
+    pub(super) fn native_open_block(&self) -> Option<String> {
+        self.shown_native_screen().map(|s| s.block.clone())
+    }
     /// The mod screen showing now, if any.
     fn shown_native_screen(&self) -> Option<&OpenNativeScreen> {
         self.mod_screen
