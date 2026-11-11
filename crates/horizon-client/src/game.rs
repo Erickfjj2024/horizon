@@ -14557,6 +14557,8 @@ impl Game<'_> {
         self.save_bossbars();
         #[cfg(feature = "mods")]
         self.save_mod_entities();
+        #[cfg(feature = "mods")]
+        self.save_mod_world_data();
         self.save_schedule();
         self.save_warden_tracker();
         self.sync_level();

@@ -78,6 +78,14 @@ pub(super) struct ModsState {
     /// tick.
     #[cfg(feature = "mods")]
     pub(super) block_writes: Vec<(String, horizon_mods::BlockChange)>,
+    /// Every mod's values kept in the world (FORK-36, `world-data`), the mods' generation they were last handed to, and whether
+    /// they changed since the world last saved.
+    #[cfg(feature = "mods")]
+    pub(super) world_data: std::collections::BTreeMap<String, Vec<u8>>,
+    #[cfg(feature = "mods")]
+    pub(super) world_data_at: Option<u64>,
+    #[cfg(feature = "mods")]
+    pub(super) world_data_changed: bool,
     /// Every block state's collision boxes, by state id, for capability
     /// `world`'s `get-collision`; made on the first lend.
     #[cfg(feature = "mods")]

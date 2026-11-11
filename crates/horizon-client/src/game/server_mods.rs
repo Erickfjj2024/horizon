@@ -410,6 +410,51 @@ mod run {
             self.mods.server && self.remote.is_none()
         }
 
+        /// The mods' values kept in the world (FORK-36): read from the world's folder the first time, what the mods changed taken
+        /// back, and handed again to mods that (re)started since.
+        fn sync_mod_world_data(&mut self) {
+            if self.remote.is_some() {
+                return;
+            }
+            if self.mods.world_data_at.is_none()
+                && let Ok(bytes) = std::fs::read(self.world_root.join(horizon_mods::world_data::FILE))
+            {
+                match horizon_mods::world_data::decode(&bytes) {
+                    Some(all) => self.mods.world_data = all,
+                    None => log::warn!("the mods' world data could not be read; it starts empty"),
+                }
+            }
+            if self.mods.mods.store_world_data(&mut self.mods.world_data) {
+                self.mods.world_data_changed = true;
+            }
+            let generation = self.mods.mods.generation();
+            if self.mods.world_data_at != Some(generation) {
+                self.mods.mods.load_world_data(&self.mods.world_data);
+                self.mods.world_data_at = Some(generation);
+            }
+        }
+
+        /// Writes the mods' values kept in the world when they changed (with the world's save).
+        pub(in crate::game) fn save_mod_world_data(&mut self) {
+            if self.remote.is_some() || self.mods.world_data_at.is_none() {
+                return;
+            }
+            if self.mods.mods.store_world_data(&mut self.mods.world_data) {
+                self.mods.world_data_changed = true;
+            }
+            if !self.mods.world_data_changed {
+                return;
+            }
+            let path = self.world_root.join(horizon_mods::world_data::FILE);
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            match std::fs::write(&path, horizon_mods::world_data::encode(&self.mods.world_data)) {
+                Ok(()) => self.mods.world_data_changed = false,
+                Err(e) => log::warn!("the mods' world data was not written: {e}"),
+            }
+        }
+
         /// The tick's end: joins and leaves, the tick's events, the tick hook.
         pub(in crate::game) fn tick_server_mods(&mut self) {
             if !self.options.execution_role.is_client() {
@@ -420,6 +465,7 @@ mod run {
             if !self.mods.server {
                 return;
             }
+            self.sync_mod_world_data();
             let players = self.server_players(None);
             let mut snapshot = self.mod_snapshot_with(players.clone());
             if self.mods.world {

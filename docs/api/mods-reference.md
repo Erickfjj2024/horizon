@@ -38,7 +38,7 @@ A client mod: runs in the player's game.
 
 A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs where the world is simulated, on the dedicated server, a LAN host and single player's own server.
 
-- Imports (what the game offers): `log`, `storage`, `players`, `player-control`, `item-types`, `recipe-types`, `net`, `entities`, `player-items`, `chunks`, `world`
+- Imports (what the game offers): `log`, `storage`, `players`, `player-control`, `item-types`, `recipe-types`, `net`, `entities`, `player-items`, `chunks`, `world`, `world-data`
 - Exports (what the mod provides): `server-events`
 
 ## World `horizon-ui-mod`
@@ -1388,3 +1388,16 @@ New bytes and slots for the block entity at `pos` in `dimension`.
 | `item-shot` | `func(player: player, stack: item-stack, projectiles: list<u32>)` | The arrows of a shot exist (`ItemElectricBow.shoot`'s place in `ProjectileWeaponItem.shoot`): their entity ids, to light with `entities.set-entity-fire` or to charge for. Asked after `item-released` answered true. Nothing to answer. |
 | `can-place` | `func(player: player, pos: block-pos, state: string) -> bool` | A player placed the mod's block `state` at `pos` (`registration.blocks`): asked right after the game set it, for the blocks of any mod that asked. Answer false to refuse: the block is taken away again and nothing is used up (a big machine whose model needs the blocks around it free). Where `BlockItem.canPlace` is in the original. |
 | `item-hit` | `func(player: player, stack: item-stack, entity: u32, kind: string)` | A player hit the entity `entity` of `kind` holding `stack` (`registration.items`): where `Item.hurtEnemy` starts. It only hears. |
+
+## `world-data`
+
+Access: not granted by any capability.
+
+Part of capability `world` (server mods, FORK-36): byte values the mod keeps in the world, saved with it (what Mekanism keeps in `SavedData`: frequencies, block owners, security). Keys are `<mod id>:<path>` (the path 1 to 128 bytes of `a-z 0-9 _ . / -`), a value holds up to 256 KiB, a mod keeps up to 64 values. The values are there from the first tick of the world (not during `init`) and are written when the world saves. API 47.
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `get` | `func(key: string) -> option<list<u8>>` | The value of `key`, if the mod set one in this world. API 47. |
+| `set` | `func(key: string, value: list<u8>) -> result<_, string>` | Sets `key` to `value`; an error for a key that is not the mod's, a value over 256 KiB or a 65th value. API 47. |
+| `remove` | `func(key: string)` | Takes `key` away; nothing for a key the mod does not have. API 47. |
+| `keys` | `func(prefix: string) -> list<string>` | The mod's keys that start with `prefix` (`mekanism:frequencies/`), in order. API 47. |

@@ -1,0 +1,26 @@
+[[step]]
+# A world opened with values kept from before (another mod's too, which this one neither sees nor changes).
+world-data = { "wdprobe:counter" = [5, 0, 0, 0], "wdprobe:frequencies/b" = [2], "wdprobe:frequencies/a" = [1], "wdprobe:drop" = [9], "other:x" = [7] }
+ticks = 2
+# Two ticks: 5 + 2; the keys under frequencies/ in order; drop removed; both tries refused.
+expect.world-data = [
+    "other:x [7]",
+    "wdprobe:counter [7, 0, 0, 0]",
+    "wdprobe:frequencies/a [1]",
+    "wdprobe:frequencies/b [2]",
+    "wdprobe:list [119, 100, 112, 114, 111, 98, 101, 58, 102, 114, 101, 113, 117, 101, 110, 99, 105, 101, 115, 47, 97, 44, 119, 100, 112, 114, 111, 98, 101, 58, 102, 114, 101, 113, 117, 101, 110, 99, 105, 101, 115, 47, 98]",
+    "wdprobe:refused [2]",
+]
+
+[[step]]
+# The mod starts again (its memory is gone): the values are still there, as in a world saved and opened again.
+reload = true
+ticks = 1
+expect.world-data = [
+    "other:x [7]",
+    "wdprobe:counter [8, 0, 0, 0]",
+    "wdprobe:frequencies/a [1]",
+    "wdprobe:frequencies/b [2]",
+    "wdprobe:list [119, 100, 112, 114, 111, 98, 101, 58, 102, 114, 101, 113, 117, 101, 110, 99, 105, 101, 115, 47, 97, 44, 119, 100, 112, 114, 111, 98, 101, 58, 102, 114, 101, 113, 117, 101, 110, 99, 105, 101, 115, 47, 98]",
+    "wdprobe:refused [2]",
+]

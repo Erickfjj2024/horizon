@@ -242,7 +242,7 @@ pub mod server {
     pub use horizon::mods::world::{self, BlockChange, CollisionBox};
     pub use horizon::mods::entities::{self, Display, Mob, MobOptions};
     pub use horizon::mods::net;
-    pub use horizon::mods::{chunks, player_items};
+    pub use horizon::mods::{chunks, player_items, world_data};
     pub use horizon::mods::recipe_types::{self, CookingRecipe, CustomRecipe};
     /// For reading the recipes' JSON.
     pub use serde_json;

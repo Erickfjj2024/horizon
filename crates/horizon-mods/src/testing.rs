@@ -83,6 +83,8 @@ pub struct TestGame {
     pub entity_menus: std::collections::BTreeSet<u32>,
     pub entity_menu_text: std::collections::BTreeMap<u32, Vec<String>>,
     pub menu_returned: Vec<String>,
+    /// The values the mods keep in the world (FORK-36), every mod's.
+    pub world_data: std::collections::BTreeMap<String, Vec<u8>>,
     /// Each mod entity's walk animation (FORK-10 5d).
     pub walk_anims: std::collections::BTreeMap<u32, crate::entity_state::WalkAnim>,
     next_mod_entity: u32,
@@ -329,6 +331,7 @@ impl TestGame {
             entity_menu_text: std::collections::BTreeMap::new(),
             menu_returned: Vec::new(),
             walk_anims: std::collections::BTreeMap::new(),
+            world_data: std::collections::BTreeMap::new(),
             entity_kinds: Vec::new(),
             next_mod_entity: 1000,
             dropped: Vec::new(),
@@ -353,6 +356,7 @@ impl TestGame {
             self.menu_types = content.menu_types.clone();
         }
         self.mods = Mods::load(std::slice::from_ref(&self.hmod), |_| true, |_| false);
+        self.mods.load_world_data(&self.world_data);
         match &self.mods.entries()[0].status {
             Status::Failed(reason) => Err(format!("the mod didn't start: {reason}")),
             _ if !self.mods.is_running() => Err("the mod has no code to run".into()),
@@ -363,6 +367,8 @@ impl TestGame {
     /// Stops the mod and starts it again, as a rebuild does in the game: its
     /// memory starts over, its `storage` stays.
     pub fn reload(&mut self) -> Result<(), String> {
+        // What it kept in the world is saved with it and read back, as a world that saves and opens again.
+        self.mods.store_world_data(&mut self.world_data);
         self.mods = Mods::default();
         self.start()
     }
@@ -1486,6 +1492,8 @@ pub struct ClockSet {
 pub struct Step {
     #[serde(default)]
     reload: bool,
+    /// Server mods (FORK-36): the values kept in the world from now on, every mod's (`key = [bytes]`), as a world opened with them.
+    world_data: Option<std::collections::BTreeMap<String, Vec<u8>>>,
     /// Leave the world: the mod reads no player and no clock until a step sets them.
     #[serde(default)]
     title_screen: bool,
@@ -1655,6 +1663,8 @@ pub struct Expect {
     entity_menu: Option<Vec<String>>,
     /// Server mods (FORK-10 5b): the menu data and strings of the mod's entities that have any, as `"id data=[v,..] text=a|b"`.
     mod_entity_menu: Option<Vec<String>>,
+    /// Server mods (FORK-36): every value kept in the world after the step, as `"key [bytes]"`.
+    world_data: Option<Vec<String>>,
     /// Server mods (FORK-10 5d): the angles of the swinging bones of the mod's entities, as `"id bone=degrees,..."` (one decimal).
     mod_entity_bones: Option<Vec<String>>,
     /// Server mods (FORK-10 5b): what the entity menus closed so far handed back to the player, as `"item*count"`.
@@ -1841,6 +1851,10 @@ impl Step {
     fn run(&self, game: &mut TestGame) -> Result<(), String> {
         if self.reload {
             game.reload()?;
+        }
+        if let Some(values) = &self.world_data {
+            game.world_data.clone_from(values);
+            game.mods.load_world_data(values);
         }
         if self.title_screen {
             game.player = None;
@@ -2788,6 +2802,15 @@ impl Step {
                 })
                 .collect();
             same("mod-entity-menu", want, &got)?;
+        }
+        if let Some(want) = &e.world_data {
+            game.mods.store_world_data(&mut game.world_data);
+            let got: Vec<String> = game
+                .world_data
+                .iter()
+                .map(|(k, v)| format!("{k} [{}]", v.iter().map(u8::to_string).collect::<Vec<_>>().join(", ")))
+                .collect();
+            same("world-data", want, &got)?;
         }
         if let Some(want) = &e.mod_entity_bones {
             let got: Vec<String> = game

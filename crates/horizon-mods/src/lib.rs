@@ -31,6 +31,7 @@ pub mod recipe_types;
 mod runtime;
 #[cfg(feature = "runtime")]
 pub mod testing;
+pub mod world_data;
 
 pub use content::Content;
 pub use manifest::{Capability, Manifest, Package, Side, find};

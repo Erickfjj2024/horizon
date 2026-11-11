@@ -246,6 +246,10 @@ impl Capability {
         if interface == "log" || interface == "item-types" {
             return Ok(None);
         }
+        // The world's saved values are part of capability `world` (FORK-36).
+        if interface == "world-data" {
+            return Ok(Some(Capability::World));
+        }
         // A recipe viewer's panel is part of capability `ui`.
         if interface == "browser" {
             return Ok(Some(Capability::Ui));

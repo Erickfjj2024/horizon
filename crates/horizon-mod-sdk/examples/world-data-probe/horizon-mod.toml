@@ -1,0 +1,8 @@
+id = "wdprobe"
+name = "World Data Probe"
+version = "0.1.0"
+description = "Test mod for world-data (FORK-36): it counts ticks in a value kept in the world, lists its keys, and tries the limits."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "world"]

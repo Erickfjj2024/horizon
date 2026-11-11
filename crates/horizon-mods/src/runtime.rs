@@ -3,7 +3,7 @@ use crate::manifest::{Manifest, Package, Side};
 use server_bindings::{
     HorizonServerMod,
     exports::horizon::mods::server_events::Registration as ServerRegistration,
-    horizon::mods::{chunks, entities, net, player_control, player_items, players, recipe_types, world as mod_world},
+    horizon::mods::{chunks, entities, net, player_control, player_items, players, recipe_types, world as mod_world, world_data},
 };
 use std::{
     path::{Path, PathBuf},
@@ -797,6 +797,10 @@ struct State {
     /// not disk I/O time, so a loop of small-fuel, large-payload `set`s
     /// needs its own budget.
     storage_budget: u64,
+    /// Capability `world`'s `world-data` (FORK-36): the mod's values in the world in place, and whether they changed since the
+    /// game last took them.
+    world_data: std::collections::BTreeMap<String, Vec<u8>>,
+    world_data_dirty: bool,
     limits: StoreLimits,
     world: WorldSlot,
     recipe_data: RecipeSlot,
@@ -1181,6 +1185,8 @@ impl Mods {
                 .map_err(|e| e.to_string())?;
             chunks::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
+            world_data::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
+                .map_err(|e| e.to_string())?;
             NetHost::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
             UiHost::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
@@ -1265,6 +1271,8 @@ impl Mods {
             browser: BrowserState::default(),
             data_dir,
             storage_budget: STORAGE_WRITE_BUDGET,
+            world_data: std::collections::BTreeMap::new(),
+            world_data_dirty: false,
             limits: StoreLimitsBuilder::new()
                 .memory_size(MEMORY)
                 .instances(16)
@@ -1578,6 +1586,32 @@ impl Mods {
             }
         }
         out
+    }
+    /// A world opened (FORK-36): each running mod gets its own of the world's saved values (`all`, every mod's), unchanged.
+    pub fn load_world_data(&mut self, all: &std::collections::BTreeMap<String, Vec<u8>>) {
+        for e in &mut self.entries {
+            if let Some(run) = e.run.as_mut() {
+                let data = run.store.data_mut();
+                data.world_data = crate::world_data::of_mod(all, &data.id);
+                data.world_data_dirty = false;
+            }
+        }
+    }
+    /// The values the running mods changed since the last call go back into `all` (every mod's, a mod not running keeps its own):
+    /// whether anything changed.
+    pub fn store_world_data(&mut self, all: &mut std::collections::BTreeMap<String, Vec<u8>>) -> bool {
+        let mut changed = false;
+        for e in &mut self.entries {
+            if let Some(run) = e.run.as_mut() {
+                let data = run.store.data_mut();
+                if data.world_data_dirty {
+                    crate::world_data::replace_mod(all, &data.id, &data.world_data);
+                    data.world_data_dirty = false;
+                    changed = true;
+                }
+            }
+        }
+        changed
     }
     /// Whether a running server mod asked for `mod-entities`.
     pub fn hears_mod_entities(&self) -> bool {
@@ -4035,6 +4069,25 @@ impl ui::Host for State {
         self.ui.settings = clip_widgets(widgets);
     }
 }
+impl world_data::Host for State {
+    fn get(&mut self, key: String) -> Option<Vec<u8>> {
+        self.world_data.get(&key).cloned()
+    }
+    fn set(&mut self, key: String, value: Vec<u8>) -> Result<(), String> {
+        crate::world_data::put(&mut self.world_data, &self.id, &key, value)?;
+        self.world_data_dirty = true;
+        Ok(())
+    }
+    fn remove(&mut self, key: String) {
+        if self.world_data.remove(&key).is_some() {
+            self.world_data_dirty = true;
+        }
+    }
+    fn keys(&mut self, prefix: String) -> Vec<String> {
+        crate::world_data::keys(&self.world_data, &prefix)
+    }
+}
+
 impl storage::Host for State {
     fn get(&mut self, key: String) -> Option<Vec<u8>> {
         storage_key_ok(&key)

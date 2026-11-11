@@ -47,6 +47,7 @@ members = [
     "crates/horizon-mod-sdk/examples/fuel-demo",
     "crates/horizon-mod-sdk/examples/crafting-probe",
     "crates/horizon-mod-sdk/examples/body-probe",
+    "crates/horizon-mod-sdk/examples/world-data-probe",
     "crates/horizon-mod-sdk/examples/block-mover",
     "crates/horizon-mod-sdk/examples/energy-demo",
     "crates/horizon-mod-sdk/examples/tank-demo",
