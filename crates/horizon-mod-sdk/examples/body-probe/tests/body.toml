@@ -1,5 +1,9 @@
 [[step]]
 join = "Alex"
+inventory = [
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "", "bodyprobe:suit*1",
+]
 state = { velocity = [0.0, -0.5, 0.0], jumping = true, air = 120, fire-ticks = 40, food = 7, effects = ["minecraft:poison 100 1"] }
 use-item = { stack = "bodyprobe:probe*1" }
 expect.claimed = true
@@ -11,4 +15,5 @@ expect.player-items = [
     "reset-fall Alex",
     "modifier Alex minecraft:movement_speed bodyprobe:speed 0.5 add_multiplied_base",
     "remove-modifier Alex minecraft:step_height bodyprobe:step",
+    'set-slot Alex 38 bodyprobe:suit*1{"minecraft:glider":{}}',
 ]

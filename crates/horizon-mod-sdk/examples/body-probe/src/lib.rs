@@ -1,6 +1,6 @@
 //! Body Probe (`player-control.get-state`, `set-food`): using `bodyprobe:probe` tells the player how fast they move, whether the jump
 //! key is held, their air, whether they burn, their effects, and tops their food up.
-use horizon_mod_sdk::server::{BlockPos, ItemStack, Player, Registration, ServerMod, player_control, players};
+use horizon_mod_sdk::server::{BlockPos, ItemStack, Player, Registration, ServerMod, player_control, player_items, players};
 
 struct Probe;
 
@@ -29,6 +29,13 @@ impl ServerMod for Probe {
         let _ = player_control::set_attribute_modifier(&player.id, "minecraft:movement_speed", "bodyprobe:speed", 0.5, "add_multiplied_base");
         let _ = player_control::remove_attribute_modifier(&player.id, "minecraft:step_height", "bodyprobe:step");
         let _ = players::tell_overlay(&player.id, "Suit on");
+        // The Elytra Unit: the chestplate worn gets the `minecraft:glider` component, so the player glides with it as with an elytra.
+        if let Some(Some(mut chest)) = player_items::get_inventory(&player.id).and_then(|slots| slots.get(38).cloned())
+            && !chest.components.contains("minecraft:glider")
+        {
+            chest.components = r#"{"minecraft:glider":{}}"#.into();
+            let _ = player_items::set_slot(&player.id, 38, Some(&chest));
+        }
         true
     }
 }

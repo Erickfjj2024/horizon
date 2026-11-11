@@ -3303,12 +3303,7 @@ impl Game<'_> {
     /// `LivingEntity.canGlideUsing`: a glider in the chest slot that will
     /// not break with its next point of wear.
     fn glider_worn(&self) -> bool {
-        self.armor[1].as_ref().is_some_and(|s| {
-            self.res
-                .items()
-                .get(&s.item)
-                .is_some_and(|i| i.glider && (i.max_damage == 0 || s.damage + 1 < i.max_damage))
-        })
+        self.armor[1].as_ref().is_some_and(|s| self.res.items().glides(s))
     }
     /// `LivingEntity.canFreeze`'s armor half: any worn piece in
     /// `freeze_immune_wearables`.

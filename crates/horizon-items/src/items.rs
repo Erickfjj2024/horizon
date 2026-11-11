@@ -925,6 +925,15 @@ impl Items {
     pub fn get(&self, id: &str) -> Option<&ItemInfo> {
         self.items.get(id)
     }
+    /// `LivingEntity.canGlideUsing`: whether `stack`, worn on the chest, lets its wearer glide. Vanilla asks the stack, not the item:
+    /// the `glider` component may be the item's own (an elytra) or one added to this stack (a mod's chestplate with a glide module, the
+    /// MekaSuit's Elytra Unit), and the stack must not break with its next point of wear.
+    pub fn glides(&self, stack: &ItemStack) -> bool {
+        let Some(i) = self.items.get(&stack.item) else {
+            return false;
+        };
+        glides_with(i, stack)
+    }
     /// The item whose behaviour `id` has: the vanilla template a mod item copies (`minecraft:bow` for a mod bow), else `id`.
     /// The game's checks by item id go through it.
     pub fn behaves_as<'a>(&'a self, id: &'a str) -> &'a str {
@@ -2370,5 +2379,35 @@ mod held_drop_tests {
                 if all { 4 } else { 1 }
             );
         }
+    }
+}
+
+/// [`Items::glides`] for an item already looked up.
+pub fn glides_with(info: &ItemInfo, stack: &ItemStack) -> bool {
+    glide_rule(info.glider, info.max_damage, stack)
+}
+
+/// The rule of [`glides_with`]: the item's own `glider` (`item_glider`) or one on the stack, and wear left before `max_damage`.
+fn glide_rule(item_glider: bool, max_damage: u32, stack: &ItemStack) -> bool {
+    let added = stack.data().is_some_and(|d| d.other.iter().any(|(k, _)| k == "minecraft:glider"));
+    (item_glider || added) && (max_damage == 0 || stack.damage + 1 < max_damage)
+}
+
+#[cfg(test)]
+mod glide_tests {
+    use super::*;
+
+    #[test]
+    fn a_glider_on_the_stack_glides_like_the_items_own_and_wear_stops_both() {
+        let plain = ItemStack::new("mekanism:mekasuit_bodyarmor", 1);
+        assert!(!glide_rule(false, 0, &plain), "a chestplate without the component does not glide");
+        let mut unit = plain.clone();
+        unit.data_mut().other.push(("minecraft:glider".into(), horizon_world::nbt::Tag::Compound(Default::default())));
+        assert!(glide_rule(false, 0, &unit), "the component added to the stack makes it glide");
+        let mut elytra = ItemStack::new("minecraft:elytra", 1);
+        assert!(glide_rule(true, 432, &elytra));
+        // An elytra one point from breaking no longer glides (`LivingEntity.canGlideUsing`: `!stack.nextDamageWillBreak()`).
+        elytra.damage = 431;
+        assert!(!glide_rule(true, 432, &elytra));
     }
 }

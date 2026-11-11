@@ -5,5 +5,5 @@ description = "Test mod for player-control's get-state and set-food: using bodyp
 authors = ["Rust port"]
 api = "0.3"
 side = "server"
-capabilities = ["players", "player-control"]
-experimental = ["player-control"]
+capabilities = ["players", "player-control", "player-items"]
+experimental = ["player-control", "player-items"]
