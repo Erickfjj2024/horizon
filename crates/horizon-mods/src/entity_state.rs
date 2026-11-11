@@ -231,9 +231,10 @@ pub fn fall_tick(y: f64, velocity: f64, floor_top: Option<f64>) -> (f64, f64, f6
     }
 }
 
-/// `LivingEntity.calculateFallDamage`: a fall of `distance` blocks hurts for each block past 3, rounded up.
+/// `LivingEntity.calculateFallDamage`: a fall of `distance` blocks hurts for each block past 3, rounded up (a sum of steps a hair
+/// past a whole block is that block: 6 blocks fallen are 3 damage).
 pub fn fall_damage(distance: f64) -> f32 {
-    ((distance - 3.0).ceil()).max(0.0) as f32
+    ((distance - 3.0 - 1.0e-6).ceil()).max(0.0) as f32
 }
 
 /// What a hit of `amount` after the mod's say leaves: the health, and whether the entity dies (health at or under 0).
