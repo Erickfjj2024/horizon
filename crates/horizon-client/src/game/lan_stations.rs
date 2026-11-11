@@ -403,6 +403,17 @@ impl Game<'_> {
         window: i32,
         id: i32,
     ) {
+        // An item menu (round 4, item 2): the button goes to the mod that owns the menu (`item-menu-button`).
+        #[cfg(feature = "mods")]
+        if let Some(g) = host.hub.guest(conn)
+            && let Some(menu) = g.menu.as_ref().filter(|m| m.window == window)
+            && menu.pos.is_some_and(|k| k.0 == i32::MAX - 17 && k.1 == super::minecarts::CART_KEY_Y)
+        {
+            if !g.spectator() {
+                self.mod_item_menu_button(conn, id);
+            }
+            return;
+        }
         // A mod entity's declared menu (FORK-10 5b): the button goes to the mod that owns the kind (`entity-menu-button`).
         #[cfg(feature = "mods")]
         if let Some(g) = host.hub.guest(conn)

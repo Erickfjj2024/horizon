@@ -36,6 +36,32 @@ use {
     winit::{event::MouseButton, keyboard::KeyCode},
 };
 
+/// An item menu a mod opened over a player's slot (`players.open-item-menu`); its slots are in a placeholder under
+/// [`OpenItemMenu::key`].
+#[cfg(feature = "mods")]
+#[derive(Clone, Debug)]
+pub(super) struct OpenItemMenu {
+    pub(super) conn: u32,
+    pub(super) uuid: u128,
+    pub(super) slot: u32,
+    pub(super) menu: String,
+    /// The item it was opened over: the menu closes once the slot holds another.
+    pub(super) item: String,
+    pub(super) data: Vec<i32>,
+    /// The slots as the mod last saw or set them, to tell a take from a result slot.
+    pub(super) last: Vec<Option<horizon_mods::ModItemStack>>,
+    /// The mod asked to close it: it closes at the next check.
+    pub(super) closing: bool,
+}
+
+#[cfg(feature = "mods")]
+impl OpenItemMenu {
+    /// The placeholder key the menu of connection `conn` keeps its slots under.
+    pub(super) fn key(conn: u32) -> (i32, i32, i32) {
+        (i32::MAX - 17, super::minecarts::CART_KEY_Y, conn as i32)
+    }
+}
+
 #[derive(Default)]
 pub(super) struct ModsState {
     /// Where each item network's round robin starts this tick.
@@ -86,6 +112,9 @@ pub(super) struct ModsState {
     pub(super) world_data_at: Option<u64>,
     #[cfg(feature = "mods")]
     pub(super) world_data_changed: bool,
+    /// The item menus open (round 4, item 2), one at most a player.
+    #[cfg(feature = "mods")]
+    pub(super) item_menus: Vec<OpenItemMenu>,
     /// Every block state's collision boxes, by state id, for capability
     /// `world`'s `get-collision`; made on the first lend.
     #[cfg(feature = "mods")]
@@ -885,6 +914,7 @@ impl Game<'_> {
                 | Output::HudLine { .. }
                 | Output::Radial { .. }
                 | Output::EntityMenu { .. }
+                | Output::ItemMenu { .. }
                 | Output::PackBlock { .. }
                 | Output::UnpackBlock { .. }
                 | Output::PlayerBody { .. }

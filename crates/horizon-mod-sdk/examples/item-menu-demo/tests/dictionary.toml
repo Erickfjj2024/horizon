@@ -1,0 +1,46 @@
+[[step]]
+join = "Alex"
+inventory = ["minecraft:book*1"]
+# A message opens the dictionary over slot 0: its two slots (input, result) start empty, with no data and no strings yet.
+net = { channel = "imenu:open", data = [0] }
+expect.item-menu-open = ["Alex 0 imenu:dictionary"]
+expect.item-menus = ["Alex 0 imenu:dictionary - data=[] text="]
+
+[[step]]
+# A tick (`item-menu-tick`): it names the book it was opened over and the empty input.
+ticks = 1
+expect.item-menus = ["Alex 0 imenu:dictionary - data=[0] text=minecraft:book|-|-"]
+
+[[step]]
+# Two logs in the input (a step's ticks run before what the player does, so the tick is the next step's).
+item-menu-set = [{ slot = 0, stack = "minecraft:oak_log*2" }]
+expect.item-menus = ["Alex 0 imenu:dictionary 0=minecraft:oak_log*2 data=[0] text=minecraft:book|-|-"]
+
+[[step]]
+ticks = 1
+expect.item-menus = ["Alex 0 imenu:dictionary 0=minecraft:oak_log*2,1=minecraft:oak_planks*4 data=[2] text=minecraft:book|minecraft:oak_log|-"]
+
+[[step]]
+# Taking the planks (`item-menu-taken`) uses up a log.
+item-menu-take = { slot = 1 }
+expect.item-menus = ["Alex 0 imenu:dictionary 0=minecraft:oak_log*1 data=[2] text=minecraft:book|minecraft:oak_log|-"]
+
+[[step]]
+# The text box's message names it: the position (i32::MIN, 1, slot 0), box 5, "Lexicon".
+net = { channel = "imenu:menu_text", data = [0, 0, 0, 128, 1, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 76, 101, 120, 105, 99, 111, 110] }
+
+[[step]]
+ticks = 1
+expect.item-menus = ["Alex 0 imenu:dictionary 0=minecraft:oak_log*1,1=minecraft:oak_planks*4 data=[1] text=minecraft:book|minecraft:oak_log|Lexicon"]
+
+[[step]]
+# Button 1 empties the input; the result goes at the next tick.
+item-menu-button = 1
+expect.item-menus = ["Alex 0 imenu:dictionary 1=minecraft:oak_planks*4 data=[1] text=minecraft:book|minecraft:oak_log|Lexicon"]
+
+[[step]]
+# Sticks in the input, then button 2 closes it: the sticks come back to the player, the planks (a result) do not.
+item-menu-set = [{ slot = 0, stack = "minecraft:stick*3" }]
+item-menu-button = 2
+expect.item-menus = []
+expect.entity-menu-returned = ["minecraft:stick*3"]

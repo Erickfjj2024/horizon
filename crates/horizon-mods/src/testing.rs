@@ -83,6 +83,8 @@ pub struct TestGame {
     pub entity_menus: std::collections::BTreeSet<u32>,
     pub entity_menu_text: std::collections::BTreeMap<u32, Vec<String>>,
     pub menu_returned: Vec<String>,
+    /// The item menus open (round 4, item 2).
+    pub item_menus: Vec<HarnessItemMenu>,
     /// The values the mods keep in the world (FORK-36), every mod's.
     pub world_data: std::collections::BTreeMap<String, Vec<u8>>,
     /// Each mod entity's walk animation (FORK-10 5d).
@@ -332,6 +334,7 @@ impl TestGame {
             menu_returned: Vec::new(),
             walk_anims: std::collections::BTreeMap::new(),
             world_data: std::collections::BTreeMap::new(),
+            item_menus: Vec::new(),
             entity_kinds: Vec::new(),
             next_mod_entity: 1000,
             dropped: Vec::new(),
@@ -415,6 +418,50 @@ impl TestGame {
             self.tick_block_entities();
             self.tick_mod_entities();
             self.mod_entity_hazards();
+            self.tick_item_menus();
+        }
+    }
+    /// The item menu of player `id` as the mod sees it.
+    fn item_menu_view(&self, i: usize) -> crate::ItemMenu {
+        let m = &self.item_menus[i];
+        let stack = self.inventories.iter().find(|(p, _)| *p == m.player).and_then(|(_, inv)| inv.get(m.slot as usize).cloned()).flatten();
+        crate::ItemMenu { menu: m.menu.clone(), slot: m.slot, stack, items: m.items.clone(), menu_data: m.data.clone() }
+    }
+    /// What the mod answered for item menu `i`, as the game applies it; a `close` closes it.
+    fn apply_item_menu_update(&mut self, i: usize, u: crate::ItemMenuUpdate) {
+        let results = self.menu_types.iter().find(|t| t.id == self.item_menus[i].menu).map_or_else(Vec::new, |t| t.results.clone());
+        let m = &mut self.item_menus[i];
+        if let Some(mut items) = u.items {
+            items.resize(m.items.len(), None);
+            m.items = items;
+        }
+        if let Some(d) = u.menu_data {
+            m.data = d;
+        }
+        if let Some(t) = u.menu_text {
+            m.text = t;
+        }
+        if u.close {
+            let mut m = self.item_menus.remove(i);
+            let back = crate::entity_state::close_menu(&mut m.items, 0, &results);
+            self.menu_returned.extend(back.into_iter().map(|s| show_stack(&Some(s))));
+        }
+    }
+    /// Each open item menu's tick: the mod sees it and changes it.
+    fn tick_item_menus(&mut self) {
+        let mut i = 0;
+        while i < self.item_menus.len() {
+            let view = self.item_menu_view(i);
+            let player = self.players.iter().find(|p| p.id == self.item_menus[i].player).cloned();
+            let before = self.item_menus.len();
+            if let Some(p) = player
+                && let Some(u) = self.mods.item_menu_tick(&p, &view)
+            {
+                self.apply_item_menu_update(i, u);
+            }
+            if self.item_menus.len() == before {
+                i += 1;
+            }
         }
     }
     /// The world's harm to the mod's entities, as the game does: they fall onto the script's blocks (a block that is not air is a
@@ -1298,6 +1345,34 @@ pub struct BreakStartSet {
     stack: String,
 }
 
+/// An item menu open in the script (round 4, item 2).
+#[derive(Clone, Debug)]
+pub struct HarnessItemMenu {
+    pub player: String,
+    pub slot: u32,
+    pub menu: String,
+    pub items: Vec<Option<crate::ModItemStack>>,
+    pub data: Vec<i32>,
+    pub text: Vec<String>,
+}
+
+/// A stack the actor puts in slot `slot` of their open item menu (`-` for none).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ItemMenuSlotSet {
+    slot: usize,
+    stack: String,
+}
+
+/// The actor takes `count` (all when unset) from result slot `slot` of their open item menu.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ItemMenuTakeSet {
+    slot: usize,
+    #[serde(default)]
+    count: Option<u32>,
+}
+
 /// A stack the actor puts in slot `slot` of the open menu of entity `id` (`-` for none).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1551,6 +1626,13 @@ pub struct Step {
     /// Server mods (FORK-10 5b): the actor puts stacks in slots of an entity's open menu (`-` empties one), presses one of its
     /// buttons, takes from one of its result slots, or closes it.
     entity_menu_set: Option<Vec<EntityMenuSlotSet>>,
+    /// Server mods (round 4, item 2): the actor puts stacks in their open item menu, presses one of its buttons, takes from one of
+    /// its result slots, or closes it.
+    item_menu_set: Option<Vec<ItemMenuSlotSet>>,
+    item_menu_button: Option<i32>,
+    item_menu_take: Option<ItemMenuTakeSet>,
+    #[serde(default)]
+    close_item_menu: bool,
     entity_menu_button: Option<EntityMenuButtonSet>,
     entity_menu_take: Option<EntityMenuTakeSet>,
     close_entity_menu: Option<u32>,
@@ -1663,6 +1745,10 @@ pub struct Expect {
     entity_menu: Option<Vec<String>>,
     /// Server mods (FORK-10 5b): the menu data and strings of the mod's entities that have any, as `"id data=[v,..] text=a|b"`.
     mod_entity_menu: Option<Vec<String>>,
+    /// Server mods (round 4, item 2): every `open-item-menu`, as `"Name slot menu"`.
+    item_menu_open: Option<Vec<String>>,
+    /// Server mods (round 4, item 2): the item menus open after the step, as `"Name slot menu slot=item*count,.. data=[..] text=a|b"`.
+    item_menus: Option<Vec<String>>,
     /// Server mods (FORK-36): every value kept in the world after the step, as `"key [bytes]"`.
     world_data: Option<Vec<String>>,
     /// Server mods (FORK-10 5d): the angles of the swinging bones of the mod's entities, as `"id bone=degrees,..."` (one decimal).
@@ -1910,6 +1996,10 @@ impl Step {
             || self.release_item.is_some()
             || self.use_mod_entity.is_some()
             || self.entity_menu_button.is_some()
+            || self.item_menu_button.is_some()
+            || self.item_menu_take.is_some()
+            || self.item_menu_set.is_some()
+            || self.close_item_menu
             || self.entity_menu_take.is_some()
             || self.break_start.is_some()
             || self.damage_mod_entity.is_some()
@@ -2128,6 +2218,46 @@ impl Step {
                 }
             }
         }
+        let mine = |game: &TestGame, who: &crate::ServerPlayer| game.item_menus.iter().position(|m| m.player == who.id);
+        if let (Some(sets), Some(who)) = (&self.item_menu_set, &who) {
+            let i = mine(game, who).ok_or("item-menu-set: no item menu is open")?;
+            for set in sets {
+                let stack = if set.stack == "-" { None } else { Some(parse_stack(&set.stack).ok_or("item-menu-set: a stack is item*count")?) };
+                *game.item_menus[i].items.get_mut(set.slot).ok_or("item-menu-set: no such slot")? = stack;
+            }
+        }
+        if let (Some(button), Some(who)) = (self.item_menu_button, &who) {
+            let i = mine(game, who).ok_or("item-menu-button: no item menu is open")?;
+            game.snapshot();
+            let view = game.item_menu_view(i);
+            if let Some(u) = game.mods.item_menu_button(who, &view, button) {
+                game.apply_item_menu_update(i, u);
+            }
+        }
+        if let (Some(t), Some(who)) = (&self.item_menu_take, &who) {
+            let i = mine(game, who).ok_or("item-menu-take: no item menu is open")?;
+            let menu = game.item_menus[i].menu.clone();
+            if !game.menu_types.iter().any(|m| m.id == menu && m.results.iter().any(|&r| usize::from(r) == t.slot)) {
+                return Err(format!("item-menu-take: slot {} is not a result slot of {menu}", t.slot));
+            }
+            let before = game.item_menus[i].items.get(t.slot).cloned().flatten();
+            let after = before.clone().and_then(|mut s| {
+                s.count = s.count.saturating_sub(t.count.unwrap_or(s.count));
+                (s.count > 0).then_some(s)
+            });
+            game.item_menus[i].items[t.slot].clone_from(&after);
+            if let Some(stack) = crate::entity_state::taken(before.as_ref(), after.as_ref()) {
+                game.snapshot();
+                let view = game.item_menu_view(i);
+                if let Some(u) = game.mods.item_menu_taken(who, &view, t.slot as u32, &stack) {
+                    game.apply_item_menu_update(i, u);
+                }
+            }
+        }
+        if let (true, Some(who)) = (self.close_item_menu, &who) {
+            let i = mine(game, who).ok_or("close-item-menu: no item menu is open")?;
+            game.apply_item_menu_update(i, crate::ItemMenuUpdate { items: None, menu_data: None, menu_text: None, close: true });
+        }
         if let Some(id) = self.close_entity_menu {
             if !game.entity_menus.remove(&id) {
                 return Err(format!("close-entity-menu: the menu of {id} is not open"));
@@ -2222,6 +2352,16 @@ impl Step {
                     game.world.insert((b.x, b.y, b.z), b.state.clone());
                 }
             }
+        }
+        // An item menu opened (round 4, item 2): its slots, all virtual, start empty; the player's earlier one closes.
+        for o in &out {
+            let Output::ItemMenu { player, slot, menu, .. } = o else { continue };
+            let Some(t) = game.menu_types.iter().find(|t| &t.id == menu) else { continue };
+            let slots = usize::from(t.slots);
+            if let Some(i) = game.item_menus.iter().position(|m| &m.player == player) {
+                game.apply_item_menu_update(i, crate::ItemMenuUpdate { items: None, menu_data: None, menu_text: None, close: true });
+            }
+            game.item_menus.push(HarnessItemMenu { player: player.clone(), slot: *slot, menu: menu.clone(), items: vec![None; slots], data: Vec::new(), text: Vec::new() });
         }
         // A mod entity spawned or removed (FORK-10): the spawn is answered with its id, as the game does.
         // An entity's menu opened (FORK-10 5b): a kind with a menu type gets its virtual slots, empty, past the container's.
@@ -2802,6 +2942,32 @@ impl Step {
                 })
                 .collect();
             same("mod-entity-menu", want, &got)?;
+        }
+        if let Some(want) = &e.item_menu_open {
+            let name = |id: &str| game.players.iter().find(|p| p.id == id).map_or(id.to_owned(), |p| p.name.clone());
+            let got: Vec<String> = out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::ItemMenu { player, slot, menu, .. } => Some(format!("{} {slot} {menu}", name(player))),
+                    _ => None,
+                })
+                .collect();
+            same("item-menu-open", want, &got)?;
+        }
+        if let Some(want) = &e.item_menus {
+            let name = |id: &str| game.players.iter().find(|p| p.id == id).map_or(id.to_owned(), |p| p.name.clone());
+            let got: Vec<String> = game
+                .item_menus
+                .iter()
+                .map(|m| {
+                    let slots: Vec<String> =
+                        m.items.iter().enumerate().filter_map(|(i, s)| s.as_ref().map(|s| format!("{i}={}", show_stack(&Some(s.clone()))))).collect();
+                    let data: Vec<String> = m.data.iter().map(i32::to_string).collect();
+                    let slots = if slots.is_empty() { "-".to_owned() } else { slots.join(",") };
+                    format!("{} {} {} {slots} data=[{}] text={}", name(&m.player), m.slot, m.menu, data.join(","), m.text.join("|"))
+                })
+                .collect();
+            same("item-menus", want, &got)?;
         }
         if let Some(want) = &e.world_data {
             game.mods.store_world_data(&mut game.world_data);

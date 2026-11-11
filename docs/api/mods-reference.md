@@ -692,6 +692,7 @@ One choice of a radial menu.
 | `set-hud-line` | `func(player: string, id: string, icon: string, text: string, fraction: f32) -> bool` | Sets line `id` (`mymod:energy`, at most 64 bytes) of the mod's HUD on one player's screen (the MekaSuit's module HUD, `IModuleHUD`): the item `icon` (`mymod:jetpack_unit`; empty for none) drawn small, `text` beside it (at most 256 bytes), and, with `fraction` 0 to 1, a bar under the text filled that much (a negative fraction draws no bar). The lines show at the screen's top left, under what is there already, in the order of their ids, until changed; an empty text takes the line away, and the player's client forgets them all when it leaves the server. False for a player who is not online; at most 32 lines a call. API 41. |
 | `open-radial-menu` | `func(player: string, entries: list<radial-entry>, current: u32) -> bool` | Opens a radial menu on one player's screen (Mekanism's mode selector of the Meka-Tool and the configurator, `IRadialSelectorEnum`): 2 to 16 entries around the screen's centre, `current` marked. The pointer is let go so the player can point; a click (a tap on a touch screen) on an entry chooses it and closes the menu, one in the middle or Escape closes it without a choice. The choice comes back as a mod message on channel `<mod id>:radial` whose bytes are the entry's id (UTF-8): register `on_net` to hear it. False for a player who is not online or entries out of bounds. API 42. |
 | `open-entity-menu` | `func(player: string, dimension: string, id: u32) -> bool` | Opens the container of one of the mod's own entities (FORK-10 d2, the Robit's inventory) for one player, as a chest of as many rows of 9 as its `container_slots` fill (1 to 6; the slots past them stay out of the menu): the player moves items in and out as in a chest, the entity's slots follow each tick (what the mod's `entities-tick` puts there shows in the menu, and what the player puts there reaches the mod), and the menu closes when the player is more than 4 blocks from its box or the entity goes. Titled with the entity's name, else the kind's (`entity.<ns>.<path>`). False for a player who is not online, an entity of another mod, one with fewer than 9 slots, or one not in the level in place. API 43. A kind with a `menu` (FORK-10 5b, API 46) opens that menu type instead, drawn by its `screen` as a block's (slots, data slots, widgets, windows as tabs): its first `container_slots` slots are the entity's, the ones past them are virtual (a crafting grid, an anvil's), shown to the mod past the container's in `mod-entity.items` while the menu is open and handed back to the player (its result slots emptied) when it closes. Its data slots are the entity's `menu-data`, its strings the entity's `menu-text`, a button calls the mod's `entity-menu-button`, taking from a result slot calls `entity-menu-taken`, and a `textfield`'s message on `<mod id>:menu_text` carries the position `(i32::MIN, 0, entity id)`. |
+| `open-item-menu` | `func(player: string, slot: u32, menu: string) -> bool` | Opens menu type `menu` (`<mod id>:<path>`, one of the mod's `data/<mod>/horizon/menu/*.json`, drawn by its `screen` as a block's) for one player over the item in their slot `slot` (0 to 35 the inventory, 36 to 39 the armour, 40 the off hand): the item menus of Mekanism (Module Tweaker, Dictionary, Portable Teleporter, Seismic Reader, Portable QIO Dashboard). Every slot of the menu is virtual: empty when it opens, kept while it is open, and what the player left in them (not the `results`) comes back to the player when it closes. Each tick the mod's `item-menu-tick` sees it and sets its slots, data slots and strings; a button calls `item-menu-button`, taking from a result slot calls `item-menu-taken`, and a `textfield`'s message on `<mod id>:menu_text` carries the position `(i32::MIN, 1, slot)`. It closes when the player closes it, when the slot no longer holds an item of the one it opened on, or when the mod answers `close`. True when asked; false for a player who is not online, a slot past 40 or a menu of another mod. API 48. |
 | `broadcast` | `func(text: string)` | A system message to every player and the server's log, after the mod's name. Counts toward the same 8 per call. |
 
 ## `world`
@@ -1319,6 +1320,29 @@ A living entity of one of the mod's kinds (FORK-10, the Robit): the game keeps i
 | `name` | `option<string>` | The name it was given, shown over it. |
 | `menu-data` | `list<s32>` | The data slots its menu shows (FORK-10 5b), as the mod last set them; not saved. |
 
+### record `item-menu`
+
+An open item menu (`players.open-item-menu`) as the mod sees it.
+
+| Field | Type | |
+| --- | --- | --- |
+| `menu` | `string` | The menu type, `<mod id>:<path>`. |
+| `slot` | `u32` | The player's slot it was opened over, and what it holds now. |
+| `stack` | `option<item-stack>` |  |
+| `items` | `list<option<item-stack>>` | The menu's slots (all virtual), as the player left them. |
+| `menu-data` | `list<s32>` | The data slots the mod last set. |
+
+### record `item-menu-update`
+
+What the mod changes in an open item menu; a none leaves that as it is.
+
+| Field | Type | |
+| --- | --- | --- |
+| `items` | `option<list<option<item-stack>>>` | The menu's slots after the call; slots past the menu's, and stacks of unknown items, are dropped. |
+| `menu-data` | `option<list<s32>>` | Its data slots (16 bits each on the wire, up to 256). |
+| `menu-text` | `option<list<string>>` | Its strings (up to 64 of up to 256 bytes): a `text` widget with `text_data: n` shows string `n`. |
+| `close` | `bool` | Closes it (its slots' items go back to the player). |
+
 ### record `mod-entity-update`
 
 What the mod makes of an entity in a tick; a none leaves that as it is.
@@ -1373,6 +1397,9 @@ New bytes and slots for the block entity at `pos` in `dimension`.
 | `block-break-start` | `func(player: player, stack: item-stack, pos: block-pos, state: string) -> bool` | A player is breaking the block `state` at `pos` holding `stack`, an item of the mod (`registration.block-break`; NeoForge's `IItemExtension.onBlockStartBreak`, where the Meka-Tool mines a vein or blasts an area): asked once the game allowed the break (the item can break blocks; a dig in survival when it ends, a creative click at once), on the PC and on Android (a long press) alike. Answer true to cancel the normal break: the block stays, nothing drops, and the mod breaks what it wants (`world.break-blocks`); false lets the game break it. The first mod that answers true decides. (An export: it has no level; a mod that implements it needs a Horizon that has it, from API 43.) |
 | `mod-entity-damaged` | `func(entity: mod-entity, source: damage-source, amount: f32) -> f32` | One of the mod's own entities is about to take `amount` damage from `source` (FORK-10 e; today a player's blow on its box, `minecraft:player_attack`, the damage the player's weapon makes before armour, which a mod entity has none of). Returns the damage to apply: the same to leave it, less to reduce it, 0 to cancel the blow. The first mod that owns the kind answers; a mod that does not implement it takes the damage as it is. At 0 health the entity dies (`mod-entity-died`). |
 | `mod-entity-died` | `func(entity: mod-entity)` | An entity of the mod's own kind died of damage (its health reached 0): last look at it, as it was. The game removes it right after; its drops, if it has any, are the mod's to spawn. |
+| `item-menu-tick` | `func(player: player, menu: item-menu) -> option<item-menu-update>` | Each tick while `player` has an item menu of the mod open (`players.open-item-menu`): what to change in it. API 48. |
+| `item-menu-button` | `func(player: player, menu: item-menu, id: s32) -> option<item-menu-update>` | `player` pressed button `id` (`id`, `shift_id` or `alt_id`, as the client chose it) of one of the mod's item menus. |
+| `item-menu-taken` | `func(player: player, menu: item-menu, slot: u32, stack: item-stack) -> option<item-menu-update>` | `player` took `stack` out of result slot `slot` of one of the mod's item menus (the menu as it is after the take): the mod uses up what made it. |
 | `entity-menu-button` | `func(player: player, entity: mod-entity, id: s32) -> option<mod-entity-update>` | A player pressed button `id` (a `button` widget's `id`, `shift_id` or `alt_id`, as the client chose it) of the menu of an entity of the mod's own kind (FORK-10 5b), with the entity as it is. Returns what to change in it, if anything. |
 | `entity-menu-taken` | `func(player: player, entity: mod-entity, slot: u32, stack: item-stack) -> option<mod-entity-update>` | A player took `stack` out of result slot `slot` of the menu of an entity of the mod's own kind (a crafting or repair result, a slot listed in the menu type's `results`), with the entity as it is after the take: the mod uses up what made it (the grid's ingredients, the anvil's inputs). Returns what to change in it, if anything. |
 | `menu-button` | `func(player: player, dimension: string, pos: block-pos, id: s32, entity: block-entity) -> option<block-entity-update>` | A player pressed button `id` of the menu of the block entity at `pos` (a `button` widget of the menu type's screen), with the entity as it is. Returns what to change in it, if anything. |

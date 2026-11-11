@@ -1,0 +1,9 @@
+id = "imenu"
+name = "Item Menu Demo"
+version = "0.1.0"
+description = "Test mod for item menus (round 4, item 2): a message opens a dictionary-like menu over a slot; it names the item, crafts planks from a log, and takes a name from its text box."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["registries", "players", "net"]
+experimental = ["net"]

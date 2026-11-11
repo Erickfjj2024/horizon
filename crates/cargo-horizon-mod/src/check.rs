@@ -284,6 +284,7 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
             Output::TellOverlay { text, .. } => format!("action bar: {text}"),
             Output::HudLine { id, text, .. } => format!("HUD line {id}: {text}"),
             Output::EntityMenu { id, .. } => format!("opened the menu of entity {id}"),
+            Output::ItemMenu { slot, menu, .. } => format!("opened item menu {menu} over slot {slot}"),
             Output::Radial { entries, .. } => format!("radial menu of {} entries", entries.len()),
             Output::PlayerBody { change, .. } => format!("body: {change:?}"),
             Output::SetFood { food, saturation, .. } => format!("set food to {food} and saturation to {saturation}"),

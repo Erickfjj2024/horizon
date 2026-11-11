@@ -54,7 +54,7 @@ use bindings::{
 pub use server_bindings::{
     exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
-        BlockPos, BlockUse, ModEntity, ModEntityUpdate, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
+        BlockPos, BlockUse, ItemMenu, ItemMenuUpdate, ModEntity, ModEntityUpdate, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
     },
     horizon::mods::player_control::{EffectState, Motion, PlayerState},
     horizon::mods::players::{GameMode, Player as ServerPlayer},
@@ -473,6 +473,8 @@ pub enum Output {
     BreakBlocks { name: String, dimension: String, positions: Vec<[i32; 3]>, tool: String, silk_touch: bool, fortune: u32 },
     /// `players.open-entity-menu`: the container of a mod entity, opened as a chest for a player.
     EntityMenu { name: String, mod_id: String, player: String, dimension: String, id: u32 },
+    /// `players.open-item-menu`: a menu type of the mod opened over a player's slot (round 4, item 2).
+    ItemMenu { name: String, mod_id: String, player: String, slot: u32, menu: String },
     /// `players.open-radial-menu`: a radial menu on one player's screen, whose choice comes back on `<mod id>:radial`.
     Radial { name: String, mod_id: String, player: String, entries: Vec<(String, String, String)>, current: u32 },
     /// `players.set-hud-line`: a line of the mod's HUD on one player's screen.
@@ -1722,6 +1724,44 @@ impl Mods {
         }
         out
     }
+    /// The running server mod whose namespace menu type `menu` is in.
+    fn menu_owner(&self, menu: &str) -> Option<usize> {
+        let (ns, _) = menu.split_once(':')?;
+        self.entries.iter().position(|e| e.run.as_ref().is_some_and(|r| r.hooks.server().is_some()) && e.manifest.as_ref().is_some_and(|m| m.id == ns))
+    }
+    /// One tick of `player`'s open item menu (round 4, item 2): the update of the mod that owns the menu type, checked.
+    pub fn item_menu_tick(&mut self, player: &ServerPlayer, menu: &ItemMenu) -> Option<ItemMenuUpdate> {
+        let i = self.menu_owner(&menu.menu)?;
+        let u = self
+            .call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m.horizon_mods_server_events().call_item_menu_tick(&mut run.store, player, menu),
+                Hooks::Client(..) => Ok(None),
+            })
+            .flatten()?;
+        item_menu_update_ok(&u).then_some(u)
+    }
+    /// `player` pressed button `id` of their open item menu.
+    pub fn item_menu_button(&mut self, player: &ServerPlayer, menu: &ItemMenu, id: i32) -> Option<ItemMenuUpdate> {
+        let i = self.menu_owner(&menu.menu)?;
+        let u = self
+            .call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m.horizon_mods_server_events().call_item_menu_button(&mut run.store, player, menu, id),
+                Hooks::Client(..) => Ok(None),
+            })
+            .flatten()?;
+        item_menu_update_ok(&u).then_some(u)
+    }
+    /// `player` took `stack` from result slot `slot` of their open item menu.
+    pub fn item_menu_taken(&mut self, player: &ServerPlayer, menu: &ItemMenu, slot: u32, stack: &ModItemStack) -> Option<ItemMenuUpdate> {
+        let i = self.menu_owner(&menu.menu)?;
+        let u = self
+            .call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m.horizon_mods_server_events().call_item_menu_taken(&mut run.store, player, menu, slot, stack),
+                Hooks::Client(..) => Ok(None),
+            })
+            .flatten()?;
+        item_menu_update_ok(&u).then_some(u)
+    }
     /// The running server mod that owns entity kind `kind` and asked for `mod-entities`.
     fn entity_owner(&self, kind: &str) -> Option<usize> {
         let (owner, _) = kind.split_once(':')?;
@@ -2457,6 +2497,15 @@ fn clip_widgets(widgets: Vec<UiWidget>) -> Vec<UiWidget> {
             }
         })
         .collect()
+}
+
+/// Whether a mod's update of an item menu is in bounds: 256 slots, 256 data slots and the menu strings' limits.
+pub fn item_menu_update_ok(u: &ItemMenuUpdate) -> bool {
+    u.items.as_ref().is_none_or(|s| s.len() <= 256)
+        && u.menu_data.as_ref().is_none_or(|d| d.len() <= 256)
+        && u.menu_text.as_ref().is_none_or(|t| {
+            t.len() <= crate::content::MENU_TEXTS && t.iter().all(|s| s.len() <= crate::content::MENU_TEXT_BYTES)
+        })
 }
 
 /// Whether a mod's update of one of its entities is in bounds: finite numbers, at most 64 KiB of bytes, 256 slots, a name of 128
@@ -3759,6 +3808,18 @@ impl players::Host for State {
             return false;
         }
         self.out.push(Output::EntityMenu { name: self.name.clone(), mod_id: self.id.clone(), player, dimension, id });
+        true
+    }
+    fn open_item_menu(&mut self, player: String, slot: u32, menu: String) -> bool {
+        let mine = menu.split_once(':').is_some_and(|(ns, path)| ns == self.id && !path.is_empty());
+        if !mine
+            || slot > 40
+            || !self.snapshot.players.iter().any(|p| p.id == player)
+            || self.out.iter().filter(|o| matches!(o, Output::ItemMenu { .. })).count() >= 8
+        {
+            return false;
+        }
+        self.out.push(Output::ItemMenu { name: self.name.clone(), mod_id: self.id.clone(), player, slot, menu });
         true
     }
     fn broadcast(&mut self, text: String) {

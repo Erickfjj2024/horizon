@@ -235,7 +235,7 @@ pub mod server {
 
     pub use exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
-        BlockPos, BlockUse, ModEntity, ModEntityUpdate, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,
+        BlockPos, BlockUse, ItemMenu, ItemMenuUpdate, ModEntity, ModEntityUpdate, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,
     };
     pub use horizon::mods::players::{self, GameMode, Player};
     pub use horizon::mods::player_control::{self, Motion};
@@ -320,6 +320,18 @@ pub mod server {
         }
         /// One of the mod's own entities died of damage. When [`Registration::on_mod_entities`] is set.
         fn mod_entity_died(&mut self, _entity: ModEntity) {}
+        /// Each tick while a player has one of the mod's item menus open (`players::open_item_menu`): what to change in it.
+        fn item_menu_tick(&mut self, _player: &Player, _menu: ItemMenu) -> Option<ItemMenuUpdate> {
+            None
+        }
+        /// A player pressed button `id` of one of the mod's item menus.
+        fn item_menu_button(&mut self, _player: &Player, _menu: ItemMenu, _id: i32) -> Option<ItemMenuUpdate> {
+            None
+        }
+        /// A player took `stack` from result slot `slot` of one of the mod's item menus: use up what made it.
+        fn item_menu_taken(&mut self, _player: &Player, _menu: ItemMenu, _slot: u32, _stack: ItemStack) -> Option<ItemMenuUpdate> {
+            None
+        }
         /// A player pressed button `id` of the declared menu of one of the mod's own entities (FORK-10 5b): what to change in it.
         /// When [`Registration::on_mod_entities`] is set.
         fn entity_menu_button(&mut self, _player: &Player, _entity: ModEntity, _id: i32) -> Option<ModEntityUpdate> {
@@ -664,7 +676,7 @@ macro_rules! export_server_mod {
             use ::std::cell::RefCell;
             use $crate::server::{
                 Args, ArgumentValue, BlockEntity, BlockEntityUpdate, BlockPos, BlockUse, DamageSource, Player, Registration,
-                ItemStack, ModEntity, ModEntityUpdate, ServerMod, Structure,
+                ItemMenu, ItemMenuUpdate, ItemStack, ModEntity, ModEntityUpdate, ServerMod, Structure,
             };
             ::std::thread_local! {
                 static STATE: RefCell<Option<$t>> = const { RefCell::new(None) };
@@ -747,6 +759,21 @@ macro_rules! export_server_mod {
                 }
                 fn mod_entity_died(entity: ModEntity) {
                     with(|m| m.mod_entity_died(entity));
+                }
+                fn item_menu_tick(player: Player, menu: ItemMenu) -> Option<ItemMenuUpdate> {
+                    let mut out = None;
+                    with(|m| out = m.item_menu_tick(&player, menu));
+                    out
+                }
+                fn item_menu_button(player: Player, menu: ItemMenu, id: i32) -> Option<ItemMenuUpdate> {
+                    let mut out = None;
+                    with(|m| out = m.item_menu_button(&player, menu, id));
+                    out
+                }
+                fn item_menu_taken(player: Player, menu: ItemMenu, slot: u32, stack: ItemStack) -> Option<ItemMenuUpdate> {
+                    let mut out = None;
+                    with(|m| out = m.item_menu_taken(&player, menu, slot, stack));
+                    out
                 }
                 fn entity_menu_button(player: Player, entity: ModEntity, id: i32) -> Option<ModEntityUpdate> {
                     let mut out = None;

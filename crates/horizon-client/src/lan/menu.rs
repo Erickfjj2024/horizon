@@ -1226,3 +1226,13 @@ mod tests {
         }
     }
 }
+
+/// The stack in a guest's slot as the mods number them: 0 to 35 the inventory, 36 to 39 the armour (36 the feet), 40 the off hand.
+pub fn mod_slot(guest: &Guest, slot: u32) -> Option<&ItemStack> {
+    match slot {
+        0..=35 => guest.inventory.get(slot as usize)?.as_ref(),
+        36..=39 => guest.armor.get(3 - (slot as usize - 36))?.as_ref(),
+        40 => guest.offhand.as_ref(),
+        _ => None,
+    }
+}

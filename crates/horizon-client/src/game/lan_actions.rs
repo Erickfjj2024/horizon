@@ -1306,6 +1306,22 @@ impl Game<'_> {
     /// `Container.stopOpen`'s no-op. Called by the close packet and by the
     /// `ServerPlayer.tick` reach/destroyed close.
     fn close_guest_vehicle_menu(&mut self, host: &mut LanHost, conn: u32, key: (i32, i32, i32)) {
+        // An item menu (round 4, item 2): its slots are all virtual, and what the player left there comes back to them.
+        #[cfg(feature = "mods")]
+        if key.0 == i32::MAX - 17 {
+            let items = match self.world.block_entities.remove(&key) {
+                Some(BlockEntity::Mod(m)) => m.items,
+                _ => Vec::new(),
+            };
+            let back = self.close_mod_item_menu(conn, items);
+            if let Some(gi) = host.hub.guests.iter().position(|g| g.conn == conn)
+                && !back.is_empty()
+            {
+                self.lan_place_back(host, gi, back);
+                host.hub.send_inventory(gi);
+            }
+            return;
+        }
         self.store_cart_items(key);
         self.world.block_entities.remove(&key);
         // A mod entity's declared menu (FORK-10 5b): what the player left in its virtual slots comes back to them.
@@ -1380,9 +1396,7 @@ impl Game<'_> {
     fn container_menu_valid(&self, g: &horizon_client::lan::guest::Guest) -> bool {
         g.menu.as_ref().is_none_or(|m| {
             !(m.slots.valid(&self.world) && !m.slots.still_valid(&self.world, g, m.pos)
-                || m.pos.is_some_and(|k| {
-                    k.1 == super::minecarts::CART_KEY_Y && !self.chest_vehicle_still_valid(k.2, g)
-                }))
+                || m.pos.is_some_and(|k| k.1 == super::minecarts::CART_KEY_Y && !self.vehicle_key_still_valid(k, g)))
         })
     }
 
@@ -1450,6 +1464,16 @@ impl Game<'_> {
     /// `ContainerEntity.isChestVehicleStillValid`: the chest minecart or chest
     /// boat is still there and within the guest's entity interaction range
     /// plus 4 of its box.
+    /// A menu kept under a placeholder key is still valid: an item menu while its item stays (round 4, item 2), else its vehicle
+    /// or mod entity in reach.
+    fn vehicle_key_still_valid(&self, k: (i32, i32, i32), g: &horizon_client::lan::guest::Guest) -> bool {
+        #[cfg(feature = "mods")]
+        if k.0 == i32::MAX - 17 {
+            return self.item_menu_still_valid(g);
+        }
+        self.chest_vehicle_still_valid(k.2, g)
+    }
+
     fn chest_vehicle_still_valid(&self, id: i32, g: &horizon_client::lan::guest::Guest) -> bool {
         let bounds = self
             .carts

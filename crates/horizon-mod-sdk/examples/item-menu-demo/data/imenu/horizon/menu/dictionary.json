@@ -1,0 +1,16 @@
+{
+  "slots": 2,
+  "data_slots": 1,
+  "results": [1],
+  "screen": {
+    "slots": [[26, 35], [134, 35]],
+    "widgets": [
+      {"type": "text", "x": 8, "y": 6, "text_data": 0},
+      {"type": "text", "x": 8, "y": 18, "text_data": 1},
+      {"type": "text", "x": 60, "y": 38, "text": "logs: {0}"},
+      {"type": "button", "x": 8, "y": 58, "w": 50, "h": 14, "id": 1, "tooltip": "Empty the input"},
+      {"type": "button", "x": 62, "y": 58, "w": 50, "h": 14, "id": 2, "tooltip": "Close"},
+      {"type": "textfield", "x": 116, "y": 58, "w": 52, "h": 14, "id": 5, "max_length": 16, "text_data": 2}
+    ]
+  }
+}
