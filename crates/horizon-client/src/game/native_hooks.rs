@@ -4447,7 +4447,7 @@ impl Game<'_> {
     }
     /// The cursor from the open mod screen's top left, with its block and
     /// data, for its press and tooltip hooks.
-    fn native_screen_at(&self) -> Option<(String, Vec<i32>, [f32; 2])> {
+    pub(super) fn native_screen_at(&self) -> Option<(String, Vec<i32>, [f32; 2])> {
         let s = self.shown_native_screen()?;
         let r = self.renderer.as_ref()?;
         let batch = HudBatch::new([r.config.width, r.config.height]);
@@ -4474,6 +4474,12 @@ impl Game<'_> {
             self.audio.play_button_click();
             return true;
         }
+        self.native_menu_button_send(button);
+        self.audio.play_button_click();
+        true
+    }
+    /// Menu button `button` of the open window goes to the server.
+    pub(super) fn native_menu_button_send(&mut self, button: i32) {
         let window = self
             .remote
             .as_ref()
@@ -4486,8 +4492,6 @@ impl Game<'_> {
                 ),
             );
         }
-        self.audio.play_button_click();
-        true
     }
     /// The open mod screen's tooltip under the cursor (`native_screen_tooltip`).
     pub(super) fn draw_native_screen_tooltip(&mut self, batch: &mut HudBatch) {

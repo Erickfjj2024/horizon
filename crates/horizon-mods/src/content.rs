@@ -608,6 +608,25 @@ pub enum Widget {
     /// up to `max_length` characters that `validator` allows, Enter confirms. The confirmed text goes to the server as a mod
     /// message on channel `<mod id>:menu_text` (`horizon_mod_sdk::server::menu_input` reads it), with this widget's `id`. It
     /// starts with string `text_data` of the menu text (`world.set-menu-text`) when it has one.
+    /// A scrolling list (`GuiScrollList`, FORK-20): `count` rows (a data value), row `i` showing string `first + i` of the menu
+    /// text (`world.set-menu-text`), `rows` visible at a time from the top of a `w` by `h` box, scrolled by the wheel or by
+    /// dragging. A click on row `i` (not a drag) sends menu button `on_click + i`. With `source: items` the strings are item ids
+    /// and each row shows the item's icon before its id.
+    List {
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        #[serde(default = "default_row_height")]
+        row_height: i32,
+        first: u16,
+        count: Value,
+        on_click: i32,
+        #[serde(default)]
+        source: ListSource,
+        #[serde(default)]
+        color: Option<String>,
+    },
     #[serde(rename = "textfield")]
     TextField {
         x: i32,
@@ -622,6 +641,21 @@ pub enum Widget {
         #[serde(default)]
         text_data: Option<u16>,
     },
+}
+
+fn default_row_height() -> i32 {
+    12
+}
+
+/// What a list's strings are.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ListSource {
+    /// Plain lines of text.
+    #[default]
+    Text,
+    /// Item ids, shown as icons with their id.
+    Items,
 }
 
 fn default_field_length() -> u16 {
@@ -880,6 +914,19 @@ fn check_widget(
             }
             if *side > 5 {
                 return Err(format!("{name}: a neighbour's side is 0 to 5"));
+            }
+        }
+        Widget::List { x, y, w, h, row_height, first, count, color, .. } => {
+            rect(*x, *y, *w, *h)?;
+            if !(8..=64).contains(row_height) || *row_height > *h {
+                return Err(format!("{name}: a list's row_height is 8 to 64 and at most its height"));
+            }
+            if usize::from(*first) >= crate::runtime::MENU_TEXTS {
+                return Err(format!("{name}: a list's first string is 0 to {}", crate::runtime::MENU_TEXTS - 1));
+            }
+            data(count)?;
+            if let Some(c) = color {
+                colour(c)?;
             }
         }
         Widget::TextField { x, y, w, h, max_length, text_data, .. } => {
@@ -1986,6 +2033,48 @@ capabilities = ["registries"]
             ),
             ("menu-key", r#"{"slots": 3, "rows": 1}"#, "unknown field"),
             ("menu-missing", r#"{"data_slots": 1}"#, "missing field"),
+        ] {
+            let files: &[(&str, &[u8])] = &[("data/ruby/horizon/menu/a.json", file.as_bytes())];
+            let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();
+            assert!(e.contains(why), "{case}: {e}");
+        }
+    }
+
+    #[test]
+    fn a_screen_takes_lists_and_text_fields_and_refuses_bad_ones() {
+        let good = br##"{"slots": 1, "data_slots": 2, "screen": {"slots": [null], "widgets": [
+            {"type": "list", "x": 8, "y": 20, "w": 100, "h": 48, "row_height": 12, "first": 8, "count": {"data": 1}, "on_click": 7700, "source": "items"},
+            {"type": "textfield", "x": 8, "y": 6, "w": 80, "h": 12, "id": 7800, "validator": "id", "max_length": 64, "text_data": 0},
+            {"type": "text", "x": 8, "y": 70, "text_data": 3}]}}"##;
+        let files: &[(&str, &[u8])] = &[("data/ruby/horizon/menu/filters.json", good)];
+        let content = hmod("list-ok", MANIFEST_TEXT, files).unwrap();
+        assert_eq!(content.menu_types[0].screen.as_ref().unwrap().widgets.len(), 3);
+        for (case, file, why) in [
+            (
+                "list-row",
+                r#"{"slots":1,"data_slots":1,"screen":{"slots":[null],"widgets":[{"type":"list","x":0,"y":0,"w":50,"h":30,"row_height":4,"first":0,"count":{"data":0},"on_click":1}]}}"#,
+                "row_height is 8 to 64",
+            ),
+            (
+                "list-first",
+                r#"{"slots":1,"data_slots":1,"screen":{"slots":[null],"widgets":[{"type":"list","x":0,"y":0,"w":50,"h":30,"first":64,"count":{"data":0},"on_click":1}]}}"#,
+                "first string is 0 to 63",
+            ),
+            (
+                "list-count",
+                r#"{"slots":1,"data_slots":1,"screen":{"slots":[null],"widgets":[{"type":"list","x":0,"y":0,"w":50,"h":30,"first":0,"count":{"data":5},"on_click":1}]}}"#,
+                "data slot 5 is past the last one",
+            ),
+            (
+                "field-length",
+                r#"{"slots":1,"screen":{"slots":[null],"widgets":[{"type":"textfield","x":0,"y":0,"w":50,"h":12,"id":1,"max_length":0}]}}"#,
+                "max_length is 1 to 256",
+            ),
+            (
+                "field-validator",
+                r#"{"slots":1,"screen":{"slots":[null],"widgets":[{"type":"textfield","x":0,"y":0,"w":50,"h":12,"id":1,"validator":"emoji"}]}}"#,
+                "unknown variant",
+            ),
         ] {
             let files: &[(&str, &[u8])] = &[("data/ruby/horizon/menu/a.json", file.as_bytes())];
             let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();

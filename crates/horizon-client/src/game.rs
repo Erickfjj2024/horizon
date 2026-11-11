@@ -17056,6 +17056,7 @@ impl Game<'_> {
                         && d != 0.0
                         && !bundle
                         && !self.tweak_scroll(d, self.inventory_target().0)
+                        && !self.mod_list_scroll(d)
                     {
                         self.station_scroll(d);
                     }
@@ -17200,7 +17201,7 @@ impl Game<'_> {
                         return Ok(());
                     }
                     if !pressed && button == MouseButton::Left {
-                        self::menu_screens::end_drag();
+                        self.end_declared_drag();
                     }
                     match self.screen {
                         Screen::Playing => {

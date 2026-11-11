@@ -6,8 +6,8 @@
 use super::{Game, native_hooks::NativeScreen};
 use horizon_client::hud::{HudBatch, rgba};
 use horizon_mods::{
-    content::{ArmorSlots, Direction, MenuScreen, Validator, Widget, find_field, parse_color},
-    screen::{DRAG_HEIGHT, Locals, Press, press_with, fill_text, neighbor_step, window_origin, filled, fraction, hovered, open_window, press, read, showing},
+    content::{ArmorSlots, Direction, ListSource, MenuScreen, Validator, Widget, find_field, parse_color},
+    screen::{list_rows, scroll_lists, scroll_var, DRAG_HEIGHT, Locals, Press, press_with, fill_text, neighbor_step, window_origin, filled, fraction, hovered, open_window, press, read, showing},
 };
 use std::{
     collections::HashMap,
@@ -23,11 +23,25 @@ static LOCALS: Mutex<Option<Locals>> = Mutex::new(None);
 /// A window being dragged: where the cursor was (from the screen's top left) and the offset the window had.
 static DRAG: Mutex<Option<([f32; 2], [f32; 2])>> = Mutex::new(None);
 
-/// The left button was released: a dragged window is let go.
-pub(super) fn end_drag() {
+/// A press on a list row waits for its release: a click when the pointer stayed, a scroll when it was dragged.
+struct ListPress {
+    button: i32,
+    first: u16,
+    start_y: f32,
+    start_scroll: i64,
+    row_height: f32,
+    max_scroll: i64,
+    dragged: bool,
+}
+static LIST_PRESS: Mutex<Option<ListPress>> = Mutex::new(None);
+
+/// The left button was released: a dragged window is let go, and a press on a list row that was not a drag is the menu
+/// button it names (returned).
+pub(super) fn end_drag() -> Option<i32> {
     if let Ok(mut d) = DRAG.lock() {
         *d = None;
     }
+    LIST_PRESS.lock().ok().and_then(|mut p| p.take()).filter(|p| !p.dragged).map(|p| p.button)
 }
 
 /// The strings of the mods' menus this client was sent (`world.set-menu-text`), by block position, and the block position of the
@@ -58,6 +72,18 @@ pub(super) fn drop_field() {
     if let Ok(mut f) = FIELD.lock() {
         *f = None;
     }
+}
+
+/// The list that starts at string `first` on `screen` (its widgets, groups and windows).
+fn find_list(screen: &MenuScreen, first: u16) -> Option<&Widget> {
+    fn walk(widgets: &[Widget], first: u16) -> Option<&Widget> {
+        widgets.iter().find_map(|w| match w {
+            Widget::List { first: f, .. } if *f == first => Some(w),
+            Widget::Show { widgets, .. } => walk(widgets, first),
+            _ => None,
+        })
+    }
+    walk(&screen.widgets, first).or_else(|| screen.windows.iter().find_map(|w| walk(&w.widgets, first)))
 }
 
 /// A `horizon:menu_text` message arrived: the strings of the block at its position.
@@ -256,6 +282,39 @@ impl Game<'_> {
                         self.native_fill(batch, [ox + *x as f32, oy + *y as f32, *w as f32, *h as f32], argb);
                     }
                 }
+                Widget::List { x, y, w, h, row_height, first, count, source, color, .. } => {
+                    let total = read(count, data);
+                    let rows = list_rows(*h, *row_height);
+                    let top = locals.scroll(*first, total, rows);
+                    let rgb = color.as_deref().and_then(parse_color).unwrap_or(0xFF40_4040);
+                    for r in 0..rows {
+                        let index = top + r;
+                        if index >= total {
+                            break;
+                        }
+                        let row = [ox + *x as f32, oy + (*y + r as i32 * *row_height) as f32, *w as f32, *row_height as f32];
+                        if cursor[0] >= row[0] && cursor[0] < row[0] + row[2] && cursor[1] >= row[1] && cursor[1] < row[1] + row[3] {
+                            self.native_fill(batch, row, 0x4080_8080);
+                        }
+                        let Some(text) = menu_string(usize::from(*first) + index as usize) else {
+                            continue;
+                        };
+                        let pad = if matches!(source, ListSource::Items) {
+                            self.native_item(batch, &text, [row[0] + 1.0, row[1] + (row[3] - 16.0) / 2.0], 16.0);
+                            19.0
+                        } else {
+                            2.0
+                        };
+                        self.native_text(batch, &text, [row[0] + pad, row[1] + (row[3] - 8.0) / 2.0], rgb, false);
+                    }
+                    // A thin bar at the right edge when there is more than shows.
+                    if total > rows {
+                        let bar_h = (*h as f32 * rows as f32 / total as f32).max(6.0);
+                        let travel = *h as f32 - bar_h;
+                        let at = if total > rows { travel * top as f32 / (total - rows) as f32 } else { 0.0 };
+                        self.native_fill(batch, [ox + (*x + *w) as f32 - 2.0, oy + *y as f32 + at, 2.0, bar_h], 0xFF80_8080);
+                    }
+                }
                 Widget::TextField { x, y, w, h, id, max_length, text_data, .. } => {
                     let rect = [ox + *x as f32, oy + *y as f32, *w as f32, *h as f32];
                     let mut focused = false;
@@ -407,6 +466,21 @@ impl Game<'_> {
 
     /// The cursor moved with a window held: it follows (kept on the screen's near area).
     pub(super) fn drag_declared_window(&self, at: [f32; 2]) {
+        if let Ok(mut p) = LIST_PRESS.lock()
+            && let Some(p) = p.as_mut()
+        {
+            let moved = p.start_y - at[1];
+            if moved.abs() > 4.0 {
+                p.dragged = true;
+            }
+            if p.dragged
+                && let Ok(mut l) = LOCALS.lock()
+                && let Some(now) = l.as_mut()
+            {
+                let next = (p.start_scroll + (moved / p.row_height).round() as i64).clamp(0, p.max_scroll);
+                now.vars.insert(scroll_var(p.first), next);
+            }
+        }
         let Ok(drag) = DRAG.lock() else { return };
         let Some((from, offset)) = *drag else { return };
         if let Ok(mut l) = LOCALS.lock()
@@ -453,6 +527,26 @@ impl Game<'_> {
             drop_field();
         }
         let result = result?;
+        if let Press::Row { button, first } = result
+            && let Some(Widget::List { y, h, row_height, count, .. }) = find_list(screen, first)
+        {
+            let rows = list_rows(*h, *row_height);
+            let total = read(count, data);
+            let locals = locals();
+            let _ = y;
+            if let Ok(mut p) = LIST_PRESS.lock() {
+                *p = Some(ListPress {
+                    button,
+                    first,
+                    start_y: at[1],
+                    start_scroll: locals.scroll(first, total, rows),
+                    row_height: *row_height as f32,
+                    max_scroll: (total - rows).max(0),
+                    dragged: false,
+                });
+            }
+            return Some(LOCAL_PRESS);
+        }
         if let Press::Field(id) = result {
             if let Some(Widget::TextField { max_length, validator, text_data, .. }) = find_field(screen, id) {
                 let mut edit = horizon_client::ui::EditBox::new(0.0, 0.0, 100.0, 20.0);
@@ -473,7 +567,31 @@ impl Game<'_> {
         }
         match result {
             Press::Send(id) => Some(id),
-            Press::Local | Press::Field(_) => Some(LOCAL_PRESS),
+            Press::Local | Press::Field(_) | Press::Row { .. } => Some(LOCAL_PRESS),
+        }
+    }
+
+    /// The wheel over a list of the open mod screen scrolls it (FORK-20); true when a list took it.
+    pub(super) fn mod_list_scroll(&mut self, delta: f32) -> bool {
+        let Some((block, data, at)) = self.native_screen_at() else {
+            return false;
+        };
+        let Some(screen) = screen_of(&block) else {
+            return false;
+        };
+        let Ok(mut l) = LOCALS.lock() else {
+            return false;
+        };
+        let mut now = l.take().unwrap_or_default();
+        let took = scroll_lists(screen, &data, &mut now, at, delta.signum() as i64 * (delta.abs().ceil() as i64).max(1));
+        *l = Some(now);
+        took
+    }
+
+    /// The left button went up: a click on a list row that was not a drag is its menu button, sent to the server.
+    pub(super) fn end_declared_drag(&mut self) {
+        if let Some(button) = end_drag() {
+            self.native_menu_button_send(button);
         }
     }
 

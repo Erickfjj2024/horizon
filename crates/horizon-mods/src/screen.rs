@@ -25,7 +25,21 @@ pub struct Locals {
     pub offset: [f32; 2],
 }
 
+/// The variable a list that starts at string `first` keeps its scroll in.
+pub fn scroll_var(first: u16) -> String {
+    format!("@scroll:{first}")
+}
+
+/// How many rows a list shows at once.
+pub fn list_rows(h: i32, row_height: i32) -> i64 {
+    i64::from((h / row_height.max(1)).max(1))
+}
+
 impl Locals {
+    /// A list's first row showing: `count` rows of which `rows` show, so 0 up to `count - rows`.
+    pub fn scroll(&self, first: u16, count: i64, rows: i64) -> i64 {
+        self.var(&scroll_var(first)).clamp(0, (count - rows).max(0))
+    }
     /// A variable, 0 when it was never set.
     pub fn var(&self, name: &str) -> i64 {
         self.vars.get(name).copied().unwrap_or(0)
@@ -94,6 +108,9 @@ pub const DRAG_HEIGHT: f32 = 18.0;
 pub enum Press {
     /// The text box `id` was pressed (FORK-20): it takes the focus.
     Field(i32),
+    /// A row of the list that shows menu text from string `first` was pressed (FORK-20): menu button `button` goes to the server
+    /// when the press ends without a drag.
+    Row { button: i32, first: u16 },
     /// Menu button `id`, for the server.
     Send(i32),
     /// Something here: a local action, or a press a window took.
@@ -113,6 +130,17 @@ fn press_in(
     alt: bool,
     shift: bool,
 ) -> Option<Press> {
+    if let Some(row) = showing(widgets, data, locals).into_iter().find_map(|w| match w {
+        Widget::List { x, y, w, h, row_height, first, count, on_click, .. } if inside(at, *x, *y, *w, *h) => {
+            let rows = list_rows(*h, *row_height);
+            let row = ((at[1] - *y as f32) / *row_height as f32) as i64;
+            let index = locals.scroll(*first, read(count, data), rows) + row;
+            (row < rows && index < read(count, data)).then(|| Press::Row { button: *on_click + index as i32, first: *first })
+        }
+        _ => None,
+    }) {
+        return Some(row);
+    }
     if let Some(id) = showing(widgets, data, locals).into_iter().find_map(|w| match w {
         Widget::TextField { x, y, w, h, id, .. } if inside(at, *x, *y, *w, *h) => Some(*id),
         _ => None,
@@ -182,6 +210,32 @@ pub fn press_with(
         }
     }
     press_in(&screen.widgets, data, locals, at, alt, shift)
+}
+
+/// The wheel over a list: `notches` (positive up) scroll the first list showing under `at` (the open window's, else the screen's)
+/// by that many rows. True when a list took it.
+pub fn scroll_lists(screen: &MenuScreen, data: &[i32], locals: &mut Locals, at: [f32; 2], notches: i64) -> bool {
+    let window = open_window(screen, locals).cloned();
+    let (widgets, rel): (&[Widget], [f32; 2]) = match &window {
+        Some(w) => {
+            let o = window_origin(w, locals);
+            (&w.widgets, [at[0] - o[0], at[1] - o[1]])
+        }
+        None => (&screen.widgets, at),
+    };
+    let hit = showing(widgets, data, locals).into_iter().find_map(|w| match w {
+        Widget::List { x, y, w, h, row_height, first, count, .. } if inside(rel, *x, *y, *w, *h) => {
+            Some((*first, read(count, data), list_rows(*h, *row_height)))
+        }
+        _ => None,
+    });
+    let Some((first, count, rows)) = hit else {
+        return false;
+    };
+    let now = locals.scroll(first, count, rows);
+    let next = (now - notches).clamp(0, (count - rows).max(0));
+    locals.vars.insert(scroll_var(first), next);
+    true
 }
 
 /// `value` of `max` as 0 to 1; 0 when `max` is not over 0.
@@ -571,6 +625,29 @@ mod menu_text_tests {
         };
         assert_eq!(*max_length, 7);
         assert!(validator.allows('5') && !validator.allows('a'));
+    }
+
+    #[test]
+    fn a_list_scrolls_by_the_wheel_and_a_click_names_the_row_under_it() {
+        use crate::content::MenuScreen;
+        let screen: MenuScreen = serde_json::from_str(
+            r#"{"slots": [], "widgets": [
+                {"type": "list", "x": 10, "y": 20, "w": 80, "h": 36, "row_height": 12, "first": 8, "count": {"data": 0}, "on_click": 7700}]}"#,
+        )
+        .unwrap();
+        let data = [7]; // seven entries, three rows showing
+        let mut locals = Locals::default();
+        // The first press, on the second row (y 32..44): entry 1.
+        assert_eq!(press(&screen, &data, &mut locals, [12.0, 34.0], false), Some(Press::Row { button: 7701, first: 8 }));
+        // Four notches down (the wheel's down is negative) stop at 7 - 3 = 4.
+        assert!(scroll_lists(&screen, &data, &mut locals, [12.0, 34.0], -9));
+        assert_eq!(locals.scroll(8, 7, 3), 4);
+        assert_eq!(press(&screen, &data, &mut locals, [12.0, 34.0], false), Some(Press::Row { button: 7705, first: 8 }));
+        assert!(scroll_lists(&screen, &data, &mut locals, [12.0, 34.0], 1));
+        assert_eq!(locals.scroll(8, 7, 3), 3);
+        // Off the list the wheel is not taken; fewer entries than rows leave no row to press past them.
+        assert!(!scroll_lists(&screen, &data, &mut locals, [200.0, 34.0], 1));
+        assert_eq!(press(&screen, &[2], &mut Locals::default(), [12.0, 52.0], false), None);
     }
 
     #[test]
