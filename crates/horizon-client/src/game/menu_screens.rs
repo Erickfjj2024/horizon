@@ -49,6 +49,9 @@ pub(super) fn end_drag() -> Option<i32> {
 static MENU_TEXT: Mutex<Option<HashMap<[i32; 3], Vec<String>>>> = Mutex::new(None);
 static SCREEN_AT: Mutex<Option<[i32; 3]>> = Mutex::new(None);
 
+/// The readings each graph of the open screen keeps (FORK-20 part 4), by the graph's place, with the tick of the last reading.
+static GRAPHS: Mutex<Option<HashMap<(i32, i32), (u64, horizon_mods::screen::GraphHistory)>>> = Mutex::new(None);
+
 /// Most blocks whose strings a client keeps (the oldest are dropped).
 const MENU_TEXT_BLOCKS: usize = 64;
 
@@ -119,6 +122,9 @@ pub(super) const LOCAL_PRESS: i32 = i32::MIN;
 /// A new screen opened: its windows are closed and its variables unset.
 pub(super) fn reset_locals() {
     drop_field();
+    if let Ok(mut g) = GRAPHS.lock() {
+        *g = None;
+    }
     if let Ok(mut l) = LOCALS.lock() {
         *l = None;
     }
@@ -280,6 +286,42 @@ impl Game<'_> {
                     let on = cursor[0] >= ox + *x as f32 && cursor[1] >= oy + *y as f32 && cursor[0] < ox + (*x + *w) as f32 && cursor[1] < oy + (*y + *h) as f32;
                     if on && let Some(argb) = parse_color(c) {
                         self.native_fill(batch, [ox + *x as f32, oy + *y as f32, *w as f32, *h as f32], argb);
+                    }
+                }
+                Widget::Graph { x, y, w, h, series, samples, min_scale, .. } => {
+                    let rect = [ox + *x as f32, oy + *y as f32, *w as f32, *h as f32];
+                    let values: Vec<i64> = series.iter().map(|s| read(&s.value, data)).collect();
+                    let Ok(mut graphs) = GRAPHS.lock() else {
+                        continue;
+                    };
+                    let map = graphs.get_or_insert_with(HashMap::new);
+                    let entry = map
+                        .entry((*x, *y))
+                        .or_insert_with(|| (u64::MAX, horizon_mods::screen::GraphHistory::new(series.len(), usize::from(*samples))));
+                    // One reading a tick while the screen is open (drawing runs every frame).
+                    let tick = self.ticks;
+                    if entry.0 != tick && !data.is_empty() {
+                        entry.0 = tick;
+                        entry.1.push(&values);
+                    }
+                    let lines = entry.1.points(rect, *min_scale);
+                    drop(graphs);
+                    for (points, s) in lines.iter().zip(series) {
+                        let argb = parse_color(&s.color).unwrap_or(0xFFFF_FFFF);
+                        // Each step drawn as 1-pixel columns from one point to the next, so a steep rise stays joined.
+                        for pair in points.windows(2) {
+                            let ([x0, y0], [x1, y1]) = (pair[0], pair[1]);
+                            let cols = (x1 - x0).max(1.0).ceil() as i32;
+                            for c in 0..cols {
+                                let t0 = c as f32 / cols as f32;
+                                let t1 = (c + 1) as f32 / cols as f32;
+                                let ya = y0 + (y1 - y0) * t0;
+                                let yb = y0 + (y1 - y0) * t1;
+                                let top = ya.min(yb).clamp(rect[1], rect[1] + rect[3] - 1.0);
+                                let bottom = ya.max(yb).clamp(rect[1], rect[1] + rect[3] - 1.0);
+                                self.native_fill(batch, [x0 + c as f32, top, 1.0, (bottom - top).max(1.0)], argb);
+                            }
+                        }
                     }
                 }
                 Widget::List { x, y, w, h, row_height, first, count, source, color, .. } => {

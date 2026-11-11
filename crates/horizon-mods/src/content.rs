@@ -714,6 +714,23 @@ pub enum Widget {
         #[serde(default)]
         color: Option<String>,
     },
+    /// A line graph (Mekanism's `GuiDoubleGraph`, the heating of the fission and fusion reactors; FORK-20 part 4): the client keeps the
+    /// last `samples` readings of each series (one a tick while the screen is open) and draws them as lines from left (oldest) to right
+    /// (newest); the vertical scale goes from the least to the greatest reading kept, at least `min_scale` tall. Its tooltip fills `{0}`,
+    /// `{1}`... with data slots, as a text does.
+    Graph {
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        series: Vec<GraphSeries>,
+        #[serde(default = "default_samples")]
+        samples: u16,
+        #[serde(default = "default_min_scale")]
+        min_scale: i64,
+        #[serde(default)]
+        tooltip: Option<String>,
+    },
     #[serde(rename = "textfield")]
     TextField {
         x: i32,
@@ -728,6 +745,22 @@ pub enum Widget {
         #[serde(default)]
         text_data: Option<u16>,
     },
+}
+
+/// One line of a graph: what it reads and its colour.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct GraphSeries {
+    pub value: Value,
+    /// `#RRGGBB` or `#AARRGGBB`.
+    pub color: String,
+}
+
+fn default_samples() -> u16 {
+    40
+}
+fn default_min_scale() -> i64 {
+    1
 }
 
 fn default_row_height() -> i32 {
@@ -1001,6 +1034,25 @@ fn check_widget(
             }
             if *side > 5 {
                 return Err(format!("{name}: a neighbour's side is 0 to 5"));
+            }
+        }
+        Widget::Graph { x, y, w, h, series, samples, min_scale, tooltip } => {
+            rect(*x, *y, *w, *h)?;
+            if series.is_empty() || series.len() > 8 {
+                return Err(format!("{name}: a graph has 1 to 8 series"));
+            }
+            for s in series {
+                data(&s.value)?;
+                colour(&s.color)?;
+            }
+            if !(2..=400).contains(samples) {
+                return Err(format!("{name}: a graph keeps 2 to 400 samples"));
+            }
+            if *min_scale < 1 {
+                return Err(format!("{name}: a graph's min_scale is at least 1"));
+            }
+            if tooltip.as_ref().is_some_and(|t| t.len() > 256) {
+                return Err(format!("{name}: a tooltip is 256 bytes at most"));
             }
         }
         Widget::List { x, y, w, h, row_height, first, count, color, .. } => {
@@ -2186,6 +2238,31 @@ capabilities = ["registries"]
                 "list-count",
                 r#"{"slots":1,"data_slots":1,"screen":{"slots":[null],"widgets":[{"type":"list","x":0,"y":0,"w":50,"h":30,"first":0,"count":{"data":5},"on_click":1}]}}"#,
                 "data slot 5 is past the last one",
+            ),
+            (
+                "graph-series",
+                r#"{"slots":1,"screen":{"slots":[null],"widgets":[{"type":"graph","x":0,"y":0,"w":50,"h":30,"series":[]}]}}"#,
+                "1 to 8 series",
+            ),
+            (
+                "graph-samples",
+                r##"{"slots":1,"data_slots":1,"screen":{"slots":[null],"widgets":[{"type":"graph","x":0,"y":0,"w":50,"h":30,"samples":1,"series":[{"value":{"data":0},"color":"#FF0000"}]}]}}"##,
+                "2 to 400 samples",
+            ),
+            (
+                "graph-scale",
+                r##"{"slots":1,"data_slots":1,"screen":{"slots":[null],"widgets":[{"type":"graph","x":0,"y":0,"w":50,"h":30,"min_scale":0,"series":[{"value":{"data":0},"color":"#FF0000"}]}]}}"##,
+                "min_scale is at least 1",
+            ),
+            (
+                "graph-slot",
+                r##"{"slots":1,"data_slots":1,"screen":{"slots":[null],"widgets":[{"type":"graph","x":0,"y":0,"w":50,"h":30,"series":[{"value":{"data":4},"color":"#FF0000"}]}]}}"##,
+                "data slot 4 is past the last one",
+            ),
+            (
+                "graph-color",
+                r##"{"slots":1,"data_slots":1,"screen":{"slots":[null],"widgets":[{"type":"graph","x":0,"y":0,"w":50,"h":30,"series":[{"value":{"data":0},"color":"red"}]}]}}"##,
+                "is #RRGGBB or #AARRGGBB",
             ),
             (
                 "field-length",

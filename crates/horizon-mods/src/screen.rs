@@ -323,6 +323,7 @@ fn hover_in(widgets: &[Widget], data: &[i32], locals: &Locals, at: [f32; 2]) -> 
             let label = types.get(k - 1).map_or("", |t| t.label.as_str());
             tooltip.as_ref().map(|t| tooltip_lines(&t.replace("{label}", label), read(value, data), read(max, data)))
         }
+        Widget::Graph { x, y, w, h, tooltip: Some(t), .. } if inside(at, *x, *y, *w, *h) => Some(tooltip_lines(&fill_text(t, data), 0, 0)),
         Widget::Swatch { x, y, w, h, value, labels, tooltip: Some(t), .. } if inside(at, *x, *y, *w, *h) => {
             let v = read(value, data).max(0) as usize;
             let label = labels.get(v).or(labels.last()).map_or("", String::as_str);
@@ -540,6 +541,57 @@ mod tests {
     }
 }
 
+/// The readings a graph widget keeps on the client: the last `samples` of each series, oldest first.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GraphHistory {
+    pub samples: usize,
+    pub series: Vec<std::collections::VecDeque<i64>>,
+}
+
+impl GraphHistory {
+    pub fn new(series: usize, samples: usize) -> Self {
+        Self { samples: samples.max(2), series: vec![std::collections::VecDeque::new(); series] }
+    }
+    /// One reading of every series (a tick); the oldest goes once `samples` are kept.
+    pub fn push(&mut self, values: &[i64]) {
+        for (kept, v) in self.series.iter_mut().zip(values) {
+            kept.push_back(*v);
+            while kept.len() > self.samples {
+                kept.pop_front();
+            }
+        }
+    }
+    /// The vertical scale: the least and the greatest reading kept, the top raised so the span is at least `min_scale`.
+    pub fn scale(&self, min_scale: i64) -> (i64, i64) {
+        let all = self.series.iter().flatten();
+        let lo = all.clone().copied().min().unwrap_or(0);
+        let hi = all.copied().max().unwrap_or(0);
+        (lo, hi.max(lo + min_scale.max(1)))
+    }
+    /// Each series as points in `rect` (`x, y, w, h`): the newest reading at the right edge, one step of `w / (samples - 1)` back
+    /// for each older one; `lo` at the bottom, `hi` at the top.
+    pub fn points(&self, rect: [f32; 4], min_scale: i64) -> Vec<Vec<[f32; 2]>> {
+        let (lo, hi) = self.scale(min_scale);
+        let [x, y, w, h] = rect;
+        let step = w / (self.samples - 1) as f32;
+        let span = (hi - lo) as f32;
+        self.series
+            .iter()
+            .map(|kept| {
+                let n = kept.len();
+                kept.iter()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        let px = x + w - (n - 1 - i) as f32 * step;
+                        let py = y + h - (*v - lo) as f32 / span * h;
+                        [px, py]
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+}
+
 /// What a confirmed text box sends the server, on `<mod id>:menu_text`: the block's position (three little-endian whole numbers),
 /// the widget's `id` (one more) and the text (UTF-8, the rest of the message).
 pub fn encode_menu_input(pos: [i32; 3], id: i32, text: &str) -> Vec<u8> {
@@ -648,6 +700,39 @@ mod menu_text_tests {
         // Off the list the wheel is not taken; fewer entries than rows leave no row to press past them.
         assert!(!scroll_lists(&screen, &data, &mut locals, [200.0, 34.0], 1));
         assert_eq!(press(&screen, &[2], &mut Locals::default(), [12.0, 52.0], false), None);
+    }
+
+    #[test]
+    fn a_graph_keeps_its_last_samples_and_scales_from_the_least_to_the_greatest() {
+        let mut g = GraphHistory::new(2, 3);
+        g.push(&[100, 2000]);
+        g.push(&[300, 2500]);
+        g.push(&[200, 2200]);
+        g.push(&[400, 2100]);
+        // Three kept: the first reading is gone.
+        assert_eq!(g.series[0].iter().copied().collect::<Vec<_>>(), [300, 200, 400]);
+        assert_eq!(g.scale(1), (200, 2500));
+        // A flat history still gets the minimum span.
+        let mut flat = GraphHistory::new(1, 4);
+        flat.push(&[1000]);
+        flat.push(&[1000]);
+        assert_eq!(flat.scale(1600), (1000, 2600));
+        // The newest reading is at the right edge, the scale's bottom at the bottom and its top at the top.
+        let pts = g.points([10.0, 20.0, 40.0, 100.0], 1);
+        assert_eq!(pts[0].last(), Some(&[50.0, 20.0 + 100.0 - (400.0 - 200.0) / 2300.0 * 100.0]));
+        assert_eq!(pts[1][0], [10.0, 20.0], "2500, the greatest, is the top, two steps back from the newest");
+        assert_eq!(pts[0][1], [30.0, 120.0], "200, the least, is the bottom");
+    }
+
+    #[test]
+    fn a_graph_is_checked_like_the_other_widgets() {
+        let ok: MenuScreen = serde_json::from_str(
+            r##"{"slots": [], "widgets": [{"type": "graph", "x": 7, "y": 20, "w": 160, "h": 40, "samples": 40, "min_scale": 1600,
+                "series": [{"value": {"data": 0}, "color": "#FF0000"}, {"value": {"pair": [1, 2]}, "color": "#00FFFF"}], "tooltip": "Heat {0}"}]}"##,
+        )
+        .unwrap();
+        assert!(matches!(&ok.widgets[0], Widget::Graph { samples: 40, min_scale: 1600, series, .. } if series.len() == 2));
+        assert_eq!(hovered(&ok, &[1234, 0, 0], &Locals::default(), [10.0, 30.0]), Some(vec!["Heat 1234".to_owned()]));
     }
 
     #[test]
