@@ -203,6 +203,7 @@ mod native_explosions;
 mod native_falling;
 mod block_renderers;
 mod menu_screens;
+mod mod_radial;
 mod mod_hud;
 #[cfg(feature = "mods")]
 mod mod_entities;
@@ -15502,6 +15503,7 @@ impl Game<'_> {
             return Ok(());
         }
         match key {
+            KeyCode::Escape if self.screen == Screen::Playing && self.close_mod_radial() => {}
             KeyCode::Escape => match self.screen {
                 Screen::Options => self.options_key(KeyCode::Escape, None)?,
                 Screen::Playing => {
@@ -17224,6 +17226,14 @@ impl Game<'_> {
                     }
                     match self.screen {
                         Screen::Playing => {
+                            // A server mod's radial menu takes the press (and its release) while it is open.
+                            if self.mod_radial_open() {
+                                if pressed {
+                                    let at = [self.cursor.0, self.cursor.1];
+                                    self.mod_radial_press(at);
+                                }
+                                return Ok(());
+                            }
                             if pressed && !self.captured {
                                 self.capture(true);
                                 return Ok(());

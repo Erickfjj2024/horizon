@@ -1499,6 +1499,8 @@ pub struct Expect {
     sounds: Option<Vec<String>>,
     /// Server mods (FORK-10): the mod's entities after the step, as `"id kind x y z energy=E data=[bytes] skin=S name=N"` (the coordinates with 3 decimals, name `-` for none).
     mod_entities: Option<Vec<String>>,
+    /// Server mods: every `open-radial-menu`, as `"Name: id=label,id=label current n"`.
+    radial: Option<Vec<String>>,
     /// Server mods: every `set-hud-line`, as `"Name: id [icon] text fraction"`.
     hud: Option<Vec<String>>,
     /// Server mods: every `break-blocks`, as `"count with tool silk=bool fortune=n"`.
@@ -2526,6 +2528,21 @@ impl Step {
                 })
                 .collect();
             same("broken", want, &got)?;
+        }
+        if let Some(want) = &e.radial {
+            let name = |id: &str| game.players.iter().find(|p| p.id == id).map_or(id.to_owned(), |p| p.name.clone());
+            let got: Vec<String> = out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::Radial { player, entries, current, .. } => Some(format!(
+                        "{}: {} current {current}",
+                        name(player),
+                        entries.iter().map(|(id, label, _)| format!("{id}={label}")).collect::<Vec<_>>().join(",")
+                    )),
+                    _ => None,
+                })
+                .collect();
+            same("radial", want, &got)?;
         }
         if let Some(want) = &e.hud {
             let name = |id: &str| game.players.iter().find(|p| p.id == id).map_or(id.to_owned(), |p| p.name.clone());

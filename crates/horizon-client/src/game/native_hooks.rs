@@ -1235,8 +1235,9 @@ impl Game<'_> {
     /// `native_fill` and `native_text`. Skip a corner `native_corner_shown`
     /// says is taken.
     pub(super) fn native_hud(&mut self, batch: &mut HudBatch, corners: &mut Corners) {
-        // The server mods' HUD lines (`players.set-hud-line`).
+        // The server mods' HUD lines (`players.set-hud-line`) and radial menu (`players.open-radial-menu`).
         self.draw_mod_hud(batch, corners);
+        self.draw_mod_radial(batch);
         let _ = (batch, corners);
     }
     /// A player right-clicks the entity `entity` (`Entity.getId`) of type

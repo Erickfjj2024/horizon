@@ -674,12 +674,23 @@ Capability `players`, server mods only (manifest `api = "0.3"`, experimental): t
 | `game-mode` | `game-mode` |  |
 | `health` | `f32` | Hit points as vanilla counts them: 20 is full health without effects. |
 
+### record `radial-entry`
+
+One choice of a radial menu.
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | `string` | What the mod hears back when it is chosen (at most 64 bytes). |
+| `label` | `string` | Its name under the icon (at most 64 bytes). |
+| `icon` | `string` | An item drawn for it (`mymod:mode_vein`); empty for none. |
+
 | Function | Signature | What it does |
 | --- | --- | --- |
 | `online` | `func() -> list<player>` | The players online, in the order they joined. |
 | `tell` | `func(player: string, text: string) -> bool` | A system message to one player, after the mod's name; false when no player with that id is online. Up to 8 messages per call. |
 | `tell-overlay` | `func(player: string, text: string) -> bool` | A message over the hotbar (the action bar, as `Player.displayClientMessage(text, true)`) to one player, for a line that is gone in seconds; false when no player with that id is online. No mod name in front of it. Counts toward the same 8 per call as `tell`. API 31. |
 | `set-hud-line` | `func(player: string, id: string, icon: string, text: string, fraction: f32) -> bool` | Sets line `id` (`mymod:energy`, at most 64 bytes) of the mod's HUD on one player's screen (the MekaSuit's module HUD, `IModuleHUD`): the item `icon` (`mymod:jetpack_unit`; empty for none) drawn small, `text` beside it (at most 256 bytes), and, with `fraction` 0 to 1, a bar under the text filled that much (a negative fraction draws no bar). The lines show at the screen's top left, under what is there already, in the order of their ids, until changed; an empty text takes the line away, and the player's client forgets them all when it leaves the server. False for a player who is not online; at most 32 lines a call. API 41. |
+| `open-radial-menu` | `func(player: string, entries: list<radial-entry>, current: u32) -> bool` | Opens a radial menu on one player's screen (Mekanism's mode selector of the Meka-Tool and the configurator, `IRadialSelectorEnum`): 2 to 16 entries around the screen's centre, `current` marked. The pointer is let go so the player can point; a click (a tap on a touch screen) on an entry chooses it and closes the menu, one in the middle or Escape closes it without a choice. The choice comes back as a mod message on channel `<mod id>:radial` whose bytes are the entry's id (UTF-8): register `on_net` to hear it. False for a player who is not online or entries out of bounds. API 42. |
 | `broadcast` | `func(text: string)` | A system message to every player and the server's log, after the mod's name. Counts toward the same 8 per call. |
 
 ## `world`

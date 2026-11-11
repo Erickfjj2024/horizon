@@ -304,6 +304,13 @@ impl Game<'_> {
         let size = self.window.as_ref().unwrap().inner_size();
         let b = HudBatch::new([size.width, size.height]);
         let p = [t.location.x as f32 / b.scale, t.location.y as f32 / b.scale];
+        // A server mod's radial menu: a tap chooses the entry under it (or closes the menu in the middle).
+        if self.mod_radial_open() && self.screen == Screen::Playing {
+            if t.phase == TouchPhase::Started {
+                self.mod_radial_press(p);
+            }
+            return Ok(true);
+        }
         if let Some(action) = self
             .pad
             .touch_ui

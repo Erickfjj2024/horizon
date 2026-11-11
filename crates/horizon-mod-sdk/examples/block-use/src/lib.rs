@@ -22,6 +22,11 @@ impl ServerMod for Gate {
             let _ = world::set_menu_text(&player.dimension, input.pos.x, input.pos.y, input.pos.z, &[text]);
             return;
         }
+        // API 42: the choice of the radial menu: its entry's id, said back to the player.
+        if channel == "blockuse:radial" {
+            let _ = players::tell(&player.id, &format!("mode {}", String::from_utf8_lossy(data)));
+            return;
+        }
         if channel != menu_input::channel("blockuse") {
             return;
         }
@@ -59,6 +64,12 @@ impl ServerMod for Gate {
         if pos.y == 78 {
             let n = world::break_blocks(&player.dimension, &[(pos.x + 1, pos.y, pos.z), (pos.x + 2, pos.y, pos.z), (pos.x + 3, pos.y, pos.z)], "minecraft:diamond_pickaxe", true, 0).unwrap_or(99);
             let _ = world::set_menu_text(&player.dimension, pos.x, pos.y, pos.z, &[format!("breaks {n}")]);
+        }
+        // API 42: the machine at y 80 opens a radial menu of three modes on the player's screen, the second one current; the choice comes
+        // back on `blockuse:radial` (see `net_message`).
+        if pos.y == 80 {
+            let entry = |id: &str, label: &str| players::RadialEntry { id: id.into(), label: label.into(), icon: String::new() };
+            let _ = players::open_radial_menu(&player.id, &[entry("off", "Off"), entry("vein", "Vein"), entry("extended", "Extended")], 1);
         }
         // API 41: the machine at y 79 puts a line on the player's HUD: a redstone icon, a text and a bar half full.
         if pos.y == 79 {

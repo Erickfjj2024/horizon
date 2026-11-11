@@ -2441,6 +2441,13 @@ mod run {
                         log::debug!("Horizon: mod {name} could not unpack into {pos:?}");
                     }
                 }
+                Output::Radial { name, mod_id, player, entries, current } => {
+                    let uuid = u128::from_str_radix(&player.replace('-', ""), 16).unwrap_or(0);
+                    let data = horizon_mods::screen::encode_radial(&mod_id, &entries, current);
+                    if let Err(e) = self.native_net_send_to_player(uuid, horizon_mods::screen::RADIAL_CHANNEL, &data) {
+                        log::debug!("Horizon: mod {name}'s radial menu for {player}: {e}");
+                    }
+                }
                 Output::HudLine { name, player, id, icon, text, fraction } => {
                     let uuid = u128::from_str_radix(&player.replace('-', ""), 16).unwrap_or(0);
                     let data = horizon_mods::screen::encode_hud_line(&id, &icon, &text, fraction);

@@ -107,3 +107,15 @@ expect.menu-text = ["minecraft:overworld 1 78 1 breaks 1"]
 use-block = { pos = [1, 79, 1] }
 ticks = 1
 expect.hud = ["Alex: blockuse:energy [minecraft:redstone] Energy: 50% 0.5"]
+
+[[step]]
+# API 42: a click on the machine at y 80 opens a radial menu of three modes on Alex's screen.
+use-block = { pos = [1, 80, 1] }
+ticks = 1
+expect.radial = ["Alex: off=Off,vein=Vein,extended=Extended current 1"]
+
+[[step]]
+# The client sends the choice back as a message on blockuse:radial.
+net = { channel = "blockuse:radial", data = [118, 101, 105, 110] }
+ticks = 1
+expect.told = ["Alex: mode vein"]

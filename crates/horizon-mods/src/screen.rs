@@ -592,6 +592,68 @@ impl GraphHistory {
     }
 }
 
+/// The channel a radial menu travels on, host to client (`players.open-radial-menu`).
+pub const RADIAL_CHANNEL: &str = "horizon:radial";
+
+/// A radial menu as the channel carries it: the mod's id, the current entry (four bytes), then each entry's id, label and icon.
+pub fn encode_radial(mod_id: &str, entries: &[(String, String, String)], current: u32) -> Vec<u8> {
+    fn put(out: &mut Vec<u8>, s: &str) {
+        let b = &s.as_bytes()[..s.len().min(usize::from(u16::MAX))];
+        out.extend((b.len() as u16).to_le_bytes());
+        out.extend(b);
+    }
+    let mut out = Vec::new();
+    put(&mut out, mod_id);
+    out.extend(current.to_le_bytes());
+    out.push(entries.len().min(255) as u8);
+    for (id, label, icon) in entries.iter().take(255) {
+        put(&mut out, id);
+        put(&mut out, label);
+        put(&mut out, icon);
+    }
+    out
+}
+
+/// The mod id, entries and current entry of [`encode_radial`].
+pub fn decode_radial(data: &[u8]) -> Option<(String, Vec<(String, String, String)>, u32)> {
+    let mut at = 0;
+    let text = |at: &mut usize| -> Option<String> {
+        let n = usize::from(u16::from_le_bytes([*data.get(*at)?, *data.get(*at + 1)?]));
+        let s = String::from_utf8(data.get(*at + 2..*at + 2 + n)?.to_vec()).ok()?;
+        *at += 2 + n;
+        Some(s)
+    };
+    let mod_id = text(&mut at)?;
+    let c = data.get(at..at + 4)?;
+    let current = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+    let n = usize::from(*data.get(at + 4)?);
+    at += 5;
+    let mut entries = Vec::with_capacity(n);
+    for _ in 0..n {
+        entries.push((text(&mut at)?, text(&mut at)?, text(&mut at)?));
+    }
+    Some((mod_id, entries, current))
+}
+
+/// Which of `n` entries spread around `centre` (the first at the top, then clockwise) the point `at` names: none within `dead_zone`
+/// of the centre (the middle closes the menu without a choice).
+pub fn radial_pick(n: usize, centre: [f32; 2], at: [f32; 2], dead_zone: f32) -> Option<usize> {
+    let (dx, dy) = (at[0] - centre[0], at[1] - centre[1]);
+    if n == 0 || dx.hypot(dy) < dead_zone {
+        return None;
+    }
+    // 0 at the top, growing clockwise (the screen's y grows down).
+    let angle = dx.atan2(-dy).rem_euclid(std::f32::consts::TAU);
+    let slice = std::f32::consts::TAU / n as f32;
+    Some(((angle + slice / 2.0) / slice) as usize % n)
+}
+
+/// Where entry `i` of `n` sits around `centre` at `radius` (the first at the top, then clockwise).
+pub fn radial_spot(i: usize, n: usize, centre: [f32; 2], radius: f32) -> [f32; 2] {
+    let a = std::f32::consts::TAU * i as f32 / n.max(1) as f32;
+    [centre[0] + radius * a.sin(), centre[1] - radius * a.cos()]
+}
+
 /// The channel a mod's HUD lines travel on, host to client (`players.set-hud-line`).
 pub const HUD_CHANNEL: &str = "horizon:hud_line";
 
@@ -762,6 +824,30 @@ mod menu_text_tests {
         .unwrap();
         assert!(matches!(&ok.widgets[0], Widget::Graph { samples: 40, min_scale: 1600, series, .. } if series.len() == 2));
         assert_eq!(hovered(&ok, &[1234, 0, 0], &Locals::default(), [10.0, 30.0]), Some(vec!["Heat 1234".to_owned()]));
+    }
+
+    #[test]
+    fn a_radial_menu_round_trips_and_a_point_picks_the_entry_around_it() {
+        let entries = vec![
+            ("vein".to_owned(), "Vein mining".to_owned(), "mekanism:module_vein".to_owned()),
+            ("silk".to_owned(), "Silk touch".to_owned(), String::new()),
+            ("off".to_owned(), "Off".to_owned(), String::new()),
+            ("fast".to_owned(), "Fast".to_owned(), String::new()),
+        ];
+        let bytes = encode_radial("mekanism", &entries, 2);
+        assert_eq!(decode_radial(&bytes), Some(("mekanism".to_owned(), entries, 2)));
+        assert_eq!(decode_radial(&bytes[..bytes.len() - 1]), None);
+        // Four entries: top, right, bottom, left; the middle is no choice.
+        let c = [200.0, 120.0];
+        assert_eq!(radial_pick(4, c, [200.0, 60.0], 16.0), Some(0));
+        assert_eq!(radial_pick(4, c, [260.0, 125.0], 16.0), Some(1));
+        assert_eq!(radial_pick(4, c, [205.0, 180.0], 16.0), Some(2));
+        assert_eq!(radial_pick(4, c, [140.0, 110.0], 16.0), Some(3));
+        assert_eq!(radial_pick(4, c, [205.0, 118.0], 16.0), None);
+        // Just past the border between the top and the right one (45 degrees) is the right one.
+        assert_eq!(radial_pick(4, c, [200.0 + 50.0, 120.0 - 49.0], 16.0), Some(1));
+        let spot = radial_spot(1, 4, c, 50.0);
+        assert!((spot[0] - 250.0).abs() < 1e-3 && (spot[1] - 120.0).abs() < 1e-3);
     }
 
     #[test]

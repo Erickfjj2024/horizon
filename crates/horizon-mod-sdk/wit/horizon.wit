@@ -674,6 +674,21 @@ interface players {
     /// top left, under what is there already, in the order of their ids, until changed; an empty text takes the line away, and the
     /// player's client forgets them all when it leaves the server. False for a player who is not online; at most 32 lines a call. API 41.
     set-hud-line: func(player: string, id: string, icon: string, text: string, fraction: f32) -> bool;
+    /// One choice of a radial menu.
+    record radial-entry {
+        /// What the mod hears back when it is chosen (at most 64 bytes).
+        id: string,
+        /// Its name under the icon (at most 64 bytes).
+        label: string,
+        /// An item drawn for it (`mymod:mode_vein`); empty for none.
+        icon: string,
+    }
+    /// Opens a radial menu on one player's screen (Mekanism's mode selector of the Meka-Tool and the configurator, `IRadialSelectorEnum`):
+    /// 2 to 16 entries around the screen's centre, `current` marked. The pointer is let go so the player can point; a click (a tap on
+    /// a touch screen) on an entry chooses it and closes the menu, one in the middle or Escape closes it without a choice. The choice comes
+    /// back as a mod message on channel `<mod id>:radial` whose bytes are the entry's id (UTF-8): register `on_net` to hear it. False for a
+    /// player who is not online or entries out of bounds. API 42.
+    open-radial-menu: func(player: string, entries: list<radial-entry>, current: u32) -> bool;
     /// A system message to every player and the server's log, after the
     /// mod's name. Counts toward the same 8 per call.
     broadcast: func(text: string);

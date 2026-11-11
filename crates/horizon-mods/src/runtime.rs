@@ -460,6 +460,8 @@ pub enum Output {
     UnpackBlock { name: String, dimension: String, box_pos: [i32; 3], pos: [i32; 3] },
     /// `world.break-blocks`: many blocks broken as a player holding a tool would.
     BreakBlocks { name: String, dimension: String, positions: Vec<[i32; 3]>, tool: String, silk_touch: bool, fortune: u32 },
+    /// `players.open-radial-menu`: a radial menu on one player's screen, whose choice comes back on `<mod id>:radial`.
+    Radial { name: String, mod_id: String, player: String, entries: Vec<(String, String, String)>, current: u32 },
     /// `players.set-hud-line`: a line of the mod's HUD on one player's screen.
     HudLine { name: String, player: String, id: String, icon: String, text: String, fraction: f32 },
     /// `world.set-comparator-output`: the signal a comparator reads from a block entity.
@@ -3552,6 +3554,18 @@ impl players::Host for State {
             return false;
         }
         self.out.push(Output::HudLine { name: self.name.clone(), player, id, icon, text, fraction: fraction.min(1.0) });
+        true
+    }
+    fn open_radial_menu(&mut self, player: String, entries: Vec<players::RadialEntry>, current: u32) -> bool {
+        if !(2..=16).contains(&entries.len())
+            || entries.iter().any(|e| e.id.is_empty() || e.id.len() > 64 || e.label.len() > 64 || e.icon.len() > 128)
+            || !self.snapshot.players.iter().any(|p| p.id == player)
+            || self.out.iter().any(|o| matches!(o, Output::Radial { .. }))
+        {
+            return false;
+        }
+        let entries = entries.into_iter().map(|e| (e.id, e.label, e.icon)).collect();
+        self.out.push(Output::Radial { name: self.name.clone(), mod_id: self.id.clone(), player, entries, current });
         true
     }
     fn broadcast(&mut self, text: String) {
