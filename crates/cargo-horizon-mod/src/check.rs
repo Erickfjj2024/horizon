@@ -282,6 +282,7 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
             Output::PackBlock { pos, .. } => format!("packed the block at {pos:?}"),
             Output::UnpackBlock { pos, .. } => format!("unpacked a block at {pos:?}"),
             Output::TellOverlay { text, .. } => format!("action bar: {text}"),
+            Output::HudLine { id, text, .. } => format!("HUD line {id}: {text}"),
             Output::PlayerBody { change, .. } => format!("body: {change:?}"),
             Output::SetFood { food, saturation, .. } => format!("set food to {food} and saturation to {saturation}"),
             Output::SetMotion { velocity, .. } => format!("set a player's motion to {velocity:?}"),

@@ -460,6 +460,8 @@ pub enum Output {
     UnpackBlock { name: String, dimension: String, box_pos: [i32; 3], pos: [i32; 3] },
     /// `world.break-blocks`: many blocks broken as a player holding a tool would.
     BreakBlocks { name: String, dimension: String, positions: Vec<[i32; 3]>, tool: String, silk_touch: bool, fortune: u32 },
+    /// `players.set-hud-line`: a line of the mod's HUD on one player's screen.
+    HudLine { name: String, player: String, id: String, icon: String, text: String, fraction: f32 },
     /// `world.set-comparator-output`: the signal a comparator reads from a block entity.
     SetComparator { name: String, dimension: String, pos: [i32; 3], level: u8 },
     /// `world.set-menu-text`: the strings the menu of a block entity carries (FORK-20).
@@ -3540,6 +3542,17 @@ impl players::Host for State {
     fn tell_overlay(&mut self, player: String, text: String) -> bool {
         self.snapshot.players.iter().any(|p| p.id == player)
             && self.say(|name| Output::TellOverlay { name, player, text: clip(text) })
+    }
+    fn set_hud_line(&mut self, player: String, id: String, icon: String, text: String, fraction: f32) -> bool {
+        if id.is_empty() || id.len() > 64 || icon.len() > 128 || text.len() > 256 || !fraction.is_finite() {
+            return false;
+        }
+        let made = self.out.iter().filter(|o| matches!(o, Output::HudLine { .. })).count();
+        if made >= 32 || !self.snapshot.players.iter().any(|p| p.id == player) {
+            return false;
+        }
+        self.out.push(Output::HudLine { name: self.name.clone(), player, id, icon, text, fraction: fraction.min(1.0) });
+        true
     }
     fn broadcast(&mut self, text: String) {
         self.say(|name| Output::Broadcast {

@@ -1499,6 +1499,8 @@ pub struct Expect {
     sounds: Option<Vec<String>>,
     /// Server mods (FORK-10): the mod's entities after the step, as `"id kind x y z energy=E data=[bytes] skin=S name=N"` (the coordinates with 3 decimals, name `-` for none).
     mod_entities: Option<Vec<String>>,
+    /// Server mods: every `set-hud-line`, as `"Name: id [icon] text fraction"`.
+    hud: Option<Vec<String>>,
     /// Server mods: every `break-blocks`, as `"count with tool silk=bool fortune=n"`.
     broken: Option<Vec<String>>,
     /// Server mods: every `set-comparator-output`, as `"dimension x y z level"`.
@@ -2524,6 +2526,17 @@ impl Step {
                 })
                 .collect();
             same("broken", want, &got)?;
+        }
+        if let Some(want) = &e.hud {
+            let name = |id: &str| game.players.iter().find(|p| p.id == id).map_or(id.to_owned(), |p| p.name.clone());
+            let got: Vec<String> = out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::HudLine { player, id, icon, text, fraction, .. } => Some(format!("{}: {id} [{icon}] {text} {fraction}", name(player))),
+                    _ => None,
+                })
+                .collect();
+            same("hud", want, &got)?;
         }
         if let Some(want) = &e.comparator {
             let got: Vec<String> = out

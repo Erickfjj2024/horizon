@@ -203,6 +203,7 @@ mod native_explosions;
 mod native_falling;
 mod block_renderers;
 mod menu_screens;
+mod mod_hud;
 #[cfg(feature = "mods")]
 mod mod_entities;
 mod native_hooks;

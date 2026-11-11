@@ -874,6 +874,7 @@ impl Game<'_> {
                 | Output::SetMotion { .. }
                 | Output::SetFood { .. }
                 | Output::TellOverlay { .. }
+                | Output::HudLine { .. }
                 | Output::PackBlock { .. }
                 | Output::UnpackBlock { .. }
                 | Output::PlayerBody { .. }

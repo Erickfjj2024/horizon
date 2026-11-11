@@ -2441,6 +2441,13 @@ mod run {
                         log::debug!("Horizon: mod {name} could not unpack into {pos:?}");
                     }
                 }
+                Output::HudLine { name, player, id, icon, text, fraction } => {
+                    let uuid = u128::from_str_radix(&player.replace('-', ""), 16).unwrap_or(0);
+                    let data = horizon_mods::screen::encode_hud_line(&id, &icon, &text, fraction);
+                    if let Err(e) = self.native_net_send_to_player(uuid, horizon_mods::screen::HUD_CHANNEL, &data) {
+                        log::debug!("Horizon: mod {name}'s HUD line for {player}: {e}");
+                    }
+                }
                 Output::TellOverlay { name: _, player, text } => {
                     self.tell_server_player_as(host, &player, Text::literal(text), true);
                 }

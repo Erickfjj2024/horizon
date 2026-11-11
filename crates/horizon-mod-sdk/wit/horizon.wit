@@ -668,6 +668,12 @@ interface players {
     /// No mod name in front of it. Counts toward the same 8 per call as
     /// `tell`. API 31.
     tell-overlay: func(player: string, text: string) -> bool;
+    /// Sets line `id` (`mymod:energy`, at most 64 bytes) of the mod's HUD on one player's screen (the MekaSuit's module HUD,
+    /// `IModuleHUD`): the item `icon` (`mymod:jetpack_unit`; empty for none) drawn small, `text` beside it (at most 256 bytes), and,
+    /// with `fraction` 0 to 1, a bar under the text filled that much (a negative fraction draws no bar). The lines show at the screen's
+    /// top left, under what is there already, in the order of their ids, until changed; an empty text takes the line away, and the
+    /// player's client forgets them all when it leaves the server. False for a player who is not online; at most 32 lines a call. API 41.
+    set-hud-line: func(player: string, id: string, icon: string, text: string, fraction: f32) -> bool;
     /// A system message to every player and the server's log, after the
     /// mod's name. Counts toward the same 8 per call.
     broadcast: func(text: string);

@@ -1235,6 +1235,8 @@ impl Game<'_> {
     /// `native_fill` and `native_text`. Skip a corner `native_corner_shown`
     /// says is taken.
     pub(super) fn native_hud(&mut self, batch: &mut HudBatch, corners: &mut Corners) {
+        // The server mods' HUD lines (`players.set-hud-line`).
+        self.draw_mod_hud(batch, corners);
         let _ = (batch, corners);
     }
     /// A player right-clicks the entity `entity` (`Entity.getId`) of type

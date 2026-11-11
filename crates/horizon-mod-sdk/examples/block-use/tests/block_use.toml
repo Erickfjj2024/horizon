@@ -101,3 +101,9 @@ use-block = { pos = [1, 78, 1] }
 ticks = 1
 expect.broken = ["3 with minecraft:diamond_pickaxe silk=true fortune=0"]
 expect.menu-text = ["minecraft:overworld 1 78 1 breaks 1"]
+
+[[step]]
+# API 41: a click on the machine at y 79 sets a line of the mod's HUD on Alex's screen.
+use-block = { pos = [1, 79, 1] }
+ticks = 1
+expect.hud = ["Alex: blockuse:energy [minecraft:redstone] Energy: 50% 0.5"]

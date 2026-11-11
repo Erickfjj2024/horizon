@@ -592,6 +592,35 @@ impl GraphHistory {
     }
 }
 
+/// The channel a mod's HUD lines travel on, host to client (`players.set-hud-line`).
+pub const HUD_CHANNEL: &str = "horizon:hud_line";
+
+/// A HUD line as the channel carries it: id, icon and text (each its length in two bytes, then UTF-8), then the fraction (four bytes).
+pub fn encode_hud_line(id: &str, icon: &str, text: &str, fraction: f32) -> Vec<u8> {
+    let mut out = Vec::new();
+    for s in [id, icon, text] {
+        let b = s.as_bytes();
+        out.extend((b.len().min(usize::from(u16::MAX)) as u16).to_le_bytes());
+        out.extend(&b[..b.len().min(usize::from(u16::MAX))]);
+    }
+    out.extend(fraction.to_le_bytes());
+    out
+}
+
+/// The id, icon, text and fraction of [`encode_hud_line`].
+pub fn decode_hud_line(data: &[u8]) -> Option<(String, String, String, f32)> {
+    let mut at = 0;
+    let mut text = || -> Option<String> {
+        let n = usize::from(u16::from_le_bytes([*data.get(at)?, *data.get(at + 1)?]));
+        let s = String::from_utf8(data.get(at + 2..at + 2 + n)?.to_vec()).ok()?;
+        at += 2 + n;
+        Some(s)
+    };
+    let (id, icon, line) = (text()?, text()?, text()?);
+    let f = data.get(at..at + 4)?;
+    Some((id, icon, line, f32::from_le_bytes([f[0], f[1], f[2], f[3]])))
+}
+
 /// What a confirmed text box sends the server, on `<mod id>:menu_text`: the block's position (three little-endian whole numbers),
 /// the widget's `id` (one more) and the text (UTF-8, the rest of the message).
 pub fn encode_menu_input(pos: [i32; 3], id: i32, text: &str) -> Vec<u8> {
@@ -733,6 +762,16 @@ mod menu_text_tests {
         .unwrap();
         assert!(matches!(&ok.widgets[0], Widget::Graph { samples: 40, min_scale: 1600, series, .. } if series.len() == 2));
         assert_eq!(hovered(&ok, &[1234, 0, 0], &Locals::default(), [10.0, 30.0]), Some(vec!["Heat 1234".to_owned()]));
+    }
+
+    #[test]
+    fn a_hud_line_round_trips_and_a_cut_one_is_refused() {
+        let bytes = encode_hud_line("mekanism:energy", "mekanism:energy_unit", "Energy: 50% ✓", 0.5);
+        assert_eq!(
+            decode_hud_line(&bytes),
+            Some(("mekanism:energy".into(), "mekanism:energy_unit".into(), "Energy: 50% ✓".into(), 0.5))
+        );
+        assert_eq!(decode_hud_line(&bytes[..bytes.len() - 1]), None);
     }
 
     #[test]

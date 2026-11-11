@@ -1078,6 +1078,8 @@ impl Game<'_> {
             r.session.disconnect();
         }
         super::lan::forget_sync_data();
+        // The server mods' HUD lines belong to the server left.
+        super::mod_hud::forget_hud_lines();
         self.gui.atlas.object_skins.clear();
         self.server_packs_disconnect();
         self.code_of_conduct = None;

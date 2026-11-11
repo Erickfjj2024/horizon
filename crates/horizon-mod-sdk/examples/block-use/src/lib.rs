@@ -1,7 +1,7 @@
 //! Block Use (FORK-29): a mod that decides what a right click on one of its blocks does. Holding a block, the click
 //! passes (the block does not use itself; the held block is placed); sneaking with a hand held, or holding anything
 //! else, leaves it to the game; an empty hand and no sneaking is the block's own use, taken by the mod.
-use horizon_mod_sdk::server::{BlockPos, BlockUse, ItemStack, Player, Registration, ServerMod, menu_input, world};
+use horizon_mod_sdk::server::{BlockPos, BlockUse, ItemStack, Player, Registration, ServerMod, menu_input, players, world};
 
 struct Gate;
 
@@ -59,6 +59,10 @@ impl ServerMod for Gate {
         if pos.y == 78 {
             let n = world::break_blocks(&player.dimension, &[(pos.x + 1, pos.y, pos.z), (pos.x + 2, pos.y, pos.z), (pos.x + 3, pos.y, pos.z)], "minecraft:diamond_pickaxe", true, 0).unwrap_or(99);
             let _ = world::set_menu_text(&player.dimension, pos.x, pos.y, pos.z, &[format!("breaks {n}")]);
+        }
+        // API 41: the machine at y 79 puts a line on the player's HUD: a redstone icon, a text and a bar half full.
+        if pos.y == 79 {
+            let _ = players::set_hud_line(&player.id, "blockuse:energy", "minecraft:redstone", "Energy: 50%", 0.5);
         }
         match stack {
             Some(s) if s.item == "minecraft:stone" => BlockUse::Pass,
