@@ -120,6 +120,8 @@ mod run {
         /// The redstone signal at each mod block entity of the dimension in place, read as the tick began.
         signals: std::collections::HashMap<[i32; 3], u8>,
         dimension: &'static str,
+        /// The items lying in the level in place, as the mods may look for them (`items-in-box`), at most 4096.
+        dropped: Vec<(u32, horizon_mods::ModItemStack, [f64; 3])>,
         /// The game's recipes and items, for `crafting-find`, `crafting-matches` and `item-max-stack-size`.
         res: Arc<crate::game::Resources>,
     }
@@ -201,6 +203,16 @@ mod run {
                     .map(<[CollisionBox]>::to_vec)
                     .unwrap_or_default(),
             )
+        }
+        fn dropped_items(&self, dimension: &str, min: [f64; 3], max: [f64; 3]) -> Vec<(u32, horizon_mods::ModItemStack, [f64; 3])> {
+            if dimension != self.dimension {
+                return Vec::new();
+            }
+            self.dropped
+                .iter()
+                .filter(|(_, _, p)| (0..3).all(|i| p[i] >= min[i] && p[i] <= max[i]))
+                .cloned()
+                .collect()
         }
         fn block_hardness(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<f32> {
             let (_, chunks) = self.dims.iter().find(|(d, _)| *d == dimension)?;
@@ -590,6 +602,12 @@ mod run {
             for (dim, chunks) in self.levels.parked_chunks() {
                 dims.push((dim.id(), std::mem::take(chunks)));
             }
+            let dropped: Vec<(u32, horizon_mods::ModItemStack, [f64; 3])> = self
+                .dropped
+                .iter()
+                .take(4096)
+                .map(|d| (d.id, Self::mod_stack(&d.stack), [d.position.x, d.position.y, d.position.z]))
+                .collect();
             let registry = self.pack.assets.registry;
             let biomes = self.res.biomes().clone();
             let shapes = self.collision_table();
@@ -605,6 +623,7 @@ mod run {
                 thunder,
                 signals,
                 dimension,
+                dropped,
                 res: Arc::clone(&self.res),
             }));
         }
@@ -2752,6 +2771,7 @@ mod run {
                             };
                             self.native_set_display(&dimension, id, &d)
                         }
+                        C::TakeDropped { id, count } => self.native_take_dropped(&dimension, id, count),
                         C::SpawnModEntity { ticket, kind, pos, data } => {
                             let entity = self.native_spawn_mod_entity(&dimension, &kind, pos, data);
                             self.mods.spawn_answers.push((mod_id, ticket, entity));

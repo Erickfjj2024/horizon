@@ -847,68 +847,6 @@ What the game calls in a client mod that took `net-client`; a mod built before i
 | --- | --- | --- |
 | `message` | `func(channel: string, data: list<u8>)` | Bytes the server's half of the mod sent on `channel`. |
 
-## `entities`
-
-Access: capability `entities`.
-
-Capability `entities`, server mods only (manifest `api = "0.3"`, experimental): the mobs and the other entities of the level the server is simulating. Reading is as of the last server tick. What a mod asks for is made after the call returns, before the next tick; a spawn answers with the new entity's id in `entity-spawned` the tick after (its `ticket` is what the call returned). An entity is named by its `dimension`: another level than the one in place is refused.
-
-### record `mob`
-
-| Field | Type | |
-| --- | --- | --- |
-| `id` | `u32` |  |
-| `kind` | `string` | `minecraft:zombie`. |
-| `x` | `f64` |  |
-| `y` | `f64` |  |
-| `z` | `f64` |  |
-| `yaw` | `f32` | Degrees; 0 faces south. |
-| `health` | `f32` |  |
-| `max-health` | `f32` |  |
-
-### record `mob-options`
-
-What a spawned mob starts with.
-
-| Field | Type | |
-| --- | --- | --- |
-| `name` | `option<string>` | A name over it, shown to everyone. |
-| `health` | `option<f32>` |  |
-| `no-ai` | `bool` |  |
-| `invisible` | `bool` |  |
-| `silent` | `bool` |  |
-| `invulnerable` | `bool` |  |
-| `no-gravity` | `bool` |  |
-
-### record `display`
-
-A display entity's transformation (`block_display`, `item_display`, `text_display`): a translation, a left rotation (a quaternion `x, y, z, w`), a scale and a right rotation, eased over `interpolation` ticks from what it showed; a move eases over `teleport` ticks (0 to 59).
-
-| Field | Type | |
-| --- | --- | --- |
-| `translation` | `tuple<f32, f32, f32>` |  |
-| `left-rotation` | `tuple<f32, f32, f32, f32>` |  |
-| `scale` | `tuple<f32, f32, f32>` |  |
-| `right-rotation` | `tuple<f32, f32, f32, f32>` |  |
-| `interpolation` | `s32` |  |
-| `teleport` | `s32` |  |
-
-| Function | Signature | What it does |
-| --- | --- | --- |
-| `mobs` | `func(dimension: string) -> list<mob>` | The living mobs of `dimension` as of the last tick (none for a level that is not the one in place). |
-| `spawn-mob` | `func(dimension: string, kind: string, x: f64, y: f64, z: f64, options: mob-options) -> result<u64, string>` | Spawns a mob of `kind` at the position, finalized as a natural spawn is and kept when its chunk unloads. Returns the ticket `entity-spawned` answers with. An error for a position that isn't finite or a kind that isn't a plain id, and past 64 requests in a call. |
-| `summon` | `func(dimension: string, kind: string, x: f64, y: f64, z: f64, nbt: string) -> result<u64, string>` | Spawns any entity of `kind` (`minecraft:item_display`) from `nbt` (SNBT of its compound, as `/summon` takes it, at most 8192 bytes; an empty text is `{}`). Returns a ticket as `spawn-mob` does. |
-| `move-entity` | `func(dimension: string, id: u32, x: f64, y: f64, z: f64, yaw: f32, pitch: f32) -> result<_, string>` | Moves an entity Horizon keeps without simulating (a display, a marker, an interaction); a display eases there over its `teleport` ticks. |
-| `set-display` | `func(dimension: string, id: u32, display: display) -> result<_, string>` | Sets a display's transformation. |
-| `remove-entity` | `func(dimension: string, id: u32) -> result<_, string>` | Removes an entity Horizon keeps without simulating, as `/kill` does. |
-| `teleport-mob` | `func(dimension: string, id: u32, x: f64, y: f64, z: f64) -> result<_, string>` | Moves a mob to the position at once, as `/tp` does. |
-| `push-mob` | `func(dimension: string, id: u32, vx: f64, vy: f64, vz: f64) -> result<_, string>` | Adds a velocity to a mob's. |
-| `set-mob-health` | `func(dimension: string, id: u32, health: f32) -> result<_, string>` | Sets a living mob's health (above 0, cut to its maximum). |
-| `kill-mob` | `func(dimension: string, id: u32) -> result<_, string>` | Kills a mob as `/kill` does: it falls and drops its loot. |
-| `remove-mob` | `func(dimension: string, id: u32) -> result<_, string>` | Takes a mob out of the world with no death and no loot. |
-| `spawn-mod-entity` | `func(dimension: string, kind: string, x: f64, y: f64, z: f64, data: list<u8>) -> result<u64, string>` | Spawns a living entity of the mod's own kind `kind` (`mymod:robit`, declared in `data/<id>/horizon/entity_kind/`) at the position with the saved bytes `data` (at most 64 KiB), kept and ticked by `entities-tick`. Returns the ticket `entity-spawned` answers with. An error for a kind that is not a plain id or too many bytes. API 36. |
-| `set-entity-fire` | `func(dimension: string, id: u32, ticks: u32) -> result<_, string>` | Sets an entity on fire for `ticks` (`Entity.igniteForTicks`: it keeps a longer fire it already has): a mob, or a projectile in flight, which is how a mod's bow lights the arrow it just shot (Flame). API 33. |
-
 ## `item-types`
 
 Access: not granted by any capability.
@@ -975,6 +913,86 @@ A cooking recipe of the game's own kinds (`smelting`, `blasting`, `smoking`, `ca
 | `crafting-matches` | `func(id: string, grid: list<option<item-stack>>) -> bool` | Whether the crafting recipe `id` accepts the 3 by 3 `grid` (`Recipe.matches`). False for an id the game does not know. API 28. |
 | `item-max-stack-size` | `func(item: string) -> option<u32>` | How many of `item` fit a stack (`Item.getMaxStackSize`, the `max_stack_size` component); none for an item the game does not know. API 28. |
 | `item-tags` | `func(item: string) -> list<string>` | The item tags `item` is in (`c:ores/iron`, `minecraft:logs`, without the `#`), sorted; empty for an item in none or one the game does not know. The reverse of `ingredient-items` for a tag. API 30. |
+
+## `entities`
+
+Access: capability `entities`.
+
+Capability `entities`, server mods only (manifest `api = "0.3"`, experimental): the mobs and the other entities of the level the server is simulating. Reading is as of the last server tick. What a mod asks for is made after the call returns, before the next tick; a spawn answers with the new entity's id in `entity-spawned` the tick after (its `ticket` is what the call returned). An entity is named by its `dimension`: another level than the one in place is refused.
+
+### type `item-stack`
+
+`type item-stack = item-stack`
+
+### record `dropped-item`
+
+An item lying in the world (FORK-10 f).
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | `u32` | The item entity's id, for `take-dropped-item`. |
+| `stack` | `item-stack` |  |
+| `x` | `f64` |  |
+| `y` | `f64` |  |
+| `z` | `f64` |  |
+
+### record `mob`
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | `u32` |  |
+| `kind` | `string` | `minecraft:zombie`. |
+| `x` | `f64` |  |
+| `y` | `f64` |  |
+| `z` | `f64` |  |
+| `yaw` | `f32` | Degrees; 0 faces south. |
+| `health` | `f32` |  |
+| `max-health` | `f32` |  |
+
+### record `mob-options`
+
+What a spawned mob starts with.
+
+| Field | Type | |
+| --- | --- | --- |
+| `name` | `option<string>` | A name over it, shown to everyone. |
+| `health` | `option<f32>` |  |
+| `no-ai` | `bool` |  |
+| `invisible` | `bool` |  |
+| `silent` | `bool` |  |
+| `invulnerable` | `bool` |  |
+| `no-gravity` | `bool` |  |
+
+### record `display`
+
+A display entity's transformation (`block_display`, `item_display`, `text_display`): a translation, a left rotation (a quaternion `x, y, z, w`), a scale and a right rotation, eased over `interpolation` ticks from what it showed; a move eases over `teleport` ticks (0 to 59).
+
+| Field | Type | |
+| --- | --- | --- |
+| `translation` | `tuple<f32, f32, f32>` |  |
+| `left-rotation` | `tuple<f32, f32, f32, f32>` |  |
+| `scale` | `tuple<f32, f32, f32>` |  |
+| `right-rotation` | `tuple<f32, f32, f32, f32>` |  |
+| `interpolation` | `s32` |  |
+| `teleport` | `s32` |  |
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `mobs` | `func(dimension: string) -> list<mob>` | The living mobs of `dimension` as of the last tick (none for a level that is not the one in place). |
+| `spawn-mob` | `func(dimension: string, kind: string, x: f64, y: f64, z: f64, options: mob-options) -> result<u64, string>` | Spawns a mob of `kind` at the position, finalized as a natural spawn is and kept when its chunk unloads. Returns the ticket `entity-spawned` answers with. An error for a position that isn't finite or a kind that isn't a plain id, and past 64 requests in a call. |
+| `summon` | `func(dimension: string, kind: string, x: f64, y: f64, z: f64, nbt: string) -> result<u64, string>` | Spawns any entity of `kind` (`minecraft:item_display`) from `nbt` (SNBT of its compound, as `/summon` takes it, at most 8192 bytes; an empty text is `{}`). Returns a ticket as `spawn-mob` does. |
+| `move-entity` | `func(dimension: string, id: u32, x: f64, y: f64, z: f64, yaw: f32, pitch: f32) -> result<_, string>` | Moves an entity Horizon keeps without simulating (a display, a marker, an interaction); a display eases there over its `teleport` ticks. |
+| `set-display` | `func(dimension: string, id: u32, display: display) -> result<_, string>` | Sets a display's transformation. |
+| `remove-entity` | `func(dimension: string, id: u32) -> result<_, string>` | Removes an entity Horizon keeps without simulating, as `/kill` does. |
+| `teleport-mob` | `func(dimension: string, id: u32, x: f64, y: f64, z: f64) -> result<_, string>` | Moves a mob to the position at once, as `/tp` does. |
+| `push-mob` | `func(dimension: string, id: u32, vx: f64, vy: f64, vz: f64) -> result<_, string>` | Adds a velocity to a mob's. |
+| `set-mob-health` | `func(dimension: string, id: u32, health: f32) -> result<_, string>` | Sets a living mob's health (above 0, cut to its maximum). |
+| `kill-mob` | `func(dimension: string, id: u32) -> result<_, string>` | Kills a mob as `/kill` does: it falls and drops its loot. |
+| `remove-mob` | `func(dimension: string, id: u32) -> result<_, string>` | Takes a mob out of the world with no death and no loot. |
+| `items-in-box` | `func(dimension: string, min: tuple<f64, f64, f64>, max: tuple<f64, f64, f64>) -> list<dropped-item>` | The items lying in the box of `dimension` (the level in place; none for another) as of the start of the call: up to 256, the nearest to the box's centre first, whatever their pickup delay. The box is `min` to `max`, each at most 64 blocks across. API 37. |
+| `take-dropped-item` | `func(dimension: string, id: u32, count: u32) -> result<_, string>` | Takes `count` items from the item entity `id` (all of them when it has fewer; the entity goes when it has none left), made after this call returns: the stack is the mod's to put somewhere (an entity's slots). An error for a count of 0. API 37. |
+| `spawn-mod-entity` | `func(dimension: string, kind: string, x: f64, y: f64, z: f64, data: list<u8>) -> result<u64, string>` | Spawns a living entity of the mod's own kind `kind` (`mymod:robit`, declared in `data/<id>/horizon/entity_kind/`) at the position with the saved bytes `data` (at most 64 KiB), kept and ticked by `entities-tick`. Returns the ticket `entity-spawned` answers with. An error for a kind that is not a plain id or too many bytes. API 36. |
+| `set-entity-fire` | `func(dimension: string, id: u32, ticks: u32) -> result<_, string>` | Sets an entity on fire for `ticks` (`Entity.igniteForTicks`: it keeps a longer fire it already has): a mob, or a projectile in flight, which is how a mod's bow lights the arrow it just shot (Flame). API 33. |
 
 ## `chunks`
 

@@ -244,6 +244,11 @@ pub enum EntityCommand {
         ticks: u32,
     },
     /// `entities.spawn-mod-entity` (FORK-10): a living entity of the mod's own kind.
+    /// `entities.take-dropped-item` (FORK-10 f).
+    TakeDropped {
+        id: u32,
+        count: u32,
+    },
     SpawnModEntity {
         ticket: u64,
         kind: String,
@@ -569,6 +574,10 @@ pub trait WorldView: std::any::Any + Send {
     fn environment(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<Environment>;
     /// The redstone signal at a mod block entity's position, 0 to 15.
     fn redstone(&self, dimension: &str, x: i32, y: i32, z: i32) -> u8;
+    /// The items lying in `min` to `max` of `dimension`, as `(id, stack, position)`; none where the view does not know.
+    fn dropped_items(&self, _dimension: &str, _min: [f64; 3], _max: [f64; 3]) -> Vec<(u32, ModItemStack, [f64; 3])> {
+        Vec::new()
+    }
     /// The destroy time of the block at a position, `None` where no chunk of that dimension is loaded.
     fn block_hardness(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> Option<f32> {
         None
@@ -3107,6 +3116,29 @@ impl entities::Host for State {
     }
     fn remove_mob(&mut self, dimension: String, id: u32) -> Result<(), String> {
         self.entity_request(dimension, EntityCommand::RemoveMob { id }, &[])
+    }
+    fn items_in_box(&mut self, dimension: String, min: (f64, f64, f64), max: (f64, f64, f64)) -> Vec<entities::DroppedItem> {
+        let (min, max) = ([min.0, min.1, min.2], [max.0, max.1, max.2]);
+        if min.iter().chain(&max).any(|v| !v.is_finite()) || (0..3).any(|i| max[i] - min[i] > 64.0) {
+            return Vec::new();
+        }
+        let Ok(view) = self.world.lock() else { return Vec::new() };
+        let Some(view) = view.as_ref() else { return Vec::new() };
+        let mut found = view.dropped_items(&dimension, min, max);
+        let centre = [(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0, (min[2] + max[2]) / 2.0];
+        let far = |p: &[f64; 3]| (0..3).map(|i| (p[i] - centre[i]).powi(2)).sum::<f64>();
+        found.sort_by(|a, b| far(&a.2).total_cmp(&far(&b.2)));
+        found
+            .into_iter()
+            .take(256)
+            .map(|(id, stack, p)| entities::DroppedItem { id, stack, x: p[0], y: p[1], z: p[2] })
+            .collect()
+    }
+    fn take_dropped_item(&mut self, dimension: String, id: u32, count: u32) -> Result<(), String> {
+        if count == 0 {
+            return Err("count is at least 1".into());
+        }
+        self.entity_request(dimension, EntityCommand::TakeDropped { id, count }, &[])
     }
     fn spawn_mod_entity(&mut self, dimension: String, kind: String, x: f64, y: f64, z: f64, data: Vec<u8>) -> Result<u64, String> {
         if !kind_ok(&kind) {

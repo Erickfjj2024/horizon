@@ -76,6 +76,8 @@ pub struct TestGame {
     pub mod_entities: Vec<crate::ModEntity>,
     pub entity_kinds: Vec<crate::content::EntityKind>,
     next_mod_entity: u32,
+    /// The items lying in the world of the script (FORK-10 f).
+    pub dropped: Vec<DroppedSet>,
     entity_goals: std::collections::BTreeMap<u32, ([f64; 3], f32)>,
     /// What the last `can_place` answered.
     pub can_place_result: Option<bool>,
@@ -99,7 +101,19 @@ struct ScriptWorld(
     Vec<CraftSet>,
     std::collections::BTreeMap<String, u32>,
     std::collections::BTreeMap<String, f32>,
+    Vec<DroppedSet>,
 );
+
+/// An item lying in the world of a script (`dropped = [...]` of a step): its entity id, stack and position.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DroppedSet {
+    id: u32,
+    stack: String,
+    x: f64,
+    y: f64,
+    z: f64,
+}
 
 /// A crafting recipe of a script (`[[craft]]`): the nine cells it takes, what it makes, what stays in the cells.
 #[derive(Clone, Debug, Deserialize)]
@@ -130,6 +144,16 @@ impl crate::WorldView for ScriptWorld {
     }
     fn item_max_stack(&self, item: &str) -> Option<u32> {
         self.3.get(item).copied()
+    }
+    fn dropped_items(&self, dimension: &str, min: [f64; 3], max: [f64; 3]) -> Vec<(u32, crate::ModItemStack, [f64; 3])> {
+        if dimension != "minecraft:overworld" {
+            return Vec::new();
+        }
+        self.5
+            .iter()
+            .filter(|d| (0..3).all(|i| [d.x, d.y, d.z][i] >= min[i] && [d.x, d.y, d.z][i] <= max[i]))
+            .filter_map(|d| Some((d.id, parse_stack(&d.stack)?, [d.x, d.y, d.z])))
+            .collect()
     }
     fn block_hardness(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<f32> {
         let name = self.block(dimension, x, y, z)?;
@@ -284,6 +308,7 @@ impl TestGame {
             mod_entities: Vec::new(),
             entity_kinds: Vec::new(),
             next_mod_entity: 1000,
+            dropped: Vec::new(),
             entity_goals: Default::default(),
             can_place_result: None,
             packed: Default::default(),
@@ -1366,6 +1391,8 @@ pub struct Step {
     release_item: Option<ReleaseSet>,
     /// Server mods (FORK-10 d): the actor right-clicks one of the mod's entities.
     use_mod_entity: Option<EntityUseSet>,
+    /// Server mods (FORK-10 f): the items lying in the world from this step on (they replace the earlier ones).
+    dropped: Option<Vec<DroppedSet>>,
     /// Server mods (FORK-10 e): a blow on one of the mod's entities.
     damage_mod_entity: Option<EntityDamageSet>,
     /// Server mods, capability `entities`: the mobs of the Overworld from now on.
@@ -1430,6 +1457,10 @@ pub struct Expect {
     release_result: Option<bool>,
     /// Server mods (FORK-10 d): whether the mod took the step's `use-mod-entity` click.
     mod_entity_used: Option<bool>,
+    /// Server mods (FORK-10 f): the items still lying in the world after the step, as `"id item*count"`.
+    dropped_left: Option<Vec<String>>,
+    /// Server mods (FORK-10 f): the slots of the mod's entities after the step, as `"id slot=item*count,slot=..."`.
+    mod_entity_items: Option<Vec<String>>,
     /// Server mods (FORK-10 e): the damage the mod let the step's `damage-mod-entity` apply.
     mod_entity_damage: Option<f32>,
     /// Server mods, capability `player-items`: every request, as `"set-slot Name 3 stack"`
@@ -1648,6 +1679,9 @@ impl Step {
         for p in &self.power {
             game.power.insert((p.x, p.y, p.z), p.level);
         }
+        if let Some(list) = &self.dropped {
+            game.dropped.clone_from(list);
+        }
         for s in &self.set_tanks {
             if let Some(held) = game.block_tanks.get_mut(&(s.x, s.y, s.z)) {
                 for (slot, text) in held.iter_mut().zip(&s.tanks) {
@@ -1664,7 +1698,7 @@ impl Step {
             game.block_items.insert((s.x, s.y, s.z), s.slots.clone());
         }
         game.mods
-            .lend_world(Box::new(ScriptWorld(game.world.clone(), game.power.clone(), game.crafts.clone(), game.stack_sizes.clone(), game.hardness.clone())));
+            .lend_world(Box::new(ScriptWorld(game.world.clone(), game.power.clone(), game.crafts.clone(), game.stack_sizes.clone(), game.hardness.clone(), game.dropped.clone())));
         if let Some(name) = &self.join {
             game.join(name);
         }
@@ -1966,6 +2000,18 @@ impl Step {
                     game.snapshot();
                     game.mods.entity_spawned(&game.mod_id(), *ticket, Some(id));
                 }
+                crate::EntityCommand::TakeDropped { id, count } => {
+                    if let Some(i) = game.dropped.iter().position(|d| d.id == *id)
+                        && let Some(mut stack) = parse_stack(&game.dropped[i].stack)
+                    {
+                        stack.count = stack.count.saturating_sub(*count);
+                        if stack.count == 0 {
+                            game.dropped.remove(i);
+                        } else {
+                            game.dropped[i].stack = show_stack(&Some(stack));
+                        }
+                    }
+                }
                 crate::EntityCommand::RemoveEntity { id } => {
                     game.mod_entities.retain(|e| e.id != *id);
                     game.entity_goals.remove(id);
@@ -2213,6 +2259,27 @@ impl Step {
                 return Err(format!("hit-damage-result: expected {want}, got {:?}", game.hit_damage_result));
             }
         }
+        if let Some(want) = &e.dropped_left {
+            let got: Vec<String> = game.dropped.iter().map(|d| format!("{} {}", d.id, d.stack)).collect();
+            same("dropped-left", want, &got)?;
+        }
+        if let Some(want) = &e.mod_entity_items {
+            let got: Vec<String> = game
+                .mod_entities
+                .iter()
+                .filter(|m| m.items.iter().any(Option::is_some))
+                .map(|m| {
+                    let slots: Vec<String> = m
+                        .items
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, s)| s.as_ref().map(|s| format!("{i}={}", show_stack(&Some(s.clone())))))
+                        .collect();
+                    format!("{} {}", m.id, slots.join(","))
+                })
+                .collect();
+            same("mod-entity-items", want, &got)?;
+        }
         if let Some(want) = e.mod_entity_damage {
             if game.entity_damage_result != Some(want) {
                 return Err(format!("mod-entity-damage: expected {want}, got {:?}", game.entity_damage_result));
@@ -2315,6 +2382,7 @@ impl Step {
                         C::KillMob { id } => format!("kill-mob {id}"),
                         C::RemoveMob { id } => format!("remove-mob {id}"),
                         C::SetFire { id, ticks } => format!("fire {id} {ticks}"),
+                        C::TakeDropped { id, count } => format!("take-dropped-item {id} {count}"),
                         C::SpawnModEntity { ticket, kind, pos, data } => {
                             format!("spawn-mod-entity {kind} {} {} {} {} byte(s) #{ticket}", pos[0], pos[1], pos[2], data.len())
                         }

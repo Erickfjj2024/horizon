@@ -39,11 +39,27 @@ impl ServerMod for Robits {
         list.into_iter()
             .map(|e| {
                 let count = e.data.first().copied().unwrap_or(0) + 1;
+                // FORK-10 f: it picks up the nearest item lying within a block and a half, into its first free slot.
+                let mut items = None;
+                if let Some(slot) = e.items.iter().position(Option::is_none)
+                    && let Some(found) = entities::items_in_box(
+                        &e.dimension,
+                        (e.x - 1.5, e.y - 1.0, e.z - 1.5),
+                        (e.x + 1.5, e.y + 1.0, e.z + 1.5),
+                    )
+                    .into_iter()
+                    .next()
+                    && entities::take_dropped_item(&e.dimension, found.id, found.stack.count).is_ok()
+                {
+                    let mut now = e.items.clone();
+                    now[slot] = Some(found.stack);
+                    items = Some(now);
+                }
                 ModEntityUpdate {
                     dimension: e.dimension,
                     id: e.id,
                     data: Some(vec![count]),
-                    items: None,
+                    items,
                     energy: Some(e.energy + 10),
                     skin: (count >= 2).then(|| "red".to_owned()),
                     name: (count == 3).then(|| Some("Bolt".to_owned())),

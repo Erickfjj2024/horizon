@@ -199,6 +199,25 @@ impl Game<'_> {
         dead
     }
 
+    /// A mod's `take-dropped-item`: `count` items out of the item entity `id` (it goes when none are left; mods hear it leave). False
+    /// for none, another level or a client's copy of the world.
+    pub(super) fn native_take_dropped(&mut self, dimension: &str, id: u32, count: u32) -> bool {
+        if self.remote.is_some() || dimension != self.dim.id() {
+            return false;
+        }
+        let Some(i) = self.dropped.iter().position(|d| d.id == id) else {
+            return false;
+        };
+        let have = self.dropped[i].stack.count;
+        if count >= have {
+            self.remove_dropped(i);
+        } else {
+            self.dropped[i].stack.count = have - count;
+            self.dropped[i].needs_sync = true;
+        }
+        true
+    }
+
     /// The entities of the level in place, as the mods see them.
     #[cfg(feature = "mods")]
     pub(super) fn mod_entities_view(&self) -> Vec<horizon_mods::ModEntity> {

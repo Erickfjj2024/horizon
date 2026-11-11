@@ -29,10 +29,18 @@ ticks = 1
 expect.mod-entities = ["1001 robits:robit 4.500 70.000 4.500 energy=30 data=[3] skin=red name=Bolt"]
 
 [[step]]
+# FORK-10 f: coal lies a few tenths from the robit; in a tick the mod finds it with items-in-box, takes it with take-dropped-item
+# (the item entity goes) and puts it in the robit's first slot.
+dropped = [{ id = 9, stack = "minecraft:coal*3", x = 4.3, y = 70.0, z = 4.5 }, { id = 10, stack = "minecraft:stick*1", x = 40.0, y = 70.0, z = 4.5 }]
+ticks = 1
+expect.dropped-left = ["10 minecraft:stick*1"]
+expect.mod-entity-items = ["1001 0=minecraft:coal*3"]
+
+[[step]]
 # FORK-10 e: it is red now, so a blow of 0.5 hurts for 0.25 (health 1 to 0.75), and the robit is still there.
 damage-mod-entity = { id = 1001, amount = 0.5 }
 expect.mod-entity-damage = 0.25
-expect.mod-entities = ["1001 robits:robit 4.500 70.000 4.500 energy=30 data=[3] skin=red name=Bolt"]
+expect.mod-entities = ["1001 robits:robit 4.500 70.000 4.500 energy=40 data=[4] skin=red name=Bolt"]
 
 [[step]]
 # A blow of 4 hurts for 2: more than the health left, so it dies, the mod hears of it (its words go to the menu text under it) and it is gone.
