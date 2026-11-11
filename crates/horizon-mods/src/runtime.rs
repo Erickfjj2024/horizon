@@ -3302,6 +3302,11 @@ impl recipe_types::Host for State {
         tags.sort();
         tags
     }
+    fn item_tag_members(&mut self, tag: String) -> Vec<String> {
+        let Ok(slot) = self.recipe_data.lock() else { return Vec::new() };
+        let Some(data) = slot.as_ref() else { return Vec::new() };
+        data.tags.get(tag.strip_prefix('#').unwrap_or(&tag)).cloned().unwrap_or_default()
+    }
     fn burn_time(&mut self, item: String) -> Option<u32> {
         let slot = self.recipe_data.lock().ok()?;
         slot.as_ref()?.burn_times.get(&item).copied().filter(|t| *t > 0)

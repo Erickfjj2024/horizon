@@ -915,6 +915,7 @@ A cooking recipe of the game's own kinds (`smelting`, `blasting`, `smoking`, `ca
 | `crafting-matches` | `func(id: string, grid: list<option<item-stack>>) -> bool` | Whether the crafting recipe `id` accepts the 3 by 3 `grid` (`Recipe.matches`). False for an id the game does not know. API 28. |
 | `item-max-stack-size` | `func(item: string) -> option<u32>` | How many of `item` fit a stack (`Item.getMaxStackSize`, the `max_stack_size` component); none for an item the game does not know. API 28. |
 | `item-tags` | `func(item: string) -> list<string>` | The item tags `item` is in (`c:ores/iron`, `minecraft:logs`, without the `#`), sorted; empty for an item in none or one the game does not know. The reverse of `ingredient-items` for a tag. API 30. |
+| `item-tag-members` | `func(tag: string) -> list<string>` | The items of the item tag `tag` (`c:ingots/iron`; a leading `#` is taken off) in the game's order (the tag files', nested tags in place, first occurrence kept: what `TagKey` lists and Mekanism's Oredictionificator offers as a filter's results); empty for a tag the game does not have. The reverse of `item-tags`. API 40. |
 
 ## `entities`
 
