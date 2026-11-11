@@ -734,7 +734,7 @@ mod run {
                 return horizon_mods::PlayerState {
                     velocity_x: 0.0, velocity_y: 0.0, velocity_z: 0.0, jumping: false, sprinting: false, flying: false, may_fly: false,
                     fall_flying: false, swimming: false, in_water: false, eyes_in_water: false, in_lava: false, air: 300, max_air: 300,
-                    fire_ticks: 0, passenger: false, sleeping: false, food: 20, saturation: 5.0, effects,
+                    fire_ticks: 0, passenger: false, sleeping: false, food: 20, saturation: 5.0, effects, blocking: false,
                 };
             };
             horizon_mods::PlayerState {
@@ -758,6 +758,7 @@ mod run {
                 food: p.health.food.food.clamp(0, 20) as u32,
                 saturation: p.health.food.saturation,
                 effects,
+                blocking: self.player_blocking(None, "minecraft:generic", false).is_some(),
             }
         }
 
@@ -3023,7 +3024,26 @@ mod run {
                             self.native_set_display(&dimension, id, &d)
                         }
                         C::TakeDropped { id, count } => self.native_take_dropped(&dimension, id, count),
-                        C::Damage { ids, damage_type: _, amount } => self.native_damage_mobs(&dimension, &ids, amount),
+                        C::Damage { ids, players, damage_type, amount, source } => {
+                            let mobs = self.native_damage_mobs(&dimension, &ids, amount);
+                            let mut any = false;
+                            for id in players {
+                                let Some((target, dim)) = self.mod_player(&id) else { continue };
+                                if dim != dimension {
+                                    continue;
+                                }
+                                // The game's own hurt: a shield raised toward `source` blocks it and wears, armour counts.
+                                let hurt = self.for_player(target, |g| {
+                                    let hurt = g.hurt_player_from(amount, source, &damage_type, Some(None));
+                                    if hurt && let Some(p) = g.player.as_mut() {
+                                        p.fire_ticks = p.fire_ticks.max(amount as i32);
+                                    }
+                                    hurt
+                                });
+                                any |= hurt.unwrap_or(false);
+                            }
+                            mobs || any
+                        }
                         C::SpawnModEntity { ticket, kind, pos, data } => {
                             let entity = self.native_spawn_mod_entity(&dimension, &kind, pos, data);
                             self.mods.spawn_answers.push((mod_id, ticket, entity));

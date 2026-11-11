@@ -7,7 +7,7 @@
 //! version's level so the launcher can tell before it installs.
 
 /// The newest level this Horizon serves.
-pub const LEVEL: u32 = 44;
+pub const LEVEL: u32 = 45;
 
 /// Every function the game offers mods, as `interface.function`, with its
 /// level. Level 0 is the contract of Horizon 0.2.67 to 0.2.69. A new
@@ -83,7 +83,7 @@ pub const FUNCTIONS: [(&str, u32); 115] = [
     ("entities.spawn-mod-entity", 36),
     ("entities.items-in-box", 37),
     ("entities.take-dropped-item", 37),
-    ("entities.damage-entities-in-box", 44),
+    ("entities.damage-entities-in-box", 45),
     ("entities.remove-mob", 11),
     ("player-items.get-inventory", 12),
     ("player-items.set-slot", 12),

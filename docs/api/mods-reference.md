@@ -809,6 +809,7 @@ What a player's body is doing as of the last server tick: what equipment that re
 | `air` | `s32` | Air left, in ticks (300 is full), and the most they hold. |
 | `max-air` | `s32` |  |
 | `fire-ticks` | `s32` | Ticks of burning left (0 when not on fire). |
+| `blocking` | `bool` | A shield (an item with `blocks_attacks`) is raised and ready to block, past its delay. API 45. |
 | `passenger` | `bool` | Riding a vehicle. |
 | `sleeping` | `bool` |  |
 | `food` | `u32` | Food level 0 to 20 and saturation. |
@@ -998,9 +999,10 @@ What a blow of `damage-entities-in-box` did to one entity.
 
 | Field | Type | |
 | --- | --- | --- |
-| `id` | `u32` |  |
+| `id` | `u32` | The mob's entity id; 0 for a player. |
+| `player` | `option<string>` | The player's UUID, for a player. |
 | `applied` | `f32` | The damage it takes (the blow's, as asked; 0 when blocked or immune). |
-| `blocked` | `bool` | Whether a shield or an immunity kept it off (always false until shields and immunity are in). |
+| `blocked` | `bool` | Whether a shield (raised, facing `source`) or an immunity (a creative or spectator player) kept it off. |
 
 | Function | Signature | What it does |
 | --- | --- | --- |
@@ -1015,7 +1017,7 @@ What a blow of `damage-entities-in-box` did to one entity.
 | `set-mob-health` | `func(dimension: string, id: u32, health: f32) -> result<_, string>` | Sets a living mob's health (above 0, cut to its maximum). |
 | `kill-mob` | `func(dimension: string, id: u32) -> result<_, string>` | Kills a mob as `/kill` does: it falls and drops its loot. |
 | `remove-mob` | `func(dimension: string, id: u32) -> result<_, string>` | Takes a mob out of the world with no death and no loot. |
-| `damage-entities-in-box` | `func(dimension: string, min: tuple<f64, f64, f64>, max: tuple<f64, f64, f64>, damage-type: string, amount: f32) -> list<damage-result>` | Hurts every living mob whose feet are in the box (`min` to `max`, at most 64 blocks across) of `dimension` (the level in place) for `amount` of damage and sets it on fire for `amount` ticks unless it does not burn (Mekanism's lasers, `TileEntityBasicLaser`: `mekanism:laser` damage that also ignites). `damage-type` names the damage; a mob takes it as generic damage (armour counts, no knockback source), whatever the type. Returns each mob hit and the damage it takes, counted at the call; the blows land after the call returns. Players, mod entities, shields and immunities are not in yet. API 44. |
+| `damage-entities-in-box` | `func(dimension: string, min: tuple<f64, f64, f64>, max: tuple<f64, f64, f64>, damage-type: string, amount: f32, source: option<tuple<f64, f64, f64>>) -> list<damage-result>` | Hurts every living mob and player whose feet are in the box (`min` to `max`, at most 64 blocks across) of `dimension` (the level in place) for `amount` of damage and sets it on fire for `amount` ticks unless it does not burn (Mekanism's lasers, `TileEntityBasicLaser`: `mekanism:laser` damage that also ignites). `source` is where the blow comes from (the laser): a player with a shield raised toward it (within 90 degrees of where they face) blocks it and the shield wears, as against an attack. A creative or spectator player is immune (blocked, nothing applied). `damage-type` names the damage: a player takes that type, a mob takes it as generic damage. Returns each one hit with the damage it takes, counted at the call; the blows land after it returns. Mod entities are not in. API 44 (players, `source` and shields: API 45). |
 | `items-in-box` | `func(dimension: string, min: tuple<f64, f64, f64>, max: tuple<f64, f64, f64>) -> list<dropped-item>` | The items lying in the box of `dimension` (the level in place; none for another) as of the start of the call: up to 256, the nearest to the box's centre first, whatever their pickup delay. The box is `min` to `max`, each at most 64 blocks across. API 37. |
 | `take-dropped-item` | `func(dimension: string, id: u32, count: u32) -> result<_, string>` | Takes `count` items from the item entity `id` (all of them when it has fewer; the entity goes when it has none left), made after this call returns: the stack is the mod's to put somewhere (an entity's slots). An error for a count of 0. API 37. |
 | `spawn-mod-entity` | `func(dimension: string, kind: string, x: f64, y: f64, z: f64, data: list<u8>) -> result<u64, string>` | Spawns a living entity of the mod's own kind `kind` (`mymod:robit`, declared in `data/<id>/horizon/entity_kind/`) at the position with the saved bytes `data` (at most 64 KiB), kept and ticked by `entities-tick`. Returns the ticket `entity-spawned` answers with. An error for a kind that is not a plain id or too many bytes. API 36. |

@@ -247,8 +247,11 @@ pub enum EntityCommand {
     /// `entities.damage-entities-in-box`: the mobs hit, the damage type and amount (also the fire ticks).
     Damage {
         ids: Vec<u32>,
+        /// The players hit (their UUIDs) that neither block nor are immune.
+        players: Vec<String>,
         damage_type: String,
         amount: f32,
+        source: Option<[f64; 3]>,
     },
     /// `entities.take-dropped-item` (FORK-10 f).
     TakeDropped {
@@ -3054,6 +3057,39 @@ impl State {
         t
     }
 }
+/// Whether a raised shield of a player facing `yaw` (degrees, F3's) at `at` (x, z) is turned toward `source`: within 90 degrees of
+/// where they face, as a shield's default `blocks_attacks` (`horizontal_blocking_angle` 90). With no source it blocks, as vanilla does
+/// for a blow from nowhere.
+pub fn shield_faces(yaw: f32, at: [f64; 2], source: Option<[f64; 3]>) -> bool {
+    let Some(src) = source else { return true };
+    let r = f64::from(-yaw).to_radians();
+    let view = [r.sin(), r.cos()];
+    let (dx, dz) = (src[0] - at[0], src[2] - at[1]);
+    let len = dx.hypot(dz);
+    if len < 1.0e-4 {
+        return true;
+    }
+    let cos = (dx / len) * view[0] + (dz / len) * view[1];
+    cos.clamp(-1.0, 1.0).acos() <= std::f64::consts::FRAC_PI_2 + 1.0e-9
+}
+
+#[cfg(test)]
+mod shield_tests {
+    use super::shield_faces;
+
+    #[test]
+    fn a_shield_faces_a_source_in_front_and_not_one_behind() {
+        // Yaw 0 faces south (+z): a laser to the south is in front, one to the north behind, one to the east at 90 degrees counts.
+        assert!(shield_faces(0.0, [0.0, 0.0], Some([0.0, 64.0, 5.0])));
+        assert!(!shield_faces(0.0, [0.0, 0.0], Some([0.0, 64.0, -5.0])));
+        assert!(shield_faces(0.0, [0.0, 0.0], Some([5.0, 64.0, 0.0])));
+        // Yaw 90 faces west (-x).
+        assert!(shield_faces(90.0, [0.0, 0.0], Some([-5.0, 64.0, 0.5])));
+        assert!(!shield_faces(90.0, [0.0, 0.0], Some([5.0, 64.0, 0.0])));
+        assert!(shield_faces(0.0, [0.0, 0.0], None));
+    }
+}
+
 /// An entity kind: a namespaced id of plain characters.
 fn kind_ok(kind: &str) -> bool {
     (1..=128).contains(&kind.len())
@@ -3215,6 +3251,7 @@ impl entities::Host for State {
         max: (f64, f64, f64),
         damage_type: String,
         amount: f32,
+        source: Option<(f64, f64, f64)>,
     ) -> Vec<entities::DamageResult> {
         let (min, max) = ([min.0, min.1, min.2], [max.0, max.1, max.2]);
         if min.iter().chain(&max).any(|v| !v.is_finite())
@@ -3222,23 +3259,36 @@ impl entities::Host for State {
             || !amount.is_finite()
             || amount <= 0.0
             || damage_type.len() > 128
-            || self.snapshot.mobs_dimension != dimension
+            || source.is_some_and(|s| !(s.0.is_finite() && s.1.is_finite() && s.2.is_finite()))
         {
             return Vec::new();
         }
-        let ids: Vec<u32> = self
-            .snapshot
-            .mobs
-            .iter()
-            .filter(|m| m.health > 0.0 && (0..3).all(|i| m.pos[i] >= min[i] && m.pos[i] <= max[i]))
-            .map(|m| m.id)
-            .take(256)
-            .collect();
-        if ids.is_empty() {
+        let inside = |p: [f64; 3]| (0..3).all(|i| p[i] >= min[i] && p[i] <= max[i]);
+        let ids: Vec<u32> = if self.snapshot.mobs_dimension == dimension {
+            self.snapshot.mobs.iter().filter(|m| m.health > 0.0 && inside(m.pos)).map(|m| m.id).take(256).collect()
+        } else {
+            Vec::new()
+        };
+        let source = source.map(|s| [s.0, s.1, s.2]);
+        let mut out: Vec<entities::DamageResult> =
+            ids.iter().map(|id| entities::DamageResult { id: *id, player: None, applied: amount, blocked: false }).collect();
+        let mut hit_players = Vec::new();
+        for p in self.snapshot.players.iter().filter(|p| p.dimension == dimension && p.health > 0.0 && inside([p.x, p.y, p.z])) {
+            let immune = matches!(p.game_mode, GameMode::Creative | GameMode::Spectator);
+            let raised = self.snapshot.states.iter().any(|(id, s)| *id == p.id && s.blocking);
+            let yaw = self.snapshot.looks.iter().find(|(id, _)| *id == p.id).map_or(0.0, |(_, (yaw, _))| *yaw);
+            let blocked = immune || (raised && shield_faces(yaw, [p.x, p.z], source));
+            out.push(entities::DamageResult { id: 0, player: Some(p.id.clone()), applied: if blocked { 0.0 } else { amount }, blocked });
+            if !immune {
+                // A shield's wear comes from the game's own blocking, so the blow goes through it.
+                hit_players.push(p.id.clone());
+            }
+        }
+        if out.is_empty() {
             return Vec::new();
         }
-        let out = ids.iter().map(|id| entities::DamageResult { id: *id, applied: amount, blocked: false }).collect();
-        if self.entity_request(dimension, EntityCommand::Damage { ids, damage_type, amount: amount.min(1_000_000.0) }, &[]).is_err() {
+        let command = EntityCommand::Damage { ids, players: hit_players, damage_type, amount: amount.min(1_000_000.0), source };
+        if self.entity_request(dimension, command, &[]).is_err() {
             return Vec::new();
         }
         out

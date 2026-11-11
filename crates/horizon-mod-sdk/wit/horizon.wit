@@ -923,6 +923,8 @@ interface player-control {
         max-air: s32,
         /// Ticks of burning left (0 when not on fire).
         fire-ticks: s32,
+        /// A shield (an item with `blocks_attacks`) is raised and ready to block, past its delay. API 45.
+        blocking: bool,
         /// Riding a vehicle.
         passenger: bool,
         sleeping: bool,
@@ -1182,18 +1184,23 @@ interface entities {
     remove-mob: func(dimension: string, id: u32) -> result<_, string>;
     /// What a blow of `damage-entities-in-box` did to one entity.
     record damage-result {
+        /// The mob's entity id; 0 for a player.
         id: u32,
+        /// The player's UUID, for a player.
+        player: option<string>,
         /// The damage it takes (the blow's, as asked; 0 when blocked or immune).
         applied: f32,
-        /// Whether a shield or an immunity kept it off (always false until shields and immunity are in).
+        /// Whether a shield (raised, facing `source`) or an immunity (a creative or spectator player) kept it off.
         blocked: bool,
     }
-    /// Hurts every living mob whose feet are in the box (`min` to `max`, at most 64 blocks across) of `dimension` (the level in place)
-    /// for `amount` of damage and sets it on fire for `amount` ticks unless it does not burn (Mekanism's lasers,
-    /// `TileEntityBasicLaser`: `mekanism:laser` damage that also ignites). `damage-type` names the damage; a mob takes it as
-    /// generic damage (armour counts, no knockback source), whatever the type. Returns each mob hit and the damage it takes, counted at
-    /// the call; the blows land after the call returns. Players, mod entities, shields and immunities are not in yet. API 44.
-    damage-entities-in-box: func(dimension: string, min: tuple<f64, f64, f64>, max: tuple<f64, f64, f64>, damage-type: string, amount: f32) -> list<damage-result>;
+    /// Hurts every living mob and player whose feet are in the box (`min` to `max`, at most 64 blocks across) of `dimension` (the level in
+    /// place) for `amount` of damage and sets it on fire for `amount` ticks unless it does not burn (Mekanism's lasers,
+    /// `TileEntityBasicLaser`: `mekanism:laser` damage that also ignites). `source` is where the blow comes from (the laser): a player
+    /// with a shield raised toward it (within 90 degrees of where they face) blocks it and the shield wears, as against an attack. A
+    /// creative or spectator player is immune (blocked, nothing applied). `damage-type` names the damage: a player takes that type, a mob
+    /// takes it as generic damage. Returns each one hit with the damage it takes, counted at the call; the blows land after it returns.
+    /// Mod entities are not in. API 44 (players, `source` and shields: API 45).
+    damage-entities-in-box: func(dimension: string, min: tuple<f64, f64, f64>, max: tuple<f64, f64, f64>, damage-type: string, amount: f32, source: option<tuple<f64, f64, f64>>) -> list<damage-result>;
     /// The items lying in the box of `dimension` (the level in place; none for another) as of the start of the call: up to 256, the
     /// nearest to the box's centre first, whatever their pickup delay. The box is `min` to `max`, each at most 64 blocks across. API 37.
     items-in-box: func(dimension: string, min: tuple<f64, f64, f64>, max: tuple<f64, f64, f64>) -> list<dropped-item>;

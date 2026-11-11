@@ -141,5 +141,16 @@ mobs = [
 ]
 use-block = { pos = [1, 81, 1] }
 ticks = 1
-expect.entity-commands = ["damage [7] mekanism:laser 4"]
-expect.menu-text = ["minecraft:overworld 1 81 1 hit 1"]
+expect.entity-commands = ["damage [7] [] mekanism:laser 4"]
+expect.menu-text = ["minecraft:overworld 1 81 1 hit 1 blocked 0"]
+
+[[step]]
+# API 45: Alex in the laser's box with a shield raised facing it (yaw 90 faces west, toward the machine) blocks it: the blow still goes
+# to the game, whose own blocking wears the shield. A creative player would be immune and left out.
+player = { x = 3.5, y = 81.0, z = 1.5, yaw = 90.0 }
+state = { blocking = true }
+mobs = []
+use-block = { pos = [1, 81, 1] }
+ticks = 1
+expect.entity-commands = ["damage [] [\"Alex\"] mekanism:laser 4"]
+expect.menu-text = ["minecraft:overworld 1 81 1 hit 1 blocked 1"]

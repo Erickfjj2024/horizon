@@ -89,8 +89,9 @@ impl ServerMod for Gate {
                 (f64::from(pos.x) + 6.0, f64::from(pos.y) + 1.0, f64::from(pos.z) + 1.0),
                 "mekanism:laser",
                 4.0,
+                Some((f64::from(pos.x) + 0.5, f64::from(pos.y) + 0.5, f64::from(pos.z) + 0.5)),
             );
-            let _ = world::set_menu_text(&player.dimension, pos.x, pos.y, pos.z, &[format!("hit {}", hit.len())]);
+            let _ = world::set_menu_text(&player.dimension, pos.x, pos.y, pos.z, &[format!("hit {} blocked {}", hit.len(), hit.iter().filter(|h| h.blocked).count())]);
         }
         // API 41: the machine at y 79 puts a line on the player's HUD: a redstone icon, a text and a bar half full.
         if pos.y == 79 {

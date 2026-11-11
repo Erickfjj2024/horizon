@@ -1073,6 +1073,8 @@ pub struct StateSet {
     in_lava: Option<bool>,
     air: Option<i32>,
     fire_ticks: Option<i32>,
+    /// A shield raised and ready.
+    blocking: Option<bool>,
     food: Option<u32>,
     saturation: Option<f32>,
     /// `"minecraft:poison 100 0"`: id, ticks, amplifier.
@@ -1810,7 +1812,7 @@ impl Step {
                     game.states.push((id, crate::PlayerState {
                         velocity_x: 0.0, velocity_y: 0.0, velocity_z: 0.0, jumping: false, sprinting: false, flying: false, may_fly: false,
                         fall_flying: false, swimming: false, in_water: false, eyes_in_water: false, in_lava: false, air: 300, max_air: 300,
-                        fire_ticks: 0, passenger: false, sleeping: false, food: 20, saturation: 5.0, effects: Vec::new(),
+                        fire_ticks: 0, passenger: false, sleeping: false, food: 20, saturation: 5.0, effects: Vec::new(), blocking: false,
                     }));
                     game.states.len() - 1
                 }
@@ -1826,6 +1828,7 @@ impl Step {
             s.in_lava = set.in_lava.unwrap_or(s.in_lava);
             s.air = set.air.unwrap_or(s.air);
             s.fire_ticks = set.fire_ticks.unwrap_or(s.fire_ticks);
+            s.blocking = set.blocking.unwrap_or(s.blocking);
             s.food = set.food.unwrap_or(s.food);
             s.saturation = set.saturation.unwrap_or(s.saturation);
             if let Some(list) = &set.effects {
@@ -2437,7 +2440,11 @@ impl Step {
                         C::RemoveMob { id } => format!("remove-mob {id}"),
                         C::SetFire { id, ticks } => format!("fire {id} {ticks}"),
                         C::TakeDropped { id, count } => format!("take-dropped-item {id} {count}"),
-                        C::Damage { ids, damage_type, amount } => format!("damage {ids:?} {damage_type} {amount}"),
+                        C::Damage { ids, players, damage_type, amount, .. } => {
+                            let names: Vec<String> =
+                                players.iter().map(|id| game.players.iter().find(|p| p.id == *id).map_or(id.clone(), |p| p.name.clone())).collect();
+                            format!("damage {ids:?} {names:?} {damage_type} {amount}")
+                        }
                         C::SpawnModEntity { ticket, kind, pos, data } => {
                             format!("spawn-mod-entity {kind} {} {} {} {} byte(s) #{ticket}", pos[0], pos[1], pos[2], data.len())
                         }
