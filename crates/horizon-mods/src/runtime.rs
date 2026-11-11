@@ -252,6 +252,8 @@ pub enum EntityCommand {
         damage_type: String,
         amount: f32,
         source: Option<[f64; 3]>,
+        /// The box: the mod entities in it are hurt too (the game knows where they are).
+        area: ([f64; 3], [f64; 3]),
     },
     /// `entities.take-dropped-item` (FORK-10 f).
     TakeDropped {
@@ -3284,10 +3286,7 @@ impl entities::Host for State {
                 hit_players.push(p.id.clone());
             }
         }
-        if out.is_empty() {
-            return Vec::new();
-        }
-        let command = EntityCommand::Damage { ids, players: hit_players, damage_type, amount: amount.min(1_000_000.0), source };
+        let command = EntityCommand::Damage { ids, players: hit_players, damage_type, amount: amount.min(1_000_000.0), source, area: (min, max) };
         if self.entity_request(dimension, command, &[]).is_err() {
             return Vec::new();
         }

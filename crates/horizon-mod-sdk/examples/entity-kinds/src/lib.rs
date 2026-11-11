@@ -10,7 +10,9 @@ impl ServerMod for Robits {
         Ok((Robits, Registration::new().on_net().on_mod_entities()))
     }
     fn net_message(&mut self, player: &Player, channel: &str, data: &[u8]) {
-        if channel != "robits:spawn" || data.len() < 12 {
+        // `robits:spawn_old` spawns one already counted past its errands (its bytes start at 10): it only falls and takes harm.
+        let old = channel == "robits:spawn_old";
+        if !(channel == "robits:spawn" || old) || data.len() < 12 {
             return;
         }
         let int = |at: usize| i32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]]);
@@ -20,7 +22,7 @@ impl ServerMod for Robits {
             f64::from(int(0)) + 0.5,
             f64::from(int(4)),
             f64::from(int(8)) + 0.5,
-            &[0],
+            &[if old { 10 } else { 0 }],
         );
     }
     /// A red robit takes half of every blow (FORK-10 e); the others take it whole.
@@ -72,7 +74,7 @@ impl ServerMod for Robits {
                     path_to: (count == 1).then(|| (e.x + 1.0, e.y, e.z, 1.0)),
                     stop: false,
                     health: None,
-                    remove: count >= 6,
+                    remove: count == 6,
                 }
             })
             .collect()

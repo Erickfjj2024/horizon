@@ -81,6 +81,8 @@ pub struct TestGame {
     /// The items lying in the world of the script (FORK-10 f).
     pub dropped: Vec<DroppedSet>,
     entity_goals: std::collections::BTreeMap<u32, ([f64; 3], f32)>,
+    /// Each mod entity's fall: its speed down and the distance fallen.
+    entity_falls: std::collections::BTreeMap<u32, (f64, f64)>,
     /// What the last `can_place` answered.
     pub can_place_result: Option<bool>,
     /// The blocks packed into boxes (`world.pack-block`), by the box's position.
@@ -318,6 +320,7 @@ impl TestGame {
             next_mod_entity: 1000,
             dropped: Vec::new(),
             entity_goals: Default::default(),
+            entity_falls: Default::default(),
             can_place_result: None,
             packed: Default::default(),
             crafts: Vec::new(),
@@ -391,6 +394,58 @@ impl TestGame {
             self.mods.server_tick(self.tick);
             self.tick_block_entities();
             self.tick_mod_entities();
+            self.mod_entity_hazards();
+        }
+    }
+    /// The world's harm to the mod's entities, as the game does: they fall onto the script's blocks (a block that is not air is a
+    /// floor) and a fall past 3 blocks hurts (`minecraft:fall`), lava hurts 4 (`minecraft:lava`).
+    fn mod_entity_hazards(&mut self) {
+        let mut hurts: Vec<(u32, &'static str, f32)> = Vec::new();
+        for e in &mut self.mod_entities {
+            let (x, z) = (e.x.floor() as i32, e.z.floor() as i32);
+            let feet = (e.y - 1.0e-6).floor() as i32;
+            let solid = |y: i32| self.world.get(&(x, y, z)).is_some_and(|s| !s.starts_with("minecraft:air") && !s.starts_with("minecraft:lava") && !s.starts_with("minecraft:water"));
+            let floor_top = (feet - 64..=feet).rev().find(|y| solid(*y)).map(|y| f64::from(y + 1));
+            let fall_v = self.entity_falls.get(&e.id).copied().unwrap_or((0.0, 0.0));
+            let (y, v, fallen, landed) = crate::entity_state::fall_tick(e.y, fall_v.0, floor_top);
+            e.y = y;
+            let distance = fall_v.1 + fallen;
+            if landed {
+                let damage = crate::entity_state::fall_damage(distance);
+                if damage > 0.0 {
+                    hurts.push((e.id, "minecraft:fall", damage));
+                }
+                self.entity_falls.insert(e.id, (0.0, 0.0));
+            } else {
+                self.entity_falls.insert(e.id, (v, distance));
+            }
+            if self.world.get(&(x, y.floor() as i32, z)).is_some_and(|s| s.starts_with("minecraft:lava")) && self.tick % 10 == 0 {
+                hurts.push((e.id, "minecraft:lava", 4.0));
+            }
+        }
+        for (id, kind, amount) in hurts {
+            let Some(entity) = self.mod_entities.iter().find(|m| m.id == id).cloned() else { continue };
+            let source = crate::DamageSource {
+                damage_type: kind.into(),
+                causing: None,
+                is_magic: false,
+                is_fire: kind == "minecraft:lava",
+                is_fall: kind == "minecraft:fall",
+                is_explosion: false,
+                tags: Vec::new(),
+            };
+            self.snapshot();
+            let applied = self.mods.mod_entity_damaged(&entity, &source, amount);
+            let (health, dead) = crate::entity_state::after_damage(entity.health, applied);
+            if let Some(m) = self.mod_entities.iter_mut().find(|m| m.id == id) {
+                m.health = health;
+            }
+            if dead {
+                let mut last = entity;
+                last.health = 0.0;
+                self.mods.mod_entity_died(&last);
+                self.mod_entities.retain(|m| m.id != id);
+            }
         }
     }
     /// `entities-tick` with the mod's entities, and what it answers applied (as the game does: data, slots, energy, skin, name, a teleport, a removal).

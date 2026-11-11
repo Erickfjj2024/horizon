@@ -305,6 +305,9 @@ pub struct EntityKind {
     /// Slots of its container (the Robit's 30); 0 for none.
     #[serde(default)]
     pub container_slots: u16,
+    /// Fire and lava do not hurt it and it does not burn (`EntityType.fireImmune`).
+    #[serde(default)]
+    pub fire_immune: bool,
 }
 
 fn default_kind_health() -> f32 {

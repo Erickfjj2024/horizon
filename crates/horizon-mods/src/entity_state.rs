@@ -30,6 +30,12 @@ pub struct ModEntityState {
     pub hitbox: Option<u32>,
     /// Where it walks to (the point and the speed multiplier), until it arrives, is blocked or is told to stop; not saved.
     pub goal: Option<([f64; 3], f32)>,
+    /// Falling: its speed down (blocks a tick) and how far it has fallen since it last stood (FORK-10 5a); not saved.
+    pub fall_velocity: f64,
+    pub fall_distance: f64,
+    /// Ticks of fire left, and ticks before an environmental hurt (lava, fire) can land again; not saved.
+    pub burning: i32,
+    pub hurt_cooldown: u8,
 }
 
 /// The entities and whether the save was read.
@@ -60,6 +66,10 @@ impl ModEntityState {
             shown: None,
             hitbox: None,
             goal: None,
+            fall_velocity: 0.0,
+            fall_distance: 0.0,
+            burning: 0,
+            hurt_cooldown: 0,
         }
     }
 }
@@ -115,6 +125,10 @@ pub fn decode(text: &str) -> Vec<ModEntityState> {
                 shown: None,
                 hitbox: None,
                 goal: None,
+                fall_velocity: 0.0,
+                fall_distance: 0.0,
+                burning: 0,
+                hurt_cooldown: 0,
                 items: r["items"]
                     .as_array()?
                     .iter()
@@ -202,6 +216,26 @@ pub fn walk(pos: &mut [f64; 3], yaw: &mut f32, goal: [f64; 3], step: f64, height
     if go >= dist { Walk::Arrived } else { Walk::Moving }
 }
 
+/// One tick of falling for an entity at `y` whose next cell below holds a floor at `floor_top` (the top of the highest blocking cell under
+/// it, none for nothing within reach): vanilla's living gravity (0.08 a tick, 0.98 drag), landing on the floor. Returns the new y, the
+/// new downward speed, the distance fallen this tick, and whether it landed.
+pub fn fall_tick(y: f64, velocity: f64, floor_top: Option<f64>) -> (f64, f64, f64, bool) {
+    if floor_top.is_some_and(|f| y <= f + 1.0e-6) {
+        return (floor_top.unwrap_or(y).max(y), 0.0, 0.0, velocity > 0.0);
+    }
+    let v = ((velocity + 0.08) * 0.98).min(3.92);
+    let next = y - v;
+    match floor_top {
+        Some(f) if next <= f => (f, 0.0, y - f, true),
+        _ => (next, v, v, false),
+    }
+}
+
+/// `LivingEntity.calculateFallDamage`: a fall of `distance` blocks hurts for each block past 3, rounded up.
+pub fn fall_damage(distance: f64) -> f32 {
+    ((distance - 3.0).ceil()).max(0.0) as f32
+}
+
 /// What a hit of `amount` after the mod's say leaves: the health, and whether the entity dies (health at or under 0).
 pub fn after_damage(health: f32, amount: f32) -> (f32, bool) {
     let left = health - amount.max(0.0);
@@ -277,6 +311,7 @@ mod tests {
                 EntitySkin { id: "red".into(), texture: "robits:entity/red".into(), model: None },
             ],
             container_slots: 3,
+            fire_immune: false,
         }
     }
 
@@ -365,6 +400,27 @@ mod tests {
         bad.path_to = Some((f64::NAN, 0.0, 0.0, 1.0));
         apply(&mut e, &k, &bad);
         assert_eq!(e.goal, None);
+    }
+
+    #[test]
+    fn an_entity_falls_with_gravity_lands_on_the_floor_and_a_long_fall_hurts() {
+        // From y 70 onto a floor whose top is y 64: it speeds up, then lands on 64 exactly.
+        let (mut y, mut v, mut fallen) = (70.0, 0.0, 0.0);
+        let mut landed = false;
+        let mut ticks = 0;
+        while !landed {
+            let (ny, nv, d, l) = fall_tick(y, v, Some(64.0));
+            (y, v, landed) = (ny, nv, l);
+            fallen += d;
+            ticks += 1;
+        }
+        assert_eq!(y, 64.0);
+        assert!((fallen - 6.0).abs() < 1e-9 && ticks > 5, "{fallen} {ticks}");
+        assert_eq!(fall_damage(fallen), 3.0);
+        assert_eq!(fall_damage(3.0), 0.0);
+        assert_eq!(fall_damage(3.2), 1.0);
+        // Standing on the floor nothing happens.
+        assert_eq!(fall_tick(64.0, 0.0, Some(64.0)), (64.0, 0.0, 0.0, false));
     }
 
     #[test]

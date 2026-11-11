@@ -473,6 +473,33 @@ impl Game<'_> {
             let pow = (1.0 - dist) * f64::from(exposure);
             ((pow * pow + pow) / 2.0 * 7.0 * diameter + 1.0) as f32
         };
+        // The mods' own entities in reach take the blast as a living entity does (FORK-10 5a): no knockback, no armour.
+        #[cfg(feature = "mods")]
+        {
+            let boxes: Vec<(u32, [f64; 3], [f64; 3])> = self
+                .mod_entities
+                .list
+                .iter()
+                .filter(|e| e.dimension == self.dim.id())
+                .filter_map(|e| {
+                    let b = self.mod_entity_bounds(e.id as i32)?;
+                    let (lo, hi) = (b.min_position(), b.max_position());
+                    Some((e.id, [lo.x, lo.y, lo.z], [hi.x, hi.y, hi.z]))
+                })
+                .collect();
+            for (id, lo, hi) in boxes {
+                let feet = [(lo[0] + hi[0]) / 2.0, lo[1], (lo[2] + hi[2]) / 2.0];
+                let dist = distance(feet) / diameter;
+                if dist > 1.0 {
+                    continue;
+                }
+                let exposure = self.seen_percent(center, lo, hi);
+                let amount = damage(dist, exposure);
+                if amount > 0.0 {
+                    self.hurt_mod_entity(id, damage_type, amount);
+                }
+            }
+        }
         let direction = |origin: [f64; 3]| {
             let d = [
                 origin[0] - center[0],

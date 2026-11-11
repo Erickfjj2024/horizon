@@ -1,6 +1,7 @@
 [[step]]
 join = "Alex"
 # The message spawns a robit of the mod's own kind (declared in content): it exists as the step ends, untouched.
+blocks = [{ x = 3, y = 69, z = 4, state = "minecraft:stone" }, { x = 4, y = 69, z = 4, state = "minecraft:stone" }]
 net = { channel = "robits:spawn", data = [3, 0, 0, 0, 70, 0, 0, 0, 4, 0, 0, 0] }
 expect.mod-entities = ["1001 robits:robit 3.500 70.000 4.500 energy=0 data=[0] skin=default name=-"]
 
@@ -49,3 +50,15 @@ damage-mod-entity = { id = 1001, amount = 4.0 }
 expect.mod-entity-damage = 2.0
 expect.mod-entities = []
 expect.menu-text = ["minecraft:overworld 4 69 4 died:1001"]
+
+[[step]]
+# FORK-10 5a: a robit spawned 10 blocks over the stone falls (vanilla's gravity) and lands: 7 damage for the 7 blocks past 3, which
+# the mod halves for a red robit; more than its health, so it dies and the mod hears it.
+blocks = [{ x = 10, y = 69, z = 10, state = "minecraft:stone" }]
+net = { channel = "robits:spawn_old", data = [10, 0, 0, 0, 80, 0, 0, 0, 10, 0, 0, 0] }
+expect.mod-entities = ["1002 robits:robit 10.500 80.000 10.500 energy=0 data=[10] skin=default name=-"]
+
+[[step]]
+ticks = 30
+expect.mod-entities = []
+expect.menu-text = ["minecraft:overworld 10 69 10 died:1002"]

@@ -569,6 +569,7 @@ mod run {
             self.apply_mod_entity_ticks(kept);
             self.mirror_mod_entity_menus();
             self.walk_mod_entities();
+            self.mod_entity_hazards();
             self.sync_mod_entity_carriers();
             self.apply_mod_entity_updates(updates);
             self.apply_mod_entity_updates(menu_updates);
@@ -2354,14 +2355,44 @@ mod run {
             };
             let (amount, ..) = self.melee_damage(&view.kind, true);
             self.reset_attack_strength();
+            self.hurt_mod_entity(view.id, "minecraft:player_attack", amount);
+            true
+        }
+
+        /// Mod entity `id` takes `amount` of `damage_type` (FORK-10 5a): the mod that owns its kind says how much lands
+        /// (`mod-entity-damaged`), its health goes down, and at 0 the mod hears `mod-entity-died` and the entity goes. False when it
+        /// is not there.
+        pub(in crate::game) fn hurt_mod_entity(&mut self, id: u32, damage_type: &str, amount: f32) -> bool {
+            if !self.mods.server || !self.mods.mods.hears_mod_entities() {
+                return false;
+            }
+            let Some(view) = self.mod_entities_view().into_iter().find(|e| e.id == id) else {
+                return false;
+            };
+            let tag = |t: &str| format!("minecraft:{t}");
+            let is_fire = matches!(damage_type, "minecraft:in_fire" | "minecraft:on_fire" | "minecraft:lava" | "minecraft:hot_floor");
+            let is_explosion = matches!(damage_type, "minecraft:explosion" | "minecraft:player_explosion");
+            let mut tags = Vec::new();
+            if is_fire {
+                tags.push(tag("is_fire"));
+            }
+            if is_explosion {
+                tags.push(tag("is_explosion"));
+            }
+            if damage_type == "minecraft:fall" {
+                tags.push(tag("is_fall"));
+            }
+            if damage_type == "minecraft:player_attack" {
+                tags.push(tag("is_player_attack"));
+            }
             let source = horizon_mods::DamageSource {
-                damage_type: "minecraft:player_attack".into(),
+                damage_type: damage_type.to_owned(),
                 causing: None,
                 is_magic: false,
-                is_fire: false,
-                is_fall: false,
-                is_explosion: false,
-                tags: vec!["minecraft:is_player_attack".into()],
+                is_fire,
+                is_fall: damage_type == "minecraft:fall",
+                is_explosion,
+                tags,
             };
             self.lend_world();
             let applied = self.mods.mods.mod_entity_damaged(&view, &source, amount);
@@ -2375,6 +2406,79 @@ mod run {
             }
             self.apply_mod_block_writes();
             true
+        }
+
+        /// The world's own harm to the mod entities of the level in place, once a tick (FORK-10 5a): they fall (vanilla's gravity) and a
+        /// fall past 3 blocks hurts (`minecraft:fall`); lava (`minecraft:lava`, 4) and fire (`minecraft:in_fire`, 1) hurt every 10 ticks
+        /// and set them burning (15 and 8 seconds); burning hurts 1 a second (`minecraft:on_fire`) and water puts it out. A fire-immune
+        /// kind skips the fire.
+        pub(in crate::game) fn mod_entity_hazards(&mut self) {
+            let Some(kinds) = crate::game::mod_entities::MOD_KINDS.get() else {
+                return;
+            };
+            let dim = self.dim.id().to_owned();
+            let mut hurts: Vec<(u32, &'static str, f32)> = Vec::new();
+            for i in 0..self.mod_entities.list.len() {
+                let e = &self.mod_entities.list[i];
+                if e.dimension != dim || !self.world.chunks.contains_key(&((e.pos[0].floor() as i32) >> 4, (e.pos[2].floor() as i32) >> 4)) {
+                    continue;
+                }
+                let Some(kind) = kinds.get(&e.kind) else { continue };
+                let (x, z) = (e.pos[0].floor() as i32, e.pos[2].floor() as i32);
+                let facts = self.res.facts();
+                let world = &self.world;
+                let name_at = |y: i32| -> &str { &facts.get(world.block(x, y, z)).name };
+                // The floor: the top of the highest full block at or below the feet, within 64 blocks.
+                let feet = (e.pos[1] - 1.0e-6).floor() as i32;
+                let floor_top = (feet - 64..=feet).rev().find(|y| facts.get(world.block(x, *y, z)).full_collision).map(|y| f64::from(y + 1));
+                let (y, v, fallen, landed) = horizon_mods::entity_state::fall_tick(e.pos[1], e.fall_velocity, floor_top);
+                let rooms = f64::from(kind.height).ceil().max(1.0) as i32;
+                let base = y.floor() as i32;
+                let touching: Vec<String> = (base..base + rooms).map(|cy| name_at(cy).to_string()).collect();
+                let in_lava = touching.iter().any(|n| n == "minecraft:lava");
+                let in_fire = touching.iter().any(|n| matches!(n.as_str(), "minecraft:fire" | "minecraft:soul_fire"));
+                let in_water = touching.iter().any(|n| n == "minecraft:water" || n == "minecraft:bubble_column");
+                let fall_distance = if landed { e.fall_distance + fallen } else { e.fall_distance + fallen };
+                let e = &mut self.mod_entities.list[i];
+                e.pos[1] = y;
+                e.fall_velocity = v;
+                if landed {
+                    let damage = horizon_mods::entity_state::fall_damage(fall_distance);
+                    if damage > 0.0 && !in_water {
+                        hurts.push((e.id, "minecraft:fall", damage));
+                    }
+                    e.fall_distance = 0.0;
+                } else {
+                    e.fall_distance = if in_water { 0.0 } else { fall_distance };
+                }
+                e.hurt_cooldown = e.hurt_cooldown.saturating_sub(1);
+                if in_water {
+                    e.burning = 0;
+                } else if !kind.fire_immune {
+                    if in_lava {
+                        e.burning = e.burning.max(300);
+                        if e.hurt_cooldown == 0 {
+                            hurts.push((e.id, "minecraft:lava", 4.0));
+                            e.hurt_cooldown = 10;
+                        }
+                    } else if in_fire {
+                        e.burning = e.burning.max(160);
+                        if e.hurt_cooldown == 0 {
+                            hurts.push((e.id, "minecraft:in_fire", 1.0));
+                            e.hurt_cooldown = 10;
+                        }
+                    }
+                    if e.burning > 0 {
+                        e.burning -= 1;
+                        if e.burning % 20 == 0 && !in_lava && !in_fire {
+                            hurts.push((e.id, "minecraft:on_fire", 1.0));
+                        }
+                    }
+                }
+            }
+            for (id, kind, amount) in hurts {
+                self.hurt_mod_entity(id, kind, amount);
+            }
         }
 
         /// The acting player hit entity `entity` of `kind` holding `stack`.
@@ -3024,8 +3128,19 @@ mod run {
                             self.native_set_display(&dimension, id, &d)
                         }
                         C::TakeDropped { id, count } => self.native_take_dropped(&dimension, id, count),
-                        C::Damage { ids, players, damage_type, amount, source } => {
+                        C::Damage { ids, players, damage_type, amount, source, area } => {
                             let mobs = self.native_damage_mobs(&dimension, &ids, amount);
+                            // The mods' own entities in the box (FORK-10 5a), as the laser hits any living entity.
+                            let inside: Vec<u32> = self
+                                .mod_entities
+                                .list
+                                .iter()
+                                .filter(|e| e.dimension == dimension && (0..3).all(|i| e.pos[i] >= area.0[i] && e.pos[i] <= area.1[i]))
+                                .map(|e| e.id)
+                                .collect();
+                            for id in inside {
+                                self.hurt_mod_entity(id, &damage_type, amount);
+                            }
                             let mut any = false;
                             for id in players {
                                 let Some((target, dim)) = self.mod_player(&id) else { continue };
