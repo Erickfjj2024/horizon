@@ -313,6 +313,45 @@ pub struct EntityKind {
     /// virtual (a crafting grid, an anvil's), held only while the menu is open. None opens the container as a chest.
     #[serde(default)]
     pub menu: Option<String>,
+    /// Its model in parts (FORK-10 5d): each bone is drawn by its own item model, turned about the model's centre and placed at its
+    /// `pivot`, and a bone with `walk` swings while it walks. None draws the skin's one model whole.
+    #[serde(default)]
+    pub bones: Vec<EntityBone>,
+}
+
+/// One part of an entity kind's model (FORK-10 5d).
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EntityBone {
+    pub id: String,
+    /// The item model that draws it (`<mod>:<name>`, as `minecraft:item_model` names one), turned about its centre.
+    pub model: String,
+    /// Where its centre sits, in blocks from the entity's feet: x to its left, y up, z forward (before the entity's turn).
+    pub pivot: [f32; 3],
+    /// How it swings while the entity walks; none keeps it still.
+    #[serde(default)]
+    pub walk: Option<BoneWalk>,
+}
+
+/// A bone's swing while walking: vanilla's limb swing (`cos(walk position * 0.6662 + phase) * walk speed`), `degrees` at full speed
+/// about `axis`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BoneWalk {
+    pub axis: BoneAxis,
+    pub degrees: f32,
+    /// Degrees of the cycle it is ahead: 180 for the other leg.
+    #[serde(default)]
+    pub phase: f32,
+}
+
+/// The axis a bone turns about.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BoneAxis {
+    X,
+    Y,
+    Z,
 }
 
 fn default_kind_health() -> f32 {
@@ -335,6 +374,9 @@ pub struct EntitySkin {
     /// A model of the mod's own (`assets/<ns>/horizon/entity_model/<name>.json`), the kind's default when unset.
     #[serde(default)]
     pub model: Option<String>,
+    /// For a kind with bones: the item model of each bone this skin draws differently (bone id to model).
+    #[serde(default)]
+    pub bones: BTreeMap<String, String>,
 }
 
 impl EntityKind {
@@ -366,6 +408,31 @@ impl EntityKind {
         }
         if self.container_slots > 256 {
             return Err(format!("{name}: container_slots is 256 at most"));
+        }
+        let model_ok = |t: &str| t.split_once(':').is_some_and(|(n, p)| !n.is_empty() && !p.is_empty() && !t.contains(".."));
+        if self.bones.len() > 16 {
+            return Err(format!("{name}: 16 bones at most"));
+        }
+        for (i, b) in self.bones.iter().enumerate() {
+            if b.id.is_empty() || b.id.len() > 64 || self.bones[..i].iter().any(|o| o.id == b.id) {
+                return Err(format!("{name}: bone ids are 1 to 64 bytes and not repeated"));
+            }
+            if !model_ok(&b.model) {
+                return Err(format!("{name}: bone {}: the model is <mod id>:<path>", b.id));
+            }
+            if !b.pivot.iter().all(|v| v.is_finite() && v.abs() <= 16.0) {
+                return Err(format!("{name}: bone {}: the pivot is within 16 blocks", b.id));
+            }
+            if b.walk.as_ref().is_some_and(|w| !(w.degrees.is_finite() && (0.0..=180.0).contains(&w.degrees) && w.phase.is_finite())) {
+                return Err(format!("{name}: bone {}: walk degrees are 0 to 180", b.id));
+            }
+        }
+        for s in &self.skins {
+            for (bone, model) in &s.bones {
+                if !self.bones.iter().any(|b| &b.id == bone) || !model_ok(model) {
+                    return Err(format!("{name}: skin {}: bone {bone} is not a bone of the kind, or its model is not <mod id>:<path>", s.id));
+                }
+            }
         }
         Ok(())
     }
@@ -2231,6 +2298,35 @@ capabilities = ["registries"]
             let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();
             assert!(e.contains(why), "{case}: {e}");
         }
+    }
+
+    #[test]
+    fn an_entity_kind_has_bones_that_swing_and_skins_that_change_them() {
+        let good = br#"{"width":0.6,"height":0.65,"skins":[{"id":"a","texture":"ruby:a"},{"id":"gold","texture":"ruby:g","bones":{"leg_left":"ruby:gold_leg"}}],
+            "bones":[{"id":"body","model":"ruby:body","pivot":[0,0.4,0]},
+                     {"id":"leg_left","model":"ruby:leg","pivot":[0.15,0.15,0],"walk":{"axis":"x","degrees":40}},
+                     {"id":"leg_right","model":"ruby:leg","pivot":[-0.15,0.15,0],"walk":{"axis":"x","degrees":40,"phase":180}}]}"#;
+        let files: &[(&str, &[u8])] = &[("data/ruby/horizon/entity_kind/robit.json", good)];
+        let k = &hmod("bones-ok", MANIFEST_TEXT, files).unwrap().entity_kinds[0];
+        assert_eq!(k.bones.len(), 3);
+        assert_eq!(k.bones[2].walk.as_ref().map(|w| (w.axis, w.degrees, w.phase)), Some((BoneAxis::X, 40.0, 180.0)));
+        assert_eq!(k.skins[1].bones.get("leg_left").map(String::as_str), Some("ruby:gold_leg"));
+        let skin = r#""skins":[{"id":"a","texture":"ruby:a"}]"#;
+        for (case, bones, why) in [
+            ("bones-twice", r#"[{"id":"b","model":"ruby:b","pivot":[0,0,0]},{"id":"b","model":"ruby:c","pivot":[0,0,0]}]"#, "not repeated"),
+            ("bones-model", r#"[{"id":"b","model":"b","pivot":[0,0,0]}]"#, "the model is <mod id>:<path>"),
+            ("bones-far", r#"[{"id":"b","model":"ruby:b","pivot":[0,20,0]}]"#, "within 16 blocks"),
+            ("bones-swing", r#"[{"id":"b","model":"ruby:b","pivot":[0,0,0],"walk":{"axis":"x","degrees":200}}]"#, "0 to 180"),
+            ("bones-axis", r#"[{"id":"b","model":"ruby:b","pivot":[0,0,0],"walk":{"axis":"w","degrees":20}}]"#, "unknown variant"),
+        ] {
+            let file = format!(r#"{{"width":1,"height":1,{skin},"bones":{bones}}}"#);
+            let files: &[(&str, &[u8])] = &[("data/ruby/horizon/entity_kind/a.json", file.as_bytes())];
+            let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();
+            assert!(e.contains(why), "{case}: {e}");
+        }
+        let file = br#"{"width":1,"height":1,"skins":[{"id":"a","texture":"ruby:a","bones":{"tail":"ruby:t"}}],"bones":[{"id":"b","model":"ruby:b","pivot":[0,0,0]}]}"#;
+        let files: &[(&str, &[u8])] = &[("data/ruby/horizon/entity_kind/a.json", file)];
+        assert!(hmod("bones-skin", MANIFEST_TEXT, files).unwrap_err().contains("bone tail is not a bone of the kind"));
     }
 
     #[test]

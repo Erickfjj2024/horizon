@@ -12,9 +12,51 @@
     {
       "id": "red",
       "texture": "robits:entity/robit_red",
-      "model": "robits:robit_red"
+      "model": "robits:robit_red",
+      "bones": {
+        "leg_left": "robits:robit_red_leg",
+        "leg_right": "robits:robit_red_leg"
+      }
     }
   ],
   "container_slots": 30,
-  "menu": "robits:robit"
+  "menu": "robits:robit",
+  "bones": [
+    {
+      "id": "body",
+      "model": "robits:robit_body",
+      "pivot": [
+        0,
+        0.45,
+        0
+      ]
+    },
+    {
+      "id": "leg_left",
+      "model": "robits:robit_leg",
+      "pivot": [
+        0.15,
+        0.15,
+        0
+      ],
+      "walk": {
+        "axis": "x",
+        "degrees": 40
+      }
+    },
+    {
+      "id": "leg_right",
+      "model": "robits:robit_leg",
+      "pivot": [
+        -0.15,
+        0.15,
+        0
+      ],
+      "walk": {
+        "axis": "x",
+        "degrees": 40,
+        "phase": 180
+      }
+    }
+  ]
 }

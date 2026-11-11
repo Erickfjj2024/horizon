@@ -2,7 +2,10 @@
 //! (`data/<id>/horizon/entity_kind/*.json`, [`crate::content::EntityKind`]), kept with a state of the mod's own (saved bytes, container
 //! slots, energy, skin, name) that outlives the world's save. What a save looks like and how a mod's update applies are here, with
 //! tests; the game's part (spawning, ticking, saving to the world's folder) is `game/mod_entities.rs`.
-use crate::{ModEntityUpdate, ModItemStack, content::EntityKind};
+use crate::{
+    ModEntityUpdate, ModItemStack,
+    content::{BoneAxis, BoneWalk, EntityBone, EntityKind},
+};
 use serde_json::{Value, json};
 
 /// Where the saved entities are, inside the world's folder.
@@ -41,6 +44,10 @@ pub struct ModEntityState {
     pub path: Vec<[f64; 3]>,
     pub path_goal: Option<[f64; 3]>,
     pub path_age: u32,
+    /// Its walk animation (FORK-10 5d), the entities that draw its bones and the angle each was last turned to; not saved.
+    pub walk_anim: WalkAnim,
+    pub bone_carriers: Vec<u32>,
+    pub bone_angles: Vec<f32>,
     /// Steps in a row it could not make along its path: a new path is found after each, and at 3 it stops.
     pub stuck: u8,
     /// The data slots and strings of its menu, as the mod last set them (FORK-10 5b); not saved.
@@ -86,6 +93,9 @@ impl ModEntityState {
             path_goal: None,
             path_age: 0,
             stuck: 0,
+            walk_anim: WalkAnim::default(),
+            bone_carriers: Vec::new(),
+            bone_angles: Vec::new(),
             menu_data: Vec::new(),
             menu_text: Vec::new(),
         }
@@ -151,6 +161,9 @@ pub fn decode(text: &str) -> Vec<ModEntityState> {
                 path_goal: None,
                 path_age: 0,
                 stuck: 0,
+                walk_anim: WalkAnim::default(),
+                bone_carriers: Vec::new(),
+                bone_angles: Vec::new(),
                 menu_data: Vec::new(),
                 menu_text: Vec::new(),
                 items: r["items"]
@@ -202,6 +215,60 @@ pub enum Walk {
     Arrived,
     /// A wall it cannot climb is in the way: it stays and stops.
     Blocked,
+}
+
+/// Vanilla's `WalkAnimationState`: how far the limbs have swung (`position`) and how fast they swing now (`speed`, 0 to 1).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct WalkAnim {
+    pub position: f32,
+    pub speed: f32,
+}
+
+impl WalkAnim {
+    /// One tick after moving `moved` blocks across (`LivingEntity.updateWalkAnimation` then `WalkAnimationState.update`): the speed
+    /// eases 0.4 of the way to `min(moved * 4, 1)`, and the position goes on by the speed.
+    pub fn tick(&mut self, moved: f64) {
+        let target = (moved as f32 * 4.0).min(1.0);
+        self.speed += (target - self.speed) * 0.4;
+        self.position += self.speed;
+    }
+}
+
+/// The angle (degrees) a bone with `walk` is turned to now: vanilla's limb swing, `cos(position * 0.6662 + phase) * speed` of its
+/// `degrees`.
+pub fn bone_angle(walk: &BoneWalk, anim: WalkAnim) -> f32 {
+    walk.degrees * (anim.position * 0.6662 + walk.phase.to_radians()).cos() * anim.speed.min(1.0)
+}
+
+/// What a bone's display shows turned `degrees` about its axis: the translation (its pivot) and the left rotation (a quaternion
+/// `x, y, z, w`), the model turning about its centre.
+pub fn bone_display(bone: &EntityBone, degrees: f32) -> ([f32; 3], [f32; 4]) {
+    let half = degrees.to_radians() / 2.0;
+    let (sin, cos) = (half.sin(), half.cos());
+    let axis = bone.walk.as_ref().map_or(BoneAxis::X, |w| w.axis);
+    let rotation = match axis {
+        BoneAxis::X => [sin, 0.0, 0.0, cos],
+        BoneAxis::Y => [0.0, sin, 0.0, cos],
+        BoneAxis::Z => [0.0, 0.0, sin, cos],
+    };
+    (bone.pivot, rotation)
+}
+
+/// The compound (SNBT) of the `item_display` that draws bone `index` of `kind` with `skin`: the bone's item model (the skin's own for
+/// it, if it has one) at the bone's pivot, still; the first bone carries the `name`.
+pub fn bone_snbt(kind: &EntityKind, skin: &str, index: usize, name: Option<&str>) -> Option<String> {
+    let bone = kind.bones.get(index)?;
+    let model = kind.skins.iter().find(|s| s.id == skin).and_then(|s| s.bones.get(&bone.id)).unwrap_or(&bone.model);
+    let [x, y, z] = bone.pivot;
+    let name = name.filter(|_| index == 0).map_or_else(String::new, |n| {
+        let json = serde_json::to_string(&json!({ "text": n })).unwrap_or_default();
+        format!(",CustomName:'{}',CustomNameVisible:1b", json.replace('\\', "\\\\").replace('\'', "\\'"))
+    });
+    Some(format!(
+        "{{item:{{id:\"minecraft:stick\",count:1,components:{{\"minecraft:item_model\":\"{model}\"}}}},teleport_duration:2,\
+         transformation:{{translation:[{x}f,{y}f,{z}f],left_rotation:[0f,0f,0f,1f],scale:[1f,1f,1f],right_rotation:[0f,0f,0f,1f]}},\
+         Tags:[\"{CARRIER_TAG}\"]{name}}}"
+    ))
 }
 
 /// One tick of walking from `pos` toward `goal` (x and z; the ground decides y) by `step` blocks over ground, with `height` blocks of
@@ -430,12 +497,13 @@ mod tests {
             speed: 0.3,
             persistent: true,
             skins: vec![
-                EntitySkin { id: "default".into(), texture: "robits:entity/robit".into(), model: None },
-                EntitySkin { id: "red".into(), texture: "robits:entity/red".into(), model: None },
+                EntitySkin { id: "default".into(), texture: "robits:entity/robit".into(), model: None, bones: Default::default() },
+                EntitySkin { id: "red".into(), texture: "robits:entity/red".into(), model: None, bones: [("leg_left".to_owned(), "robits:red_leg".to_owned())].into() },
             ],
             container_slots: 3,
             fire_immune: false,
             menu: None,
+            bones: Vec::new(),
         }
     }
 
@@ -583,6 +651,73 @@ mod tests {
         assert!(!needs_path([5.5, 64.0, 5.5], Some([5.0, 64.0, 5.0]), 50), "a goal less than a block away");
         assert!(!needs_path([9.0, 64.0, 5.0], Some([5.0, 64.0, 5.0]), 9), "too soon");
         assert!(needs_path([9.0, 64.0, 5.0], Some([5.0, 64.0, 5.0]), 10));
+    }
+
+    fn legs() -> Vec<EntityBone> {
+        let leg = |id: &str, x: f32, phase: f32| EntityBone {
+            id: id.into(),
+            model: "robits:leg".into(),
+            pivot: [x, 0.15, 0.0],
+            walk: Some(BoneWalk { axis: BoneAxis::X, degrees: 40.0, phase }),
+        };
+        vec![
+            EntityBone { id: "body".into(), model: "robits:body".into(), pivot: [0.0, 0.4, 0.0], walk: None },
+            leg("leg_left", 0.15, 0.0),
+            leg("leg_right", -0.15, 180.0),
+        ]
+    }
+
+    #[test]
+    fn the_walk_animation_eases_in_and_out_as_vanillas_does() {
+        let mut a = WalkAnim::default();
+        // Walking 0.25 a tick or more is full speed (target 1): the speed goes 0.4, 0.64, 0.784...
+        a.tick(0.3);
+        assert_eq!((a.speed, a.position), (0.4, 0.4));
+        a.tick(0.3);
+        assert!((a.speed - 0.64).abs() < 1e-6 && (a.position - 1.04).abs() < 1e-6, "{a:?}");
+        // Slow walking aims lower (0.1 a tick is 0.4), and standing still eases back toward 0 while the position stops gaining.
+        let mut slow = WalkAnim::default();
+        slow.tick(0.1);
+        assert!((slow.speed - 0.16).abs() < 1e-6);
+        for _ in 0..30 {
+            a.tick(0.0);
+        }
+        assert!(a.speed < 1e-5, "{a:?}");
+    }
+
+    #[test]
+    fn the_legs_swing_opposite_and_stand_still_when_it_stops() {
+        let bones = legs();
+        let (left, right) = (bones[1].walk.clone().unwrap(), bones[2].walk.clone().unwrap());
+        // At position 0 and full speed: the left leg is at +40, the right one (half a cycle on) at -40.
+        let full = WalkAnim { position: 0.0, speed: 1.0 };
+        assert!((bone_angle(&left, full) - 40.0).abs() < 1e-4);
+        assert!((bone_angle(&right, full) + 40.0).abs() < 1e-4);
+        // A quarter cycle later (cos = 0) both legs pass the middle; at half speed the swing is half.
+        let quarter = WalkAnim { position: std::f32::consts::FRAC_PI_2 / 0.6662, speed: 1.0 };
+        assert!(bone_angle(&left, quarter).abs() < 1e-3);
+        assert!((bone_angle(&left, WalkAnim { position: 0.0, speed: 0.5 }) - 20.0).abs() < 1e-4);
+        assert_eq!(bone_angle(&left, WalkAnim { position: 3.0, speed: 0.0 }), 0.0);
+        // The display: the leg at its pivot, turned 90 degrees about x (a quaternion of sin and cos of 45).
+        let (at, q) = bone_display(&bones[1], 90.0);
+        assert_eq!(at, [0.15, 0.15, 0.0]);
+        let h = std::f32::consts::FRAC_1_SQRT_2;
+        assert!((q[0] - h).abs() < 1e-6 && q[1] == 0.0 && q[2] == 0.0 && (q[3] - h).abs() < 1e-6, "{q:?}");
+    }
+
+    #[test]
+    fn each_bone_is_a_display_of_its_model_with_the_skins_own_and_the_name_on_the_first() {
+        let mut k = kind();
+        k.bones = legs();
+        assert_eq!(
+            bone_snbt(&k, "default", 0, Some("Bolt")).unwrap(),
+            r#"{item:{id:"minecraft:stick",count:1,components:{"minecraft:item_model":"robits:body"}},teleport_duration:2,transformation:{translation:[0f,0.4f,0f],left_rotation:[0f,0f,0f,1f],scale:[1f,1f,1f],right_rotation:[0f,0f,0f,1f]},Tags:["horizon_mod_entity"],CustomName:'{"text":"Bolt"}',CustomNameVisible:1b}"#
+        );
+        // The red skin draws its own left leg; the name stays on the first bone.
+        let left = bone_snbt(&k, "red", 1, Some("Bolt")).unwrap();
+        assert!(left.contains(r#""minecraft:item_model":"robits:red_leg""#) && !left.contains("CustomName"), "{left}");
+        assert!(bone_snbt(&k, "red", 2, None).unwrap().contains(r#""robits:leg""#));
+        assert_eq!(bone_snbt(&k, "red", 3, None), None);
     }
 
     #[test]

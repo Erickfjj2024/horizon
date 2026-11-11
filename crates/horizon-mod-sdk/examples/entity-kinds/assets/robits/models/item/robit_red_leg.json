@@ -1,0 +1,1 @@
+{"parent": "minecraft:block/cube_all", "textures": {"all": "minecraft:block/redstone_block"}, "display": {"fixed": {"scale": [0.15, 0.3, 0.15]}}}

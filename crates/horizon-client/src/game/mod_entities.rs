@@ -4,7 +4,10 @@
 use super::Game;
 use horizon_mods::{
     content::EntityKind,
-    entity_state::{CARRIER_TAG, FILE, ModEntityState, WALK_FACTOR, Walk, apply, carrier_snbt, decode, encode, follow, hitbox_snbt, needs_path},
+    entity_state::{
+        CARRIER_TAG, FILE, ModEntityState, WALK_FACTOR, Walk, apply, bone_angle, bone_display, bone_snbt, carrier_snbt, decode, encode, follow,
+        hitbox_snbt, needs_path,
+    },
 };
 use std::{collections::HashMap, sync::OnceLock};
 
@@ -73,8 +76,7 @@ impl Game<'_> {
             .list
             .iter()
             .filter(|e| e.id == id && e.dimension == dimension)
-            .flat_map(|e| [e.carrier, e.hitbox])
-            .flatten()
+            .flat_map(|e| [e.carrier, e.hitbox].into_iter().flatten().chain(e.bone_carriers.iter().copied()))
             .collect();
         for c in carriers {
             self.others.retain(|o| o.id != c);
@@ -95,6 +97,7 @@ impl Game<'_> {
         };
         let dim = self.dim.id().to_owned();
         let mut list = std::mem::take(&mut self.mod_entities.list);
+        let before: Vec<[f64; 3]> = list.iter().map(|e| e.pos).collect();
         {
             let w = self.mob_world_base(&[]);
             // A cell's collision top for walking: 0 where it walks through (air, water, an open door, a plant).
@@ -161,6 +164,12 @@ impl Game<'_> {
                 }
             }
         }
+        // FORK-10 5d: the walk animation follows how far each moved across this tick (still ones ease back to rest).
+        for (e, from) in list.iter_mut().zip(before) {
+            if e.dimension == dim {
+                e.walk_anim.tick((e.pos[0] - from[0]).hypot(e.pos[2] - from[2]));
+            }
+        }
         self.mod_entities.list = list;
     }
 
@@ -217,6 +226,16 @@ impl Game<'_> {
             } else if let Some(h) = e.hitbox {
                 let _ = self.native_move_entity(&dim, h, e.pos, e.yaw, 0.0);
             }
+            // FORK-10 5d: a kind with bones shows one display a bone, turned with the walk.
+            if !kind.bones.is_empty() {
+                if let Some(c) = e.carrier {
+                    self.others.retain(|o| o.id != c);
+                    self.persist.raw.remove(&c);
+                    self.mod_entities.list[i].carrier = None;
+                }
+                self.sync_mod_entity_bones(i, kind, &dim);
+                continue;
+            }
             if alive && current {
                 if let Some(c) = e.carrier {
                     let _ = self.native_move_entity(&dim, c, e.pos, e.yaw, 0.0);
@@ -232,6 +251,57 @@ impl Game<'_> {
             entry.carrier = carrier;
             entry.shown = carrier.map(|_| (e.skin, e.name));
         }
+    }
+
+    /// The bones of mod entity `i` (FORK-10 5d): one `item_display` a bone, made again when the skin or the name changes or one is
+    /// gone, moved with the entity, and each swinging bone turned to its walk angle (eased over a tick, sent when it moved half a
+    /// degree or more).
+    fn sync_mod_entity_bones(&mut self, i: usize, kind: &EntityKind, dim: &str) {
+        let e = self.mod_entities.list[i].clone();
+        let alive = e.bone_carriers.len() == kind.bones.len() && e.bone_carriers.iter().all(|c| self.others.iter().any(|o| o.id == *c));
+        let current = Some((e.skin.clone(), e.name.clone())) == e.shown;
+        if !(alive && current) {
+            for c in &e.bone_carriers {
+                self.others.retain(|o| o.id != *c);
+                self.persist.raw.remove(c);
+            }
+            let mut made = Vec::new();
+            for b in 0..kind.bones.len() {
+                let Some(text) = bone_snbt(kind, &e.skin, b, e.name.as_deref()) else { continue };
+                let Ok((horizon_world::nbt::Tag::Compound(compound), _)) = horizon_world::nbt::parse_snbt(&text) else { continue };
+                if let Some(id) = self.native_summon(dim, "minecraft:item_display", e.pos, compound) {
+                    let _ = self.native_move_entity(dim, id, e.pos, e.yaw, 0.0);
+                    made.push(id);
+                }
+            }
+            let entry = &mut self.mod_entities.list[i];
+            entry.shown = (made.len() == kind.bones.len()).then(|| (e.skin.clone(), e.name.clone()));
+            entry.bone_angles = vec![0.0; made.len()];
+            entry.bone_carriers = made;
+            return;
+        }
+        let mut angles = e.bone_angles.clone();
+        angles.resize(kind.bones.len(), 0.0);
+        for (b, (bone, &id)) in kind.bones.iter().zip(&e.bone_carriers).enumerate() {
+            let _ = self.native_move_entity(dim, id, e.pos, e.yaw, 0.0);
+            let Some(walk) = &bone.walk else { continue };
+            let angle = bone_angle(walk, e.walk_anim);
+            if (angle - angles[b]).abs() < 0.5 {
+                continue;
+            }
+            let (translation, left_rotation) = bone_display(bone, angle);
+            let display = super::native_entities::NativeDisplay {
+                translation,
+                left_rotation,
+                interpolation: 1,
+                teleport: 2,
+                ..Default::default()
+            };
+            if self.native_set_display(dim, id, &display) {
+                angles[b] = angle;
+            }
+        }
+        self.mod_entities.list[i].bone_angles = angles;
     }
 
     /// Takes `amount` of health from the mod entity `id`: whether it died of it.
@@ -295,7 +365,8 @@ impl Game<'_> {
                 continue;
             };
             if apply(&mut self.mod_entities.list[i], kind, &u) {
-                self.mod_entities.list.remove(i);
+                // Its displays and its box go with it.
+                self.native_remove_mod_entity(&u.dimension, u.id);
             } else if u.menu_text.is_some() {
                 self.send_mod_entity_menu_text(u.id);
             }

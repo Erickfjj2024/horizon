@@ -2,6 +2,9 @@
 //! `robits:spawn` (a position as three little-endian whole numbers) spawns one; each tick the mod counts in its saved bytes and its
 //! energy, takes the red skin from the second tick, walks a block east from the first, is named Bolt on the third, and removes the robit on the sixth.
 //!
+//! FORK-10 5d: the kind's `bones` draw it as a body and two legs (`assets/robits/items/robit_body.json`, `robit_leg.json`) that
+//! swing opposite while it walks; the red skin has red legs.
+//!
 //! FORK-10 5b: the kind's `menu` (`data/robits/horizon/menu/robit.json`) is the Robit's screen with tabs: main (energy, Follow, Pick
 //! up, Go home, a name box), inventory (slots 0-26), furnace (27 energy, 28 input, 29 output), crafting (virtual 30-38, result 39)
 //! and repair (virtual 40-41, result 42). Follow toggles a flag kept in the second saved byte and shown in the menu's data and

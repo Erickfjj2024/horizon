@@ -83,6 +83,8 @@ pub struct TestGame {
     pub entity_menus: std::collections::BTreeSet<u32>,
     pub entity_menu_text: std::collections::BTreeMap<u32, Vec<String>>,
     pub menu_returned: Vec<String>,
+    /// Each mod entity's walk animation (FORK-10 5d).
+    pub walk_anims: std::collections::BTreeMap<u32, crate::entity_state::WalkAnim>,
     next_mod_entity: u32,
     /// The items lying in the world of the script (FORK-10 f).
     pub dropped: Vec<DroppedSet>,
@@ -326,6 +328,7 @@ impl TestGame {
             entity_menus: std::collections::BTreeSet::new(),
             entity_menu_text: std::collections::BTreeMap::new(),
             menu_returned: Vec::new(),
+            walk_anims: std::collections::BTreeMap::new(),
             entity_kinds: Vec::new(),
             next_mod_entity: 1000,
             dropped: Vec::new(),
@@ -528,6 +531,7 @@ impl TestGame {
         // search (FORK-10 5c) needs its block tables, which a script does not have.
         let world = self.world.clone();
         let solid = |x: i32, y: i32, z: i32| if world.get(&(x, y, z)).is_some_and(|s| !s.starts_with("minecraft:air")) { 1.0 } else { 0.0 };
+        let before: Vec<(u32, [f64; 3])> = self.mod_entities.iter().map(|e| (e.id, [e.x, e.y, e.z])).collect();
         for e in &mut self.mod_entities {
             let Some((goal, mult)) = self.entity_goals.get(&e.id).copied() else { continue };
             let Some(kind) = self.entity_kinds.iter().find(|k| k.id == e.kind) else { continue };
@@ -538,6 +542,11 @@ impl TestGame {
             if r != crate::entity_state::Walk::Moving {
                 self.entity_goals.remove(&e.id);
             }
+        }
+        // The walk animation follows how far each moved across, as the game's does.
+        for e in &self.mod_entities {
+            let from = before.iter().find(|(id, _)| *id == e.id).map_or([e.x, e.y, e.z], |(_, p)| *p);
+            self.walk_anims.entry(e.id).or_default().tick((e.x - from[0]).hypot(e.z - from[2]));
         }
     }
     /// Makes and drops block entities to match `world`, then runs
@@ -1646,6 +1655,8 @@ pub struct Expect {
     entity_menu: Option<Vec<String>>,
     /// Server mods (FORK-10 5b): the menu data and strings of the mod's entities that have any, as `"id data=[v,..] text=a|b"`.
     mod_entity_menu: Option<Vec<String>>,
+    /// Server mods (FORK-10 5d): the angles of the swinging bones of the mod's entities, as `"id bone=degrees,..."` (one decimal).
+    mod_entity_bones: Option<Vec<String>>,
     /// Server mods (FORK-10 5b): what the entity menus closed so far handed back to the player, as `"item*count"`.
     entity_menu_returned: Option<Vec<String>>,
     /// Server mods: every `open-radial-menu`, as `"Name: id=label,id=label current n"`.
@@ -2777,6 +2788,23 @@ impl Step {
                 })
                 .collect();
             same("mod-entity-menu", want, &got)?;
+        }
+        if let Some(want) = &e.mod_entity_bones {
+            let got: Vec<String> = game
+                .mod_entities
+                .iter()
+                .filter_map(|m| {
+                    let kind = game.entity_kinds.iter().find(|k| k.id == m.kind)?;
+                    let anim = game.walk_anims.get(&m.id).copied().unwrap_or_default();
+                    let bones: Vec<String> = kind
+                        .bones
+                        .iter()
+                        .filter_map(|b| Some(format!("{}={:.1}", b.id, crate::entity_state::bone_angle(b.walk.as_ref()?, anim))))
+                        .collect();
+                    (!bones.is_empty()).then(|| format!("{} {}", m.id, bones.join(",")))
+                })
+                .collect();
+            same("mod-entity-bones", want, &got)?;
         }
         if let Some(want) = &e.entity_menu_returned {
             same("entity-menu-returned", want, &game.menu_returned)?;
