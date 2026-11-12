@@ -3622,6 +3622,25 @@ impl recipe_types::Host for State {
         tags.sort();
         tags
     }
+    fn item_energy(&mut self, stack: ModItemStack) -> Option<recipe_types::EnergyInfo> {
+        let spec = crate::item_energy::spec(&stack.item)?;
+        Some(recipe_types::EnergyInfo {
+            stored: crate::item_energy::stored(&stack.components).min(spec.capacity),
+            capacity: spec.capacity,
+            max_insert: spec.max_insert,
+            max_extract: spec.max_extract,
+        })
+    }
+    fn item_energy_insert(&mut self, stack: ModItemStack, amount: u64, simulate: bool) -> (ModItemStack, u64) {
+        let Some(spec) = crate::item_energy::spec(&stack.item) else { return (stack, 0) };
+        let (moved, components) = crate::item_energy::insert(&spec, &stack.components, amount, simulate);
+        (ModItemStack { components, ..stack }, moved)
+    }
+    fn item_energy_extract(&mut self, stack: ModItemStack, amount: u64, simulate: bool) -> (ModItemStack, u64) {
+        let Some(spec) = crate::item_energy::spec(&stack.item) else { return (stack, 0) };
+        let (moved, components) = crate::item_energy::extract(&spec, &stack.components, amount, simulate);
+        (ModItemStack { components, ..stack }, moved)
+    }
     fn item_tag_members(&mut self, tag: String) -> Vec<String> {
         let Ok(slot) = self.recipe_data.lock() else { return Vec::new() };
         let Some(data) = slot.as_ref() else { return Vec::new() };

@@ -921,6 +921,17 @@ A cooking recipe of the game's own kinds (`smelting`, `blasting`, `smoking`, `ca
 | `experience` | `f32` |  |
 | `time` | `u32` | Ticks a furnace takes (`cookingtime`). |
 
+### record `energy-info`
+
+How much energy an item holds (round 4, item 5; NeoForge's item `IEnergyStorage`, in FE).
+
+| Field | Type | |
+| --- | --- | --- |
+| `stored` | `u64` |  |
+| `capacity` | `u64` |  |
+| `max-insert` | `u64` | The most a call moves in, and out. |
+| `max-extract` | `u64` |  |
+
 | Function | Signature | What it does |
 | --- | --- | --- |
 | `recipes-of-type` | `func(kind: string) -> list<custom-recipe>` | The recipes of type `kind` (`mymod:crushing`), in file order, from the content mods and the world's data packs. Empty for a type nobody uses. |
@@ -932,6 +943,9 @@ A cooking recipe of the game's own kinds (`smelting`, `blasting`, `smoking`, `ca
 | `item-max-stack-size` | `func(item: string) -> option<u32>` | How many of `item` fit a stack (`Item.getMaxStackSize`, the `max_stack_size` component); none for an item the game does not know. API 28. |
 | `item-tags` | `func(item: string) -> list<string>` | The item tags `item` is in (`c:ores/iron`, `minecraft:logs`, without the `#`), sorted; empty for an item in none or one the game does not know. The reverse of `ingredient-items` for a tag. API 30. |
 | `item-tag-members` | `func(tag: string) -> list<string>` | The items of the item tag `tag` (`c:ingots/iron`; a leading `#` is taken off) in the game's order (the tag files', nested tags in place, first occurrence kept: what `TagKey` lists and Mekanism's Oredictionificator offers as a filter's results); empty for a tag the game does not have. The reverse of `item-tags`. API 40. |
+| `item-energy` | `func(stack: item-stack) -> option<energy-info>` | The energy of `stack`, of any mod's item whose content declares `"energy"` (the amount is its `horizon:energy` component); none for an item that holds none. API 51. |
+| `item-energy-insert` | `func(stack: item-stack, amount: u64, simulate: bool) -> tuple<item-stack, u64>` | Charges `stack` with up to `amount` (`receiveEnergy`): the stack after (as it was when `simulate`) and the energy it took, as much as its room and its `max-insert` allow; 0 for an item that holds none. The mod puts the stack back where it was. API 51. |
+| `item-energy-extract` | `func(stack: item-stack, amount: u64, simulate: bool) -> tuple<item-stack, u64>` | Drains up to `amount` from `stack` (`extractEnergy`): the stack after and the energy it gave. API 51. |
 
 ## `entities`
 

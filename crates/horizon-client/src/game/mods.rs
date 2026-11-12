@@ -436,6 +436,8 @@ pub(super) static MOD_REDSTONE_EMITTERS: std::sync::OnceLock<std::collections::H
 fn register_menu_types(mods: &[horizon_client::mod_content::ContentMod]) {
     let emitters = mods.iter().flat_map(|m| m.content.blocks.iter()).filter(|b| b.redstone_emitter).map(|b| b.id.clone()).collect();
     let _ = MOD_REDSTONE_EMITTERS.set(emitters);
+    // The mods' items that hold energy, for `recipe-types.item-energy` (round 4, item 5).
+    horizon_mods::item_energy::register(mods.iter().flat_map(|m| m.content.items.iter()).filter_map(|i| Some((i.id.clone(), i.energy?))));
     use horizon_client::containers;
     let menus = horizon_client::mod_content::menu_types(mods);
     let screens = menus

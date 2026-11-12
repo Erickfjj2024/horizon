@@ -1,0 +1,25 @@
+[[step]]
+join = "Alex"
+inventory = ["ebattery:battery*1"]
+
+[[step]]
+# Charging 300: the battery takes 100 a call (a simulation says so first, changing nothing), and its component holds it.
+net = { channel = "ebattery:charge" }
+expect.told = ["Alex: would take 100", "Alex: moved 100: 100/1000 (was 0)"]
+expect.player-items = ['set-slot Alex 0 ebattery:battery*1{"horizon:energy":100L}']
+
+[[step]]
+# Draining 300 from a battery holding 900: 50 a call.
+inventory = ['ebattery:battery*1{"horizon:energy":900L}']
+
+[[step]]
+net = { channel = "ebattery:drain" }
+expect.told = ["Alex: moved 50: 850/1000 (was 900)"]
+
+[[step]]
+# A stick holds none.
+inventory = ["minecraft:stick*1"]
+
+[[step]]
+net = { channel = "ebattery:charge" }
+expect.told = ["Alex: minecraft:stick holds no energy"]

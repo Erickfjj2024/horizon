@@ -361,6 +361,7 @@ impl TestGame {
         {
             self.entity_kinds = content.entity_kinds.clone();
             self.menu_types = content.menu_types.clone();
+            crate::item_energy::register(content.items.iter().filter_map(|i| Some((i.id.clone(), i.energy?))));
         }
         self.mods = Mods::load(std::slice::from_ref(&self.hmod), |_| true, |_| false);
         self.mods.load_world_data(&self.world_data);

@@ -1,0 +1,9 @@
+id = "ebattery"
+name = "Energy Items Demo"
+version = "0.1.0"
+description = "Test mod for energy in items (round 4, item 5): a battery declared in content holds energy any mod reads, charges and drains."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["registries", "players", "recipe-types", "player-items", "net"]
+experimental = ["recipe-types", "player-items", "net"]

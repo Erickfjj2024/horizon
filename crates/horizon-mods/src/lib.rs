@@ -32,6 +32,7 @@ mod runtime;
 #[cfg(feature = "runtime")]
 pub mod testing;
 pub mod world_data;
+pub mod item_energy;
 
 pub use content::Content;
 pub use manifest::{Capability, Manifest, Package, Side, find};

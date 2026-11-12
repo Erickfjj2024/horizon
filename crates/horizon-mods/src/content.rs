@@ -221,6 +221,8 @@ struct ItemFile {
     #[serde(default)]
     components: BTreeMap<String, serde_json::Value>,
     crafting_remainder: Option<String>,
+    #[serde(default)]
+    energy: Option<crate::item_energy::EnergySpec>,
 }
 
 /// An item the mod adds: a vanilla template item's components under a new
@@ -237,6 +239,9 @@ pub struct Item {
     /// What it leaves in the crafting grid (`Item.Properties.craftRemainder`):
     /// a vanilla item or one of the mod's own.
     pub crafting_remainder: Option<String>,
+    /// The energy it holds (round 4, item 5; NeoForge's item `IEnergyStorage`): what any mod reads and moves with
+    /// `recipe-types.item-energy`.
+    pub energy: Option<crate::item_energy::EnergySpec>,
 }
 
 /// `MobEffectCategory`.
@@ -1721,7 +1726,10 @@ impl Content {
                 return Err(format!("{name}: {item} is also a block's item"));
             }
             if let Some(rest) = &file.crafting_remainder {
-                remainders.push((name, rest.clone()));
+                remainders.push((name.clone(), rest.clone()));
+            }
+            if file.energy.is_some_and(|e| e.capacity == 0) {
+                return Err(format!("{name}: energy capacity is above 0"));
             }
             self.items.push(Item {
                 id: item,
@@ -1730,6 +1738,7 @@ impl Content {
                 rarity: file.rarity,
                 components: file.components,
                 crafting_remainder: file.crafting_remainder,
+                energy: file.energy,
             });
         }
         for (effect, name) in effects {
@@ -2122,6 +2131,15 @@ capabilities = ["registries"]
         assert_eq!(content.items[0].rarity, Some(Rarity::Uncommon));
         assert!(content.items[0].components.is_empty());
         assert_eq!(content.items[0].crafting_remainder, None);
+        assert_eq!(content.items[0].energy, None);
+        // An item that holds energy says how much and how fast (round 4, item 5); the rates default to no limit.
+        let battery = br#"{"template": "minecraft:stick", "energy": {"capacity": 1000, "max_insert": 100}}"#;
+        let files: &[(&str, &[u8])] = &[("data/ruby/horizon/item/battery.json", battery)];
+        let spec = hmod("battery", MANIFEST_TEXT, files).unwrap().items[0].energy;
+        assert_eq!(spec, Some(crate::item_energy::EnergySpec { capacity: 1000, max_insert: 100, max_extract: u64::MAX }));
+        let empty = br#"{"template": "minecraft:stick", "energy": {"capacity": 0}}"#;
+        let files: &[(&str, &[u8])] = &[("data/ruby/horizon/item/battery.json", empty)];
+        assert!(hmod("battery-empty", MANIFEST_TEXT, files).unwrap_err().contains("energy capacity is above 0"));
     }
 
     #[test]
