@@ -156,6 +156,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "anvil-probe"
+version = "0.1.0"
+dependencies = [
+ "horizon-mod-sdk",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"

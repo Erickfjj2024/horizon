@@ -616,6 +616,26 @@ pub trait WorldView: std::any::Any + Send {
     fn environment(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<Environment>;
     /// The redstone signal at a mod block entity's position, 0 to 15.
     fn redstone(&self, dimension: &str, x: i32, y: i32, z: i32) -> u8;
+    /// `(damage, max damage)` of a stack that wears out (round 4, item 6); none where it does not or the view does not know.
+    fn item_durability(&self, _stack: &ModItemStack) -> Option<(u32, u32)> {
+        None
+    }
+    /// The stack with its damage set (within its max damage), for one that wears out.
+    fn item_set_damage(&self, _stack: &ModItemStack, _damage: u32) -> Option<ModItemStack> {
+        None
+    }
+    /// `ItemStack.isValidRepairItem`.
+    fn item_repairs_with(&self, _stack: &ModItemStack, _material: &ModItemStack) -> bool {
+        false
+    }
+    /// The stack's enchantments and stored enchantments, with their levels.
+    fn item_enchantments(&self, _stack: &ModItemStack) -> Vec<(String, u32)> {
+        Vec::new()
+    }
+    /// `AnvilMenu.createResult`: the result, its level cost and the materials it uses up.
+    fn anvil_result(&self, _left: &ModItemStack, _right: Option<&ModItemStack>, _name: Option<&str>) -> Option<(ModItemStack, i32, u32)> {
+        None
+    }
     /// The entities with their feet in `min` to `max` of `dimension` (round 4, item 3); none where the view does not know.
     fn entities(&self, _dimension: &str, _min: [f64; 3], _max: [f64; 3]) -> Vec<SeenEntity> {
         Vec::new()
@@ -3640,6 +3660,31 @@ impl recipe_types::Host for State {
         let Some(spec) = crate::item_energy::spec(&stack.item) else { return (stack, 0) };
         let (moved, components) = crate::item_energy::extract(&spec, &stack.components, amount, simulate);
         (ModItemStack { components, ..stack }, moved)
+    }
+    fn item_durability(&mut self, stack: ModItemStack) -> Option<recipe_types::Durability> {
+        let view = self.world.lock().ok()?;
+        let (damage, max_damage) = view.as_ref()?.item_durability(&stack)?;
+        Some(recipe_types::Durability { damage, max_damage })
+    }
+    fn item_set_damage(&mut self, stack: ModItemStack, damage: u32) -> Option<ModItemStack> {
+        let view = self.world.lock().ok()?;
+        view.as_ref()?.item_set_damage(&stack, damage)
+    }
+    fn item_repairs_with(&mut self, stack: ModItemStack, material: ModItemStack) -> bool {
+        let Ok(view) = self.world.lock() else { return false };
+        view.as_ref().is_some_and(|v| v.item_repairs_with(&stack, &material))
+    }
+    fn item_enchantments(&mut self, stack: ModItemStack) -> Vec<(String, u32)> {
+        let Ok(view) = self.world.lock() else { return Vec::new() };
+        view.as_ref().map_or_else(Vec::new, |v| v.item_enchantments(&stack))
+    }
+    fn anvil_result(&mut self, left: ModItemStack, right: Option<ModItemStack>, name: Option<String>) -> Option<recipe_types::AnvilAnswer> {
+        if name.as_ref().is_some_and(|n| n.chars().count() > 50) {
+            return None;
+        }
+        let view = self.world.lock().ok()?;
+        let (result, cost, material_cost) = view.as_ref()?.anvil_result(&left, right.as_ref(), name.as_deref())?;
+        Some(recipe_types::AnvilAnswer { output: result, cost, material_cost })
     }
     fn item_tag_members(&mut self, tag: String) -> Vec<String> {
         let Ok(slot) = self.recipe_data.lock() else { return Vec::new() };

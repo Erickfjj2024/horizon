@@ -104,6 +104,8 @@ pub struct TestGame {
     pub stack_sizes: std::collections::BTreeMap<String, u32>,
     /// The hardness of blocks a script gave.
     pub hardness: std::collections::BTreeMap<String, f32>,
+    /// Items' wear and the anvil's answers a script gave (round 4, item 6).
+    pub item_rules: ItemRules,
     /// The mobs of the Overworld a script set, for capability `entities`.
     pub mobs: Vec<crate::MobInfo>,
     /// The structures last told to the mod, by dimension and group.
@@ -119,7 +121,75 @@ struct ScriptWorld(
     std::collections::BTreeMap<String, f32>,
     Vec<DroppedSet>,
     Vec<crate::SeenEntity>,
+    ItemRules,
 );
+
+/// What a script says of items' wear and anvils (round 4, item 6): max damage by item, the materials that repair each, and the
+/// anvil's answers (`[[anvil]]`).
+#[derive(Clone, Debug, Default)]
+pub struct ItemRules {
+    pub max_damage: std::collections::BTreeMap<String, u32>,
+    pub repairs: std::collections::BTreeMap<String, Vec<String>>,
+    pub anvil: Vec<AnvilSet>,
+}
+
+/// An anvil answer of a script: for these `left`, `right` and `name`, the `result`, its `cost` and its `material_cost`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnvilSet {
+    left: String,
+    #[serde(default)]
+    right: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    result: String,
+    cost: i32,
+    #[serde(default)]
+    material_cost: u32,
+}
+
+/// `minecraft:damage` of a stack's components (0 for none).
+fn damage_of(components: &str) -> u32 {
+    let key = "\"minecraft:damage\":";
+    components.find(key).map_or(0, |i| components[i + key.len()..].chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0))
+}
+
+/// The components with `minecraft:damage` set to `damage`, left out at 0.
+fn with_damage(components: &str, damage: u32) -> String {
+    let key = "\"minecraft:damage\":";
+    let mut parts: Vec<String> = Vec::new();
+    let inner = components.trim().strip_prefix('{').and_then(|c| c.strip_suffix('}')).unwrap_or("");
+    for part in inner.split(',').filter(|p| !p.trim().is_empty()) {
+        if !part.trim().starts_with(key) {
+            parts.push(part.trim().to_owned());
+        }
+    }
+    if damage > 0 {
+        parts.push(format!("{key}{damage}"));
+    }
+    if parts.is_empty() { String::new() } else { format!("{{{}}}", parts.join(",")) }
+}
+
+/// The enchantments of a stack's components (`"minecraft:enchantments":{"id":level,...}`, a book's stored ones too).
+fn enchantments_of(components: &str) -> Vec<(String, u32)> {
+    let mut out = Vec::new();
+    for key in ["\"minecraft:enchantments\":{", "\"minecraft:stored_enchantments\":{"] {
+        let Some(at) = components.find(key) else { continue };
+        let body = &components[at + key.len()..];
+        let body = &body[..body.find('}').unwrap_or(body.len())];
+        for pair in body.split(',') {
+            if let Some((id, level)) = pair.split_once(':').and_then(|(a, b)| {
+                // An id has a colon of its own: split at the last one.
+                let whole = format!("{a}:{b}");
+                let (id, level) = whole.rsplit_once(':')?;
+                Some((id.trim().trim_matches('"').to_owned(), level.trim().parse::<u32>().ok()?))
+            }) {
+                out.push((id, level));
+            }
+        }
+    }
+    out
+}
 
 /// An item lying in the world of a script (`dropped = [...]` of a step): its entity id, stack and position.
 #[derive(Clone, Debug, Deserialize)]
@@ -166,6 +236,25 @@ impl crate::WorldView for ScriptWorld {
         let Some(name) = self.block(dimension, x, y, z) else { return false };
         let base = name.split('[').next().unwrap_or("");
         !base.ends_with(":air") && !matches!(base, "minecraft:water" | "minecraft:lava" | "minecraft:bedrock") && self.block_hardness(dimension, x, y, z).is_some_and(|h| h >= 0.0)
+    }
+    fn item_durability(&self, stack: &crate::ModItemStack) -> Option<(u32, u32)> {
+        let max = *self.7.max_damage.get(&stack.item)?;
+        Some((damage_of(&stack.components).min(max), max))
+    }
+    fn item_set_damage(&self, stack: &crate::ModItemStack, damage: u32) -> Option<crate::ModItemStack> {
+        let max = *self.7.max_damage.get(&stack.item)?;
+        Some(crate::ModItemStack { components: with_damage(&stack.components, damage.min(max)), ..stack.clone() })
+    }
+    fn item_repairs_with(&self, stack: &crate::ModItemStack, material: &crate::ModItemStack) -> bool {
+        self.7.repairs.get(&stack.item).is_some_and(|m| m.contains(&material.item))
+    }
+    fn item_enchantments(&self, stack: &crate::ModItemStack) -> Vec<(String, u32)> {
+        enchantments_of(&stack.components)
+    }
+    fn anvil_result(&self, left: &crate::ModItemStack, right: Option<&crate::ModItemStack>, name: Option<&str>) -> Option<(crate::ModItemStack, i32, u32)> {
+        let shown = |s: &crate::ModItemStack| show_stack(&Some(s.clone()));
+        let a = self.7.anvil.iter().find(|a| a.left == shown(left) && a.right.as_deref() == right.map(shown).as_deref() && a.name.as_deref() == name)?;
+        Some((parse_stack(&a.result)?, a.cost, a.material_cost))
     }
     fn entities(&self, dimension: &str, _min: [f64; 3], _max: [f64; 3]) -> Vec<crate::SeenEntity> {
         if dimension == "minecraft:overworld" { self.6.clone() } else { Vec::new() }
@@ -349,6 +438,7 @@ impl TestGame {
             crafts: Vec::new(),
             stack_sizes: Default::default(),
             hardness: Default::default(),
+            item_rules: ItemRules::default(),
         };
         copy_mod(hmod, &copy)?;
         game.start()?;
@@ -1172,6 +1262,15 @@ pub struct Script {
     /// The destroy time of blocks (`[hardness]`, `"minecraft:stone" = 1.5`); a block not listed is 0.
     #[serde(default)]
     pub hardness: std::collections::BTreeMap<String, f32>,
+    /// Items' max damage (`[max-damage]`, `"minecraft:iron_sword" = 250`): an item not listed does not wear out (round 4, item 6).
+    #[serde(default)]
+    pub max_damage: std::collections::BTreeMap<String, u32>,
+    /// The materials that repair an item (`[repairs]`, `"minecraft:iron_sword" = ["minecraft:iron_ingot"]`).
+    #[serde(default)]
+    pub repairs: std::collections::BTreeMap<String, Vec<String>>,
+    /// The anvil's answers (`[[anvil]]`: `left`, `right`, `name`, `result`, `cost`, `material_cost`).
+    #[serde(default)]
+    pub anvil: Vec<AnvilSet>,
     #[serde(default, rename = "step")]
     pub steps: Vec<Step>,
 }
@@ -1828,6 +1927,7 @@ impl Script {
         game.crafts = self.crafts.clone();
         game.stack_sizes = self.stack_sizes.clone();
         game.hardness = self.hardness.clone();
+        game.item_rules = ItemRules { max_damage: self.max_damage.clone(), repairs: self.repairs.clone(), anvil: self.anvil.clone() };
         if let Some(p) = &mut game.player {
             self.player.apply(p);
         }
@@ -2023,6 +2123,7 @@ impl Step {
                 game.hardness.clone(),
                 game.dropped.clone(),
                 game.seen_entities(),
+                game.item_rules.clone(),
             )));
         if let Some(name) = &self.join {
             game.join(name);
@@ -3167,4 +3268,21 @@ fn same<T: PartialEq + std::fmt::Debug>(what: &str, want: &T, got: &T) -> Result
     Err(format!(
         "{what}\n    expected: {want:?}\n    got:      {got:?}"
     ))
+}
+
+#[cfg(test)]
+mod item_rule_tests {
+    use super::*;
+
+    #[test]
+    fn a_scripts_damage_and_enchantments_read_from_the_components() {
+        assert_eq!(damage_of(r#"{"minecraft:damage":40}"#), 40);
+        assert_eq!(damage_of(""), 0);
+        assert_eq!(with_damage(r#"{"minecraft:damage":40,"minecraft:repair_cost":1}"#, 10), r#"{"minecraft:repair_cost":1,"minecraft:damage":10}"#);
+        assert_eq!(with_damage(r#"{"minecraft:damage":40}"#, 0), "");
+        assert_eq!(
+            enchantments_of(r#"{"minecraft:enchantments":{"minecraft:sharpness":3,"minecraft:unbreaking":1}}"#),
+            [("minecraft:sharpness".to_owned(), 3), ("minecraft:unbreaking".to_owned(), 1)]
+        );
+    }
 }

@@ -932,6 +932,25 @@ How much energy an item holds (round 4, item 5; NeoForge's item `IEnergyStorage`
 | `max-insert` | `u64` | The most a call moves in, and out. |
 | `max-extract` | `u64` |  |
 
+### record `durability`
+
+The wear of a stack that can wear out (`ItemStack.isDamageableItem`: a `max_damage`, not `unbreakable`).
+
+| Field | Type | |
+| --- | --- | --- |
+| `damage` | `u32` |  |
+| `max-damage` | `u32` |  |
+
+### record `anvil-answer`
+
+What an anvil makes of `left` and `right` (`AnvilMenu.createResult`, a player in survival).
+
+| Field | Type | |
+| --- | --- | --- |
+| `output` | `item-stack` | What the result slot shows. |
+| `cost` | `s32` | The levels it costs (the `cost` data slot; 40 and up is "too expensive" in survival). |
+| `material-cost` | `u32` | The items of `right` used up when the result is taken (a repair's materials; 0 uses it all). |
+
 | Function | Signature | What it does |
 | --- | --- | --- |
 | `recipes-of-type` | `func(kind: string) -> list<custom-recipe>` | The recipes of type `kind` (`mymod:crushing`), in file order, from the content mods and the world's data packs. Empty for a type nobody uses. |
@@ -946,6 +965,11 @@ How much energy an item holds (round 4, item 5; NeoForge's item `IEnergyStorage`
 | `item-energy` | `func(stack: item-stack) -> option<energy-info>` | The energy of `stack`, of any mod's item whose content declares `"energy"` (the amount is its `horizon:energy` component); none for an item that holds none. API 51. |
 | `item-energy-insert` | `func(stack: item-stack, amount: u64, simulate: bool) -> tuple<item-stack, u64>` | Charges `stack` with up to `amount` (`receiveEnergy`): the stack after (as it was when `simulate`) and the energy it took, as much as its room and its `max-insert` allow; 0 for an item that holds none. The mod puts the stack back where it was. API 51. |
 | `item-energy-extract` | `func(stack: item-stack, amount: u64, simulate: bool) -> tuple<item-stack, u64>` | Drains up to `amount` from `stack` (`extractEnergy`): the stack after and the energy it gave. API 51. |
+| `item-durability` | `func(stack: item-stack) -> option<durability>` | How worn `stack` is, the game's way; none for one that does not wear out (round 4, item 6). API 52. |
+| `item-set-damage` | `func(stack: item-stack, damage: u32) -> option<item-stack>` | `stack` with its damage set to `damage` (kept within 0 and its `max-damage`, the component left out at 0): how a mod repairs or wears an item; none for one that does not wear out. API 52. |
+| `item-repairs-with` | `func(stack: item-stack, material: item-stack) -> bool` | Whether `material` repairs `stack` in an anvil (`ItemStack.isValidRepairItem`: the item's `repairable` items or tag). API 52. |
+| `item-enchantments` | `func(stack: item-stack) -> list<tuple<string, u32>>` | The enchantments on `stack` (`minecraft:enchantments`, and a book's `minecraft:stored_enchantments`) with their levels. API 52. |
+| `anvil-result` | `func(left: item-stack, right: option<item-stack>, name: option<string>) -> option<anvil-answer>` | `AnvilMenu.createResult` of the game for `left` and `right` and the rename box's text `name` (none leaves the name as it is; "" takes a custom name away): the Robit's repair tab, as a vanilla anvil. None when the anvil shows nothing. API 52. |
 
 ## `entities`
 

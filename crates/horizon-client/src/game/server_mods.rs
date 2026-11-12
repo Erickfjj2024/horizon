@@ -131,6 +131,12 @@ mod run {
         res: Arc<crate::game::Resources>,
     }
     impl LentWorld {
+        /// The game's stack as a mod's (`mod_stack` without the game).
+        fn back(stack: &horizon_client::items::ItemStack) -> horizon_mods::ModItemStack {
+            let tag = horizon_client::save::item_to_nbt(stack);
+            let components = tag.get("components").map(horizon_world::snbt_text::to_snbt).unwrap_or_default();
+            horizon_mods::ModItemStack { item: stack.item.to_string(), count: stack.count, components }
+        }
         /// A mod's stack as the game's (`game_stack` without the game): none for an item it does not know.
         fn stack(&self, s: &horizon_mods::ModItemStack) -> Option<horizon_client::items::ItemStack> {
             let max = self.res.items().get(&s.item).map(|i| i.max_stack)?;
@@ -215,6 +221,54 @@ mod run {
             let f = self.res.facts().get(chunk.block(x & 15, y, z & 15));
             let base = &*f.name;
             !base.ends_with(":air") && !matches!(base, "minecraft:water" | "minecraft:lava") && f.hardness >= 0.0
+        }
+        fn item_durability(&self, stack: &horizon_mods::ModItemStack) -> Option<(u32, u32)> {
+            let s = self.stack(stack)?;
+            let items = self.res.items();
+            horizon_client::stations::is_damageable(items, &s).then(|| {
+                let max = items.get(&s.item).map_or(0, |i| i.max_damage);
+                (s.damage.min(max), max)
+            })
+        }
+        fn item_set_damage(&self, stack: &horizon_mods::ModItemStack, damage: u32) -> Option<horizon_mods::ModItemStack> {
+            let mut s = self.stack(stack)?;
+            let items = self.res.items();
+            if !horizon_client::stations::is_damageable(items, &s) {
+                return None;
+            }
+            s.damage = damage.min(items.get(&s.item).map_or(0, |i| i.max_damage));
+            Some(Self::back(&s))
+        }
+        fn item_repairs_with(&self, stack: &horizon_mods::ModItemStack, material: &horizon_mods::ModItemStack) -> bool {
+            let (Some(s), Some(m)) = (self.stack(stack), self.stack(material)) else { return false };
+            horizon_client::stations::is_valid_repair_item(&self.res.stations().enchantments, self.res.items(), &s, &m)
+        }
+        fn item_enchantments(&self, stack: &horizon_mods::ModItemStack) -> Vec<(String, u32)> {
+            let Some(s) = self.stack(stack) else { return Vec::new() };
+            s.data()
+                .map(|d| d.enchantments.iter().chain(&d.stored_enchantments).map(|(id, l)| (id.to_string(), *l)).collect())
+                .unwrap_or_default()
+        }
+        fn anvil_result(
+            &self,
+            left: &horizon_mods::ModItemStack,
+            right: Option<&horizon_mods::ModItemStack>,
+            name: Option<&str>,
+        ) -> Option<(horizon_mods::ModItemStack, i32, u32)> {
+            let left = self.stack(left)?;
+            let right = right.and_then(|r| self.stack(r));
+            // The rename box starts with the item's name: its custom name or item name; with none a given name renames it.
+            let hover = left.custom_name().or_else(|| left.item_name()).unwrap_or_default();
+            let a = horizon_client::stations::anvil_result(
+                &self.res.stations().enchantments,
+                self.res.items(),
+                Some(&left),
+                right.as_ref(),
+                name,
+                &hover,
+                false,
+            );
+            Some((Self::back(a.result.as_ref()?), a.cost, a.repair_item_count_cost))
         }
         fn entities(&self, dimension: &str, min: [f64; 3], max: [f64; 3]) -> Vec<horizon_mods::SeenEntity> {
             if dimension != self.dimension {

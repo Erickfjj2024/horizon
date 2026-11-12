@@ -1,0 +1,9 @@
+id = "anvilprobe"
+name = "Anvil Probe"
+version = "0.1.0"
+description = "Test mod for item wear, repair, enchantments and the anvil (round 4, item 6): a message reads the first two slots and says what an anvil makes of them."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "recipe-types", "player-items", "net"]
+experimental = ["recipe-types", "player-items", "net"]
