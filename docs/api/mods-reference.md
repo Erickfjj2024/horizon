@@ -696,76 +696,6 @@ One choice of a radial menu.
 | `open-player-menu` | `func(player: string, menu: string) -> bool` | Opens menu type `menu` of the mod for one player with no item behind it (Mekanism's Module Tweaker, opened by a key): as `open-item-menu` in all else, its `item-menu` has `slot` 4294967295 and no `stack`, it closes only when the player or the mod closes it, and a `textfield`'s message carries `(i32::MIN, 1, -1)`. True when asked; false for a player who is not online or a menu of another mod. API 53. |
 | `broadcast` | `func(text: string)` | A system message to every player and the server's log, after the mod's name. Counts toward the same 8 per call. |
 
-## `world`
-
-Access: capability `world`.
-
-Capability `world`, server mods only (manifest `api = "0.3"`, experimental): the blocks of the server's loaded chunks, and changes to them through the server's own block updates.
-
-### record `block-change`
-
-| Field | Type | |
-| --- | --- | --- |
-| `x` | `s32` |  |
-| `y` | `s32` |  |
-| `z` | `s32` |  |
-| `state` | `string` | `minecraft:oak_log[axis=y]`; properties left out take the block's defaults, `minecraft:stone` alone is the default state. |
-
-### record `environment`
-
-The sky and weather where a position is: what a solar panel or a wind turbine reads.
-
-| Field | Type | |
-| --- | --- | --- |
-| `day-time` | `u64` | The ticks of the day, 0 to 23999 (0 is 6:00). |
-| `rain` | `f32` | How hard it rains and how hard it thunders in the dimension, 0 to 1 (the dimension has no weather but the overworld). |
-| `thunder` | `f32` |  |
-| `temperature` | `f32` | The biome's temperature and downfall, and whether it rains or snows in it. |
-| `downfall` | `f32` |  |
-| `precipitation` | `bool` |  |
-| `has-skylight` | `bool` | Whether the dimension has a sky (the overworld). |
-
-### record `collision-box`
-
-One collision box of a block, in blocks, relative to the block's own corner (a full cube is `0,0,0` to `1,1,1`).
-
-| Field | Type | |
-| --- | --- | --- |
-| `min-x` | `f64` |  |
-| `min-y` | `f64` |  |
-| `min-z` | `f64` |  |
-| `max-x` | `f64` |  |
-| `max-y` | `f64` |  |
-| `max-z` | `f64` |  |
-
-| Function | Signature | What it does |
-| --- | --- | --- |
-| `get-block` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<string>` | The block state at a position in a dimension (`minecraft:overworld`, ...), as `minecraft:oak_log[axis=y]`, as of this call: none where the server has no chunk loaded there. |
-| `get-biome` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<string>` | The biome at a position (`minecraft:plains`, ...), as the server stores it (one per 4 x 4 x 4 cell): none where no chunk is loaded. |
-| `get-environment` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<environment>` | The sky and weather at a position, as of this call: none where no chunk is loaded. |
-| `get-redstone` | `func(dimension: string, x: s32, y: s32, z: s32) -> u8` | The redstone signal reaching a block of the mod that carries a block entity, 0 to 15 (the strongest of the six neighbours, what a dispenser reads), as of the start of this tick: 0 for any other position. |
-| `set-energy-capacity` | `func(dimension: string, x: s32, y: s32, z: s32, capacity: u64) -> result<_, string>` | Sets how much energy a block entity of the mod holds at most, in place of its kind's `energy.capacity` (a machine whose upgrades raise it): 0 gives the kind's back. What it holds above the new capacity is lost. |
-| `get-collision` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<list<collision-box>>` | The collision boxes of the block at a position, as an entity bumps into them (an empty list for air, grass or a carpet's top: none): none where the server has no chunk loaded there. |
-| `set-blocks` | `func(dimension: string, blocks: list<block-change>) -> result<_, string>` | Sets blocks as `/setblock` does: the old block entity removed, neighbours and shapes updated, light, and every player told. Every state is checked now (an error queues nothing); the changes are made in order after this call returns, before that dimension's next tick; one in a chunk not loaded then is skipped. At most 4096 per call. |
-| `set-block-property` | `func(dimension: string, x: s32, y: s32, z: s32, property: string, value: string) -> result<_, string>` | Sets one property of the block at a position (`lit`, `facing`) to a value, as a furnace's tick sets its `lit`: neighbours and players are told, and the block entity **stays** (a block set with `set-blocks` loses it). Made after this call returns, before the dimension's next tick; nothing happens for a block with no such property or value, or one already set. At most 4096 per call. |
-| `set-item-faces` | `func(dimension: string, x: s32, y: s32, z: s32, faces: list<list<u32>>) -> result<_, string>` | Sets which slots of the block entity's container each face reaches: the six lists are down, up, north, south, west, east, each of slot numbers (0 to 31). A hopper or dropper put through a face uses its list, as it would the kind's own `faces`, which this replaces for that one entity (kept with it). Made after this call returns; nothing happens for a block with no mod container. API 17. |
-| `set-capabilities-enabled` | `func(dimension: string, x: s32, y: s32, z: s32, items: bool, fluids: bool, energy: bool) -> result<_, string>` | Closes or opens, for everything outside the block entity (hoppers and droppers, pipes, tubes and cables, other machines), the three kinds of capability it carries: its `items` container, its `fluids` (tanks) and its `energy`. A closed capability gives and takes nothing through any face, whatever the faces say; the contents, the faces and the mod's own reads and writes are untouched, so a structure that becomes valid again finds everything where it was. All three are open until closed. Kept with the entity. Made after this call returns; nothing happens for a block that is not a mod's block entity. API 24. |
-| `break-blocks` | `func(dimension: string, positions: list<tuple<s32, s32, s32>>, tool: string, silk-touch: bool, fortune: u32) -> result<u32, string>` | Breaks up to 4096 blocks as a player holding `tool` would (the Meka-Tool's vein mining and blasting; FORK-34's `mine-block` for many blocks): each loaded block that is not air, a fluid or unbreakable (negative hardness; bedrock, barriers, portals, command blocks) is replaced by air and its drops, worked out with the tool (`silk-touch`, `fortune` 0 to 3 as its enchantments), fall at its place. Returns how many blocks it will break, counted at the call; they are broken after the call returns. The tool is not worn, no experience is given, and protection (spawn, adventure mode) is not asked: the mod checks what it needs. API 39. |
-| `set-comparator-output` | `func(dimension: string, x: s32, y: s32, z: s32, level: u8) -> result<_, string>` | Sets the signal a comparator reads from the mod's block entity at the position, 0 to 15 (`getAnalogOutputSignal`: Mekanism's tanks, bins and multiblock valves give the fill level), instead of the one its container gives; the comparators around are told. Kept with the entity. Made after this call returns; nothing happens for a block that is not a mod's block entity. A level past 15 is 15. API 38. |
-| `block-hardness` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<f32>` | The block's destroy time (`BlockBehaviour.defaultDestroyTime`, what a pickaxe's speed is divided into; 0 for air and plants, 1.5 for stone, 50 for obsidian), negative for what cannot be broken (bedrock is -1); none where no chunk of the dimension is loaded. A mod that bills energy by hardness (the Laser Tractor Beam, 100 000 J a point) reads it. API 35. |
-| `set-redstone-output` | `func(dimension: string, x: s32, y: s32, z: s32, level: u8, strong: bool) -> result<_, string>` | Sets the redstone signal the mod's block at the position gives, 0 to 15 (round 4, item 4; Mekanism's `AttributeRedstoneEmitter`: the laser amplifier, the logic adapters, the alarms' readers): to every side, and with `strong` it also powers the blocks it touches through them (`getDirectSignal`), as a lever does. Only a block whose content says `"redstone_emitter": true` and that has a block entity gives it; it is kept with the block entity (saved), and the blocks around are updated when it changes. Made after the call; an error past 256 a call. API 50. |
-| `set-menu-text` | `func(dimension: string, x: s32, y: s32, z: s32, texts: list<string>) -> result<_, string>` | Sets the strings the menu of the block entity at the position carries (FORK-20): up to 64, each up to 256 bytes of text, kept with the entity. A screen's `text` widget with `text_data: n` shows string `n`; the clients that have the menu open get them when they change and when they open it. Made after this call returns; nothing happens for a block that is not a mod's block entity. An error for more than 64 strings or one over 256 bytes. API 34. |
-| `spawn-particles` | `func(dimension: string, particle: string, x: f64, y: f64, z: f64, spread-x: f32, spread-y: f32, spread-z: f32, speed: f32, count: u32, color: option<u32>, scale: f32, max-distance: f32) -> result<_, string>` | Shows a particle to the players of `dimension` within `max-distance` blocks (at most 128) of `x y z`, as `/particle` does: `ServerLevel.sendParticles`. `particle` is a vanilla particle type (`minecraft:happy_villager`, `minecraft:dust`) or the mod's own (`mymod:spark`, from its `assets/<id>/particles/`). `spread-*` is the box the `count` particles (1 to 512) scatter over, `speed` how fast they move; `color` (0xRRGGBB) and `scale` are the options of `minecraft:dust` and the spell particles. Made after this call returns, at most 1024 requests a call. An error (nothing shown) for a particle the game does not know or numbers that are not finite. API 26. |
-| `pull-items` | `func(dimension: string, x: s32, y: s32, z: s32, face: u32, items: list<string>, max: u32) -> result<_, string>` | Pulls items out of the container beside the block entity, on its face `face` (0 to 5: down, up, north, south, west, east), into the block entity's own container through that same face: up to `max` items of the ids in `items` (any when empty), the ones the other container lets out through its side toward this block and this one lets in. Once, after this call returns; a Mekanism sorter calls it every few ticks. API 22. |
-| `mine-block` | `func(dimension: string, x: s32, y: s32, z: s32, tool: string, silk-touch: bool, to-x: s32, to-y: s32, to-z: s32, face: u32) -> result<_, string>` | Breaks the block at a position as a player with `tool` (an item id, say `minecraft:netherite_pickaxe`; with `silk-touch` it carries Silk Touch) would, rolls its drops, and puts them in the container at (`to-x`, `to-y`, `to-z`) through that block's face `face` (0 to 5: down, up, north, south, west, east); what does not fit drops where the block was. Nothing happens for air, liquids and unbreakable blocks. Once, after this call returns; at most 64 a call. API 23. |
-| `pack-block` | `func(dimension: string, x: s32, y: s32, z: s32, into-x: s32, into-y: s32, into-z: s32, replacement: option<string>) -> result<_, string>` | Packs the block at `x y z`, whatever it is (its state and its block entity as the game saves it: slots, energy, a custom name, a mod's bytes), into the block entity of the mod at `into-x into-y into-z` (Mekanism's cardboard box), and takes it away without a drop or a spill, as `removeBlockEntity` then `removeBlock` do. The box keeps it with its own data, so an item of the box that keeps its data (`keep-data`) carries it. Nothing happens (an error) for air, a block the game cannot take away, or when `into` is not a block entity of a mod, or already holds one. `replacement` is the state (`mymod:box`) put where the block was, as Mekanism's box takes the place of what it packs; `into` may then be the same position (the replacement's own block entity keeps it), or none leaves air there. Once, after this call returns. API 32. |
-| `unpack-block` | `func(dimension: string, box-x: s32, box-y: s32, box-z: s32, x: s32, y: s32, z: s32) -> result<_, string>` | Puts back what the box at `box-x box-y box-z` holds, at `x y z`: the block's state and its block entity as they were packed, replacing whatever is there; the box is empty again. Once, after this call returns. An error for a box that holds nothing or a position not loaded. API 32. |
-| `set-item-eject` | `func(dimension: string, x: s32, y: s32, z: s32, on: bool) -> result<_, string>` | Turns on or off the block entity pushing items out: every 10 ticks, from the slots of the kind's `outputs` that a face reaches, into the container beside that face (a chest, a hopper, another machine), as Mekanism's machines do with auto-eject on. Kept with the entity. Made after this call returns. API 17. |
-| `set-item-eject-color` | `func(dimension: string, x: s32, y: s32, z: s32, color: option<u8>) -> result<_, string>` | The colour the block entity's ejected items carry into an item network (Mekanism's Transporter Config: one of the 18 transporter colours, 0 to 17; none for no colour). A coloured stack goes only through plain transporters and those of its colour, and a plain one through plain transporters only (`set-transmitter-color`). It counts only while ejection is on (`set-item-eject`). Kept with the entity. An error for a colour past 17. API 54. |
-| `set-item-strict-input` | `func(dimension: string, x: s32, y: s32, z: s32, strict: bool) -> result<_, string>` | Strict input (Mekanism's Transporter Config): the block entity takes items from an item network only when their colour is its own eject colour (none takes plain stacks alone). Only while its ejection is on; other ways of putting items in (a hopper, a player) are not checked. Kept with the entity. API 54. |
-| `set-transmitter-color` | `func(dimension: string, x: s32, y: s32, z: s32, color: option<u8>) -> result<_, string>` | Paints an item transmitter (a kind with `transmitter` of medium items, Mekanism's logistical transporter): 0 to 17, none for plain. A painted one carries stacks of its colour alone, a plain one carries any colour (Mekanism's `TransporterPathfinder`). Kept with the entity. An error for a colour past 17. API 54. |
-| `set-tank-filter` | `func(dimension: string, x: s32, y: s32, z: s32, tank: u32, accepts: list<string>) -> result<_, string>` | Limits what the block entity's tank number `tank` takes in from neighbouring tanks and transmitters: only these substances (`mymod:oxygen`); an empty list takes any again (the kind's default). What the mod puts in the tank itself is not checked. Kept with the entity. Made after this call returns. API 18. |
-
 ## `player-control`
 
 Access: capability `player-control`.
@@ -885,6 +815,91 @@ An item stack. `components` is the SNBT of its data components (`{"minecraft:dam
 | `count` | `u32` |  |
 | `components` | `string` |  |
 
+### record `grid-entry`
+
+One entry of a menu's item grid (an `item_grid` widget, Mekanism's QIO catalogue): an item type and how many, past a stack's size (up to 2^64).
+
+| Field | Type | |
+| --- | --- | --- |
+| `item` | `string` |  |
+| `components` | `string` |  |
+| `count` | `u64` |  |
+
+
+## `world`
+
+Access: capability `world`.
+
+Capability `world`, server mods only (manifest `api = "0.3"`, experimental): the blocks of the server's loaded chunks, and changes to them through the server's own block updates.
+
+### type `grid-entry`
+
+`type grid-entry = grid-entry`
+
+### record `block-change`
+
+| Field | Type | |
+| --- | --- | --- |
+| `x` | `s32` |  |
+| `y` | `s32` |  |
+| `z` | `s32` |  |
+| `state` | `string` | `minecraft:oak_log[axis=y]`; properties left out take the block's defaults, `minecraft:stone` alone is the default state. |
+
+### record `environment`
+
+The sky and weather where a position is: what a solar panel or a wind turbine reads.
+
+| Field | Type | |
+| --- | --- | --- |
+| `day-time` | `u64` | The ticks of the day, 0 to 23999 (0 is 6:00). |
+| `rain` | `f32` | How hard it rains and how hard it thunders in the dimension, 0 to 1 (the dimension has no weather but the overworld). |
+| `thunder` | `f32` |  |
+| `temperature` | `f32` | The biome's temperature and downfall, and whether it rains or snows in it. |
+| `downfall` | `f32` |  |
+| `precipitation` | `bool` |  |
+| `has-skylight` | `bool` | Whether the dimension has a sky (the overworld). |
+
+### record `collision-box`
+
+One collision box of a block, in blocks, relative to the block's own corner (a full cube is `0,0,0` to `1,1,1`).
+
+| Field | Type | |
+| --- | --- | --- |
+| `min-x` | `f64` |  |
+| `min-y` | `f64` |  |
+| `min-z` | `f64` |  |
+| `max-x` | `f64` |  |
+| `max-y` | `f64` |  |
+| `max-z` | `f64` |  |
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `get-block` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<string>` | The block state at a position in a dimension (`minecraft:overworld`, ...), as `minecraft:oak_log[axis=y]`, as of this call: none where the server has no chunk loaded there. |
+| `get-biome` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<string>` | The biome at a position (`minecraft:plains`, ...), as the server stores it (one per 4 x 4 x 4 cell): none where no chunk is loaded. |
+| `get-environment` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<environment>` | The sky and weather at a position, as of this call: none where no chunk is loaded. |
+| `get-redstone` | `func(dimension: string, x: s32, y: s32, z: s32) -> u8` | The redstone signal reaching a block of the mod that carries a block entity, 0 to 15 (the strongest of the six neighbours, what a dispenser reads), as of the start of this tick: 0 for any other position. |
+| `set-energy-capacity` | `func(dimension: string, x: s32, y: s32, z: s32, capacity: u64) -> result<_, string>` | Sets how much energy a block entity of the mod holds at most, in place of its kind's `energy.capacity` (a machine whose upgrades raise it): 0 gives the kind's back. What it holds above the new capacity is lost. |
+| `get-collision` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<list<collision-box>>` | The collision boxes of the block at a position, as an entity bumps into them (an empty list for air, grass or a carpet's top: none): none where the server has no chunk loaded there. |
+| `set-blocks` | `func(dimension: string, blocks: list<block-change>) -> result<_, string>` | Sets blocks as `/setblock` does: the old block entity removed, neighbours and shapes updated, light, and every player told. Every state is checked now (an error queues nothing); the changes are made in order after this call returns, before that dimension's next tick; one in a chunk not loaded then is skipped. At most 4096 per call. |
+| `set-block-property` | `func(dimension: string, x: s32, y: s32, z: s32, property: string, value: string) -> result<_, string>` | Sets one property of the block at a position (`lit`, `facing`) to a value, as a furnace's tick sets its `lit`: neighbours and players are told, and the block entity **stays** (a block set with `set-blocks` loses it). Made after this call returns, before the dimension's next tick; nothing happens for a block with no such property or value, or one already set. At most 4096 per call. |
+| `set-item-faces` | `func(dimension: string, x: s32, y: s32, z: s32, faces: list<list<u32>>) -> result<_, string>` | Sets which slots of the block entity's container each face reaches: the six lists are down, up, north, south, west, east, each of slot numbers (0 to 31). A hopper or dropper put through a face uses its list, as it would the kind's own `faces`, which this replaces for that one entity (kept with it). Made after this call returns; nothing happens for a block with no mod container. API 17. |
+| `set-capabilities-enabled` | `func(dimension: string, x: s32, y: s32, z: s32, items: bool, fluids: bool, energy: bool) -> result<_, string>` | Closes or opens, for everything outside the block entity (hoppers and droppers, pipes, tubes and cables, other machines), the three kinds of capability it carries: its `items` container, its `fluids` (tanks) and its `energy`. A closed capability gives and takes nothing through any face, whatever the faces say; the contents, the faces and the mod's own reads and writes are untouched, so a structure that becomes valid again finds everything where it was. All three are open until closed. Kept with the entity. Made after this call returns; nothing happens for a block that is not a mod's block entity. API 24. |
+| `break-blocks` | `func(dimension: string, positions: list<tuple<s32, s32, s32>>, tool: string, silk-touch: bool, fortune: u32) -> result<u32, string>` | Breaks up to 4096 blocks as a player holding `tool` would (the Meka-Tool's vein mining and blasting; FORK-34's `mine-block` for many blocks): each loaded block that is not air, a fluid or unbreakable (negative hardness; bedrock, barriers, portals, command blocks) is replaced by air and its drops, worked out with the tool (`silk-touch`, `fortune` 0 to 3 as its enchantments), fall at its place. Returns how many blocks it will break, counted at the call; they are broken after the call returns. The tool is not worn, no experience is given, and protection (spawn, adventure mode) is not asked: the mod checks what it needs. API 39. |
+| `set-comparator-output` | `func(dimension: string, x: s32, y: s32, z: s32, level: u8) -> result<_, string>` | Sets the signal a comparator reads from the mod's block entity at the position, 0 to 15 (`getAnalogOutputSignal`: Mekanism's tanks, bins and multiblock valves give the fill level), instead of the one its container gives; the comparators around are told. Kept with the entity. Made after this call returns; nothing happens for a block that is not a mod's block entity. A level past 15 is 15. API 38. |
+| `block-hardness` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<f32>` | The block's destroy time (`BlockBehaviour.defaultDestroyTime`, what a pickaxe's speed is divided into; 0 for air and plants, 1.5 for stone, 50 for obsidian), negative for what cannot be broken (bedrock is -1); none where no chunk of the dimension is loaded. A mod that bills energy by hardness (the Laser Tractor Beam, 100 000 J a point) reads it. API 35. |
+| `set-redstone-output` | `func(dimension: string, x: s32, y: s32, z: s32, level: u8, strong: bool) -> result<_, string>` | Sets the redstone signal the mod's block at the position gives, 0 to 15 (round 4, item 4; Mekanism's `AttributeRedstoneEmitter`: the laser amplifier, the logic adapters, the alarms' readers): to every side, and with `strong` it also powers the blocks it touches through them (`getDirectSignal`), as a lever does. Only a block whose content says `"redstone_emitter": true` and that has a block entity gives it; it is kept with the block entity (saved), and the blocks around are updated when it changes. Made after the call; an error past 256 a call. API 50. |
+| `set-menu-grid` | `func(dimension: string, x: s32, y: s32, z: s32, entries: list<grid-entry>) -> result<_, string>` | Sets the entries the `item_grid` widget of the menu of the block entity at the position shows (up to 4096, the rest left out), in the order the mod gives them (its sort and its search filter, read from the menu's `textfield`): to the players with that menu open now, and kept while the game runs (not saved) for a player who opens it later. Made after the call; an error past 8 a call. API 55. |
+| `set-menu-text` | `func(dimension: string, x: s32, y: s32, z: s32, texts: list<string>) -> result<_, string>` | Sets the strings the menu of the block entity at the position carries (FORK-20): up to 64, each up to 256 bytes of text, kept with the entity. A screen's `text` widget with `text_data: n` shows string `n`; the clients that have the menu open get them when they change and when they open it. Made after this call returns; nothing happens for a block that is not a mod's block entity. An error for more than 64 strings or one over 256 bytes. API 34. |
+| `spawn-particles` | `func(dimension: string, particle: string, x: f64, y: f64, z: f64, spread-x: f32, spread-y: f32, spread-z: f32, speed: f32, count: u32, color: option<u32>, scale: f32, max-distance: f32) -> result<_, string>` | Shows a particle to the players of `dimension` within `max-distance` blocks (at most 128) of `x y z`, as `/particle` does: `ServerLevel.sendParticles`. `particle` is a vanilla particle type (`minecraft:happy_villager`, `minecraft:dust`) or the mod's own (`mymod:spark`, from its `assets/<id>/particles/`). `spread-*` is the box the `count` particles (1 to 512) scatter over, `speed` how fast they move; `color` (0xRRGGBB) and `scale` are the options of `minecraft:dust` and the spell particles. Made after this call returns, at most 1024 requests a call. An error (nothing shown) for a particle the game does not know or numbers that are not finite. API 26. |
+| `pull-items` | `func(dimension: string, x: s32, y: s32, z: s32, face: u32, items: list<string>, max: u32) -> result<_, string>` | Pulls items out of the container beside the block entity, on its face `face` (0 to 5: down, up, north, south, west, east), into the block entity's own container through that same face: up to `max` items of the ids in `items` (any when empty), the ones the other container lets out through its side toward this block and this one lets in. Once, after this call returns; a Mekanism sorter calls it every few ticks. API 22. |
+| `mine-block` | `func(dimension: string, x: s32, y: s32, z: s32, tool: string, silk-touch: bool, to-x: s32, to-y: s32, to-z: s32, face: u32) -> result<_, string>` | Breaks the block at a position as a player with `tool` (an item id, say `minecraft:netherite_pickaxe`; with `silk-touch` it carries Silk Touch) would, rolls its drops, and puts them in the container at (`to-x`, `to-y`, `to-z`) through that block's face `face` (0 to 5: down, up, north, south, west, east); what does not fit drops where the block was. Nothing happens for air, liquids and unbreakable blocks. Once, after this call returns; at most 64 a call. API 23. |
+| `pack-block` | `func(dimension: string, x: s32, y: s32, z: s32, into-x: s32, into-y: s32, into-z: s32, replacement: option<string>) -> result<_, string>` | Packs the block at `x y z`, whatever it is (its state and its block entity as the game saves it: slots, energy, a custom name, a mod's bytes), into the block entity of the mod at `into-x into-y into-z` (Mekanism's cardboard box), and takes it away without a drop or a spill, as `removeBlockEntity` then `removeBlock` do. The box keeps it with its own data, so an item of the box that keeps its data (`keep-data`) carries it. Nothing happens (an error) for air, a block the game cannot take away, or when `into` is not a block entity of a mod, or already holds one. `replacement` is the state (`mymod:box`) put where the block was, as Mekanism's box takes the place of what it packs; `into` may then be the same position (the replacement's own block entity keeps it), or none leaves air there. Once, after this call returns. API 32. |
+| `unpack-block` | `func(dimension: string, box-x: s32, box-y: s32, box-z: s32, x: s32, y: s32, z: s32) -> result<_, string>` | Puts back what the box at `box-x box-y box-z` holds, at `x y z`: the block's state and its block entity as they were packed, replacing whatever is there; the box is empty again. Once, after this call returns. An error for a box that holds nothing or a position not loaded. API 32. |
+| `set-item-eject` | `func(dimension: string, x: s32, y: s32, z: s32, on: bool) -> result<_, string>` | Turns on or off the block entity pushing items out: every 10 ticks, from the slots of the kind's `outputs` that a face reaches, into the container beside that face (a chest, a hopper, another machine), as Mekanism's machines do with auto-eject on. Kept with the entity. Made after this call returns. API 17. |
+| `set-item-eject-color` | `func(dimension: string, x: s32, y: s32, z: s32, color: option<u8>) -> result<_, string>` | The colour the block entity's ejected items carry into an item network (Mekanism's Transporter Config: one of the 18 transporter colours, 0 to 17; none for no colour). A coloured stack goes only through plain transporters and those of its colour, and a plain one through plain transporters only (`set-transmitter-color`). It counts only while ejection is on (`set-item-eject`). Kept with the entity. An error for a colour past 17. API 54. |
+| `set-item-strict-input` | `func(dimension: string, x: s32, y: s32, z: s32, strict: bool) -> result<_, string>` | Strict input (Mekanism's Transporter Config): the block entity takes items from an item network only when their colour is its own eject colour (none takes plain stacks alone). Only while its ejection is on; other ways of putting items in (a hopper, a player) are not checked. Kept with the entity. API 54. |
+| `set-transmitter-color` | `func(dimension: string, x: s32, y: s32, z: s32, color: option<u8>) -> result<_, string>` | Paints an item transmitter (a kind with `transmitter` of medium items, Mekanism's logistical transporter): 0 to 17, none for plain. A painted one carries stacks of its colour alone, a plain one carries any colour (Mekanism's `TransporterPathfinder`). Kept with the entity. An error for a colour past 17. API 54. |
+| `set-tank-filter` | `func(dimension: string, x: s32, y: s32, z: s32, tank: u32, accepts: list<string>) -> result<_, string>` | Limits what the block entity's tank number `tank` takes in from neighbouring tanks and transmitters: only these substances (`mymod:oxygen`); an empty list takes any again (the kind's default). What the mod puts in the tank itself is not checked. Kept with the entity. Made after this call returns. API 18. |
 
 ## `recipe-types`
 
@@ -1125,6 +1140,10 @@ What the server calls in a server mod (manifest `api = "0.3"`, experimental). On
 ### type `item-stack`
 
 `type item-stack = item-stack`
+
+### type `grid-entry`
+
+`type grid-entry = grid-entry`
 
 ### record `damage-source`
 
@@ -1402,6 +1421,27 @@ What the mod changes in an open item menu; a none leaves that as it is.
 | `menu-data` | `option<list<s32>>` | Its data slots (16 bits each on the wire, up to 256). |
 | `menu-text` | `option<list<string>>` | Its strings (up to 64 of up to 256 bytes): a `text` widget with `text_data: n` shows string `n`. |
 | `close` | `bool` | Closes it (its slots' items go back to the player). |
+| `menu-grid` | `option<list<grid-entry>>` | What its `item_grid` shows (up to 4096 entries), API 55; none leaves it. |
+
+### record `grid-target`
+
+The menu whose item grid a player pressed (`menu-grid-click`): its type and, for a block's, where the block is; for an item menu, the player's slot it is over (4294967295 for `open-player-menu`'s).
+
+| Field | Type | |
+| --- | --- | --- |
+| `menu` | `string` |  |
+| `dimension` | `string` |  |
+| `pos` | `option<block-pos>` |  |
+| `slot` | `option<u32>` |  |
+
+### record `grid-answer`
+
+What a press on a grid cell does to the player's stacks: the cursor's stack after it, and stacks to put in the player's inventory (what does not fit falls at their feet), as a shift-click's.
+
+| Field | Type | |
+| --- | --- | --- |
+| `carried` | `option<item-stack>` |  |
+| `to-inventory` | `list<item-stack>` |  |
 
 ### record `mod-entity-update`
 
@@ -1458,6 +1498,7 @@ New bytes and slots for the block entity at `pos` in `dimension`.
 | `mod-entity-damaged` | `func(entity: mod-entity, source: damage-source, amount: f32) -> f32` | One of the mod's own entities is about to take `amount` damage from `source` (FORK-10 e; today a player's blow on its box, `minecraft:player_attack`, the damage the player's weapon makes before armour, which a mod entity has none of). Returns the damage to apply: the same to leave it, less to reduce it, 0 to cancel the blow. The first mod that owns the kind answers; a mod that does not implement it takes the damage as it is. At 0 health the entity dies (`mod-entity-died`). |
 | `mod-entity-died` | `func(entity: mod-entity)` | An entity of the mod's own kind died of damage (its health reached 0): last look at it, as it was. The game removes it right after; its drops, if it has any, are the mod's to spawn. |
 | `key-pressed` | `func(player: player, key: string) -> bool` | `player` pressed one of the mod's keys (`data/<mod>/horizon/key/<name>.json`, `key` its id `<mod>:<name>`) while playing with no screen open, as the player bound it in Controls. True when the mod used the press. API 53. |
+| `menu-grid-click` | `func(player: player, target: grid-target, index: u32, button: u8, shift: bool, carried: option<item-stack>) -> option<grid-answer>` | `player` pressed entry `index` of the item grid (`item_grid`) of a menu of the mod (`target`): `button` 0 left, 1 right, 2 middle, `shift` with Shift held, `carried` the stack on their cursor now. The mod takes from its catalogue or puts the cursor's stack in and answers the cursor's stack after (Mekanism's QIO Dashboard: left takes a stack, right half of one, shift into the inventory, a carried stack is stored); none leaves the cursor as it was. API 55. |
 | `item-menu-tick` | `func(player: player, menu: item-menu) -> option<item-menu-update>` | Each tick while `player` has an item menu of the mod open (`players.open-item-menu`): what to change in it. API 48. |
 | `item-menu-button` | `func(player: player, menu: item-menu, id: s32) -> option<item-menu-update>` | `player` pressed button `id` (`id`, `shift_id` or `alt_id`, as the client chose it) of one of the mod's item menus. |
 | `item-menu-taken` | `func(player: player, menu: item-menu, slot: u32, stack: item-stack) -> option<item-menu-update>` | `player` took `stack` out of result slot `slot` of one of the mod's item menus (the menu as it is after the take): the mod uses up what made it. |

@@ -9,7 +9,7 @@ struct Demo {
 }
 
 fn update() -> ItemMenuUpdate {
-    ItemMenuUpdate { items: None, menu_data: None, menu_text: None, close: false }
+    ItemMenuUpdate { items: None, menu_data: None, menu_text: None, close: false, menu_grid: None }
 }
 
 impl ServerMod for Demo {

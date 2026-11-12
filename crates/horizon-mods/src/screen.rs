@@ -23,6 +23,113 @@ pub struct Locals {
     pub vars: BTreeMap<String, i64>,
     /// How far the open window was dragged from where the screen puts it.
     pub offset: [f32; 2],
+    /// How many entries the screen's item grid has now (the client sets it from what the server sent).
+    pub grid_total: i64,
+}
+
+/// The variable an item grid keeps its scroll (in rows) in.
+pub const GRID_SCROLL: &str = "@grid";
+
+/// The first row an item grid of `columns` by `rows` shows of `total` entries, from the locals.
+pub fn grid_top(locals: &Locals, columns: u16, rows: u16, total: i64) -> i64 {
+    let lines = (total + i64::from(columns) - 1) / i64::from(columns.max(1));
+    locals.var(GRID_SCROLL).clamp(0, (lines - i64::from(rows)).max(0))
+}
+
+/// A count as a grid cell shows it: as it is to 999, then `1.2k`, `12k`, `123k`, `1.2M`... (one decimal under 10, none over).
+pub fn abbreviate(count: u64) -> String {
+    if count < 1000 {
+        return count.to_string();
+    }
+    const UNITS: [&str; 6] = ["k", "M", "G", "T", "P", "E"];
+    let mut value = count as f64;
+    let mut unit = 0;
+    value /= 1000.0;
+    while value >= 1000.0 && unit + 1 < UNITS.len() {
+        value /= 1000.0;
+        unit += 1;
+    }
+    if value < 10.0 {
+        let tenths = (value * 10.0).floor() / 10.0;
+        format!("{tenths:.1}{}", UNITS[unit]).replace(".0", "")
+    } else {
+        format!("{}{}", value.floor() as u64, UNITS[unit])
+    }
+}
+
+/// One entry of an item grid: the item, its components (SNBT) and how many.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GridEntry {
+    pub item: String,
+    pub components: String,
+    pub count: u64,
+}
+
+/// The most entries a grid shows.
+pub const GRID_ENTRIES: usize = 4096;
+
+/// The channel a menu's grid entries travel on, host to client.
+pub const MENU_GRID_CHANNEL: &str = "horizon:menu_grid";
+/// The channel a press on a grid cell travels on, client to host.
+pub const GRID_CLICK_CHANNEL: &str = "horizon:grid_click";
+
+/// A menu's grid as the channel carries it: the position (as `encode_menu_text`), the count, then each entry as its item and
+/// components (two-byte lengths) and its count (eight bytes), little-endian.
+pub fn encode_menu_grid(pos: [i32; 3], entries: &[GridEntry]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for v in pos {
+        out.extend(v.to_le_bytes());
+    }
+    let entries = &entries[..entries.len().min(GRID_ENTRIES)];
+    out.extend((entries.len() as u32).to_le_bytes());
+    for e in entries {
+        for text in [&e.item, &e.components] {
+            let bytes = &text.as_bytes()[..text.len().min(u16::MAX as usize)];
+            out.extend((bytes.len() as u16).to_le_bytes());
+            out.extend(bytes);
+        }
+        out.extend(e.count.to_le_bytes());
+    }
+    out
+}
+
+/// The position and entries of [`encode_menu_grid`].
+pub fn decode_menu_grid(data: &[u8]) -> Option<([i32; 3], Vec<GridEntry>)> {
+    let mut at = 0usize;
+    let mut take = |n: usize| {
+        let s = data.get(at..at + n)?;
+        at += n;
+        Some(s)
+    };
+    let int = |b: &[u8]| i32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+    let pos = [int(take(4)?), int(take(4)?), int(take(4)?)];
+    let count = u32::from_le_bytes(take(4)?.try_into().ok()?) as usize;
+    let mut out = Vec::with_capacity(count.min(GRID_ENTRIES));
+    for _ in 0..count.min(GRID_ENTRIES) {
+        let mut text = || -> Option<String> {
+            let len = u16::from_le_bytes(take(2)?.try_into().ok()?) as usize;
+            String::from_utf8(take(len)?.to_vec()).ok()
+        };
+        let item = text()?;
+        let components = text()?;
+        let count = u64::from_le_bytes(take(8)?.try_into().ok()?);
+        out.push(GridEntry { item, components, count });
+    }
+    Some((pos, out))
+}
+
+/// A press on a grid cell as the channel carries it: the entry's index (four bytes), the button (0 left, 1 right, 2 middle) and
+/// whether Shift was held.
+pub fn encode_grid_click(index: u32, button: u8, shift: bool) -> Vec<u8> {
+    let mut out = index.to_le_bytes().to_vec();
+    out.push(button);
+    out.push(u8::from(shift));
+    out
+}
+
+/// The index, button and Shift of [`encode_grid_click`].
+pub fn decode_grid_click(data: &[u8]) -> Option<(u32, u8, bool)> {
+    (data.len() == 6).then(|| (u32::from_le_bytes([data[0], data[1], data[2], data[3]]), data[4].min(2), data[5] != 0))
 }
 
 /// The variable a list that starts at string `first` keeps its scroll in.
@@ -113,6 +220,8 @@ pub enum Press {
     Row { button: i32, first: u16 },
     /// Menu button `id`, for the server.
     Send(i32),
+    /// Entry `index` of the item grid (its place in the mod's list, the scroll counted), for the server.
+    Grid(u32),
     /// Something here: a local action, or a press a window took.
     Local,
 }
@@ -140,6 +249,28 @@ fn press_in(
         _ => None,
     }) {
         return Some(row);
+    }
+    // The item grid: a cell is its entry; the bar at its right moves the scroll to where it is pressed.
+    let grid = showing(widgets, data, locals).into_iter().find_map(|w| match w {
+        Widget::ItemGrid { x, y, columns, rows, cell } => Some((*x, *y, *columns, *rows, *cell)),
+        _ => None,
+    });
+    if let Some((x, y, columns, rows, cell)) = grid {
+        let (c, r) = (i32::from(cell), i32::from(columns));
+        let (w, h) = (r * c, i32::from(rows) * c);
+        if inside(at, x, y, w, h) {
+            let col = ((at[0] - x as f32) / c as f32) as i64;
+            let row = ((at[1] - y as f32) / c as f32) as i64;
+            let index = (grid_top(locals, columns, rows, locals.grid_total) + row) * i64::from(columns) + col;
+            return Some(if index < locals.grid_total { Press::Grid(index as u32) } else { Press::Local });
+        }
+        if inside(at, x + w, y, 6, h) {
+            let lines = (locals.grid_total + i64::from(columns) - 1) / i64::from(columns);
+            let max = (lines - i64::from(rows)).max(0);
+            let to = ((at[1] - y as f32) / h as f32 * max as f32).round() as i64;
+            locals.vars.insert(GRID_SCROLL.to_owned(), to.clamp(0, max));
+            return Some(Press::Local);
+        }
     }
     if let Some(id) = showing(widgets, data, locals).into_iter().find_map(|w| match w {
         Widget::TextField { x, y, w, h, id, .. } if inside(at, *x, *y, *w, *h) => Some(*id),
@@ -223,6 +354,20 @@ pub fn scroll_lists(screen: &MenuScreen, data: &[i32], locals: &mut Locals, at: 
         }
         None => (&screen.widgets, at),
     };
+    // The item grid scrolls by rows.
+    let grid = showing(widgets, data, locals).into_iter().find_map(|w| match w {
+        Widget::ItemGrid { x, y, columns, rows, cell } => {
+            let (c, cols) = (i32::from(*cell), i32::from(*columns));
+            inside(rel, *x, *y, cols * c + 6, i32::from(*rows) * c).then_some((*columns, *rows))
+        }
+        _ => None,
+    });
+    if let Some((columns, rows)) = grid {
+        let lines = (locals.grid_total + i64::from(columns) - 1) / i64::from(columns);
+        let now = grid_top(locals, columns, rows, locals.grid_total);
+        locals.vars.insert(GRID_SCROLL.to_owned(), (now - notches).clamp(0, (lines - i64::from(rows)).max(0)));
+        return true;
+    }
     let hit = showing(widgets, data, locals).into_iter().find_map(|w| match w {
         Widget::List { x, y, w, h, row_height, first, count, .. } if inside(rel, *x, *y, *w, *h) => {
             Some((*first, read(count, data), list_rows(*h, *row_height)))
@@ -347,6 +492,44 @@ pub fn hovered(screen: &MenuScreen, data: &[i32], locals: &Locals, at: [f32; 2])
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn grid_counts_are_abbreviated_as_mekanism_shows_them() {
+        assert_eq!(abbreviate(0), "0");
+        assert_eq!(abbreviate(999), "999");
+        assert_eq!(abbreviate(1000), "1k");
+        assert_eq!(abbreviate(1250), "1.2k");
+        assert_eq!(abbreviate(12_345), "12k");
+        assert_eq!(abbreviate(999_999), "999k");
+        assert_eq!(abbreviate(1_500_000), "1.5M");
+        assert_eq!(abbreviate(u64::MAX), "18E");
+    }
+
+    #[test]
+    fn a_grid_travels_whole_and_a_cell_press_is_its_entry_with_the_scroll() {
+        let entries: Vec<GridEntry> = (0..50)
+            .map(|i| GridEntry { item: format!("minecraft:item_{i}"), components: if i == 3 { "{\"x\":1}".into() } else { String::new() }, count: 1u64 << i })
+            .collect();
+        let bytes = encode_menu_grid([i32::MIN, 0, 0], &entries);
+        assert_eq!(decode_menu_grid(&bytes), Some(([i32::MIN, 0, 0], entries.clone())));
+        assert_eq!(decode_menu_grid(&bytes[..bytes.len() - 1]), None);
+        assert_eq!(decode_grid_click(&encode_grid_click(77, 1, true)), Some((77, 1, true)));
+        // A 9 by 3 grid of 18 pixels at 8, 18, with 50 entries (6 lines).
+        let screen: MenuScreen = serde_json::from_str(r#"{"slots": [], "widgets": [{"type": "item_grid", "x": 8, "y": 18, "columns": 9, "rows": 3}]}"#).unwrap();
+        let mut locals = Locals { grid_total: 50, ..Locals::default() };
+        // The 2nd cell of the 2nd row is entry 10.
+        assert_eq!(press(&screen, &[], &mut locals, [8.0 + 18.0 + 2.0, 18.0 + 18.0 + 2.0], false), Some(Press::Grid(10)));
+        // Two notches down: the top is row 2, so that cell is entry 28; the wheel stops at the last full page (row 3).
+        assert!(scroll_lists(&screen, &[], &mut locals, [20.0, 30.0], -2));
+        assert_eq!(press(&screen, &[], &mut locals, [8.0 + 18.0 + 2.0, 18.0 + 18.0 + 2.0], false), Some(Press::Grid(28)));
+        assert!(scroll_lists(&screen, &[], &mut locals, [20.0, 30.0], -9));
+        assert_eq!(grid_top(&locals, 9, 3, 50), 3);
+        // Past the last entry is nothing to take; the bar's bottom scrolls to the end, its top back to the start.
+        assert_eq!(press(&screen, &[], &mut locals, [8.0 + 8.0 * 18.0 + 2.0, 18.0 + 2.0 * 18.0 + 2.0], false), Some(Press::Local));
+        assert_eq!(press(&screen, &[], &mut locals, [8.0 + 9.0 * 18.0 + 2.0, 18.0], false), Some(Press::Local));
+        assert_eq!(grid_top(&locals, 9, 3, 50), 0);
+    }
+
     use super::*;
 
     #[test]

@@ -820,6 +820,18 @@ pub enum Widget {
         #[serde(default)]
         tooltip: Option<String>,
     },
+    /// A grid of item cells (Mekanism's QIO Dashboard catalogue): `columns` by `rows` cells of `cell` pixels from `x`, `y`, showing the
+    /// entries its mod gives (`world.set-menu-grid`, an item menu's `menu-grid`: item, components, count up to 2^64) from the scroll
+    /// down, the count abbreviated over 999 (`1.2k`); the wheel and the bar at its right scroll it by rows, and a press on a cell
+    /// goes to the mod (`menu-grid-click`). One a screen.
+    ItemGrid {
+        x: i32,
+        y: i32,
+        columns: u16,
+        rows: u16,
+        #[serde(default = "default_cell")]
+        cell: u16,
+    },
     #[serde(rename = "textfield")]
     TextField {
         x: i32,
@@ -845,6 +857,9 @@ pub struct GraphSeries {
     pub color: String,
 }
 
+fn default_cell() -> u16 {
+    18
+}
 fn default_samples() -> u16 {
     40
 }
@@ -1124,6 +1139,12 @@ fn check_widget(
             if *side > 5 {
                 return Err(format!("{name}: a neighbour's side is 0 to 5"));
             }
+        }
+        Widget::ItemGrid { x, y, columns, rows, cell } => {
+            if !(1..=16).contains(columns) || !(1..=16).contains(rows) || !(8..=32).contains(cell) {
+                return Err(format!("{name}: an item grid has 1 to 16 columns and rows of 8 to 32 pixels"));
+            }
+            rect(*x, *y, i32::from(*columns) * i32::from(*cell) + 6, i32::from(*rows) * i32::from(*cell))?;
         }
         Widget::Graph { x, y, w, h, series, samples, min_scale, tooltip } => {
             rect(*x, *y, *w, *h)?;

@@ -726,6 +726,7 @@ interface players {
 /// experimental): the blocks of the server's loaded chunks, and changes to
 /// them through the server's own block updates.
 interface %world {
+    use item-types.{grid-entry};
     record block-change {
         x: s32,
         y: s32,
@@ -832,6 +833,11 @@ interface %world {
     /// `"redstone_emitter": true` and that has a block entity gives it; it is kept with the block entity (saved), and the blocks around
     /// are updated when it changes. Made after the call; an error past 256 a call. API 50.
     set-redstone-output: func(dimension: string, x: s32, y: s32, z: s32, level: u8, strong: bool) -> result<_, string>;
+    /// Sets the entries the `item_grid` widget of the menu of the block entity at the position shows (up to 4096, the rest left out),
+    /// in the order the mod gives them (its sort and its search filter, read from the menu's `textfield`): to the players with that menu
+    /// open now, and kept while the game runs (not saved) for a player who opens it later. Made after the call; an error past 8 a
+    /// call. API 55.
+    set-menu-grid: func(dimension: string, x: s32, y: s32, z: s32, entries: list<grid-entry>) -> result<_, string>;
     /// Sets the strings the menu of the block entity at the position carries (FORK-20): up to 64, each up to 256 bytes of text, kept
     /// with the entity. A screen's `text` widget with `text_data: n` shows string `n`; the clients that have the menu open get them
     /// when they change and when they open it. Made after this call returns; nothing happens for a block that is not a mod's block
@@ -1331,6 +1337,13 @@ interface item-types {
         count: u32,
         components: string,
     }
+    /// One entry of a menu's item grid (an `item_grid` widget, Mekanism's QIO catalogue): an item type and how many, past a stack's
+    /// size (up to 2^64).
+    record grid-entry {
+        item: string,
+        components: string,
+        count: u64,
+    }
 }
 
 /// Capability `chunks`, server mods only (manifest `api = "0.3"`,
@@ -1386,7 +1399,7 @@ interface player-items {
 /// in each event is as the server saw them when it happened.
 interface server-events {
     use players.{player};
-    use item-types.{item-stack};
+    use item-types.{item-stack, grid-entry};
 
     /// What hurts a player (`player-damaged`): the damage type and what the
     /// game knows of it.
@@ -1717,6 +1730,22 @@ interface server-events {
         menu-text: option<list<string>>,
         /// Closes it (its slots' items go back to the player).
         close: bool,
+        /// What its `item_grid` shows (up to 4096 entries), API 55; none leaves it.
+        menu-grid: option<list<grid-entry>>,
+    }
+    /// The menu whose item grid a player pressed (`menu-grid-click`): its type and, for a block's, where the block is; for an item
+    /// menu, the player's slot it is over (4294967295 for `open-player-menu`'s).
+    record grid-target {
+        menu: string,
+        dimension: string,
+        pos: option<block-pos>,
+        slot: option<u32>,
+    }
+    /// What a press on a grid cell does to the player's stacks: the cursor's stack after it, and stacks to put in the player's
+    /// inventory (what does not fit falls at their feet), as a shift-click's.
+    record grid-answer {
+        carried: option<item-stack>,
+        to-inventory: list<item-stack>,
     }
     /// What the mod makes of an entity in a tick; a none leaves that as it is.
     record mod-entity-update {
@@ -1825,6 +1854,11 @@ interface server-events {
     /// `player` pressed one of the mod's keys (`data/<mod>/horizon/key/<name>.json`, `key` its id `<mod>:<name>`) while playing with
     /// no screen open, as the player bound it in Controls. True when the mod used the press. API 53.
     key-pressed: func(player: player, key: string) -> bool;
+    /// `player` pressed entry `index` of the item grid (`item_grid`) of a menu of the mod (`target`): `button` 0 left, 1 right,
+    /// 2 middle, `shift` with Shift held, `carried` the stack on their cursor now. The mod takes from its catalogue or puts the cursor's
+    /// stack in and answers the cursor's stack after (Mekanism's QIO Dashboard: left takes a stack, right half of one, shift into the
+    /// inventory, a carried stack is stored); none leaves the cursor as it was. API 55.
+    menu-grid-click: func(player: player, target: grid-target, index: u32, button: u8, shift: bool, carried: option<item-stack>) -> option<grid-answer>;
     /// Each tick while `player` has an item menu of the mod open (`players.open-item-menu`): what to change in it. API 48.
     item-menu-tick: func(player: player, menu: item-menu) -> option<item-menu-update>;
     /// `player` pressed button `id` (`id`, `shift_id` or `alt_id`, as the client chose it) of one of the mod's item menus.

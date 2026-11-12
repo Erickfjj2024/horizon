@@ -115,6 +115,12 @@ pub(super) struct ModsState {
     /// The item menus open (round 4, item 2), one at most a player.
     #[cfg(feature = "mods")]
     pub(super) item_menus: Vec<OpenItemMenu>,
+    /// The last item grid each block's menu showed (`world.set-menu-grid`), for a player who opens it; not saved.
+    #[cfg(feature = "mods")]
+    pub(super) menu_grids: std::collections::HashMap<[i32; 3], Vec<horizon_mods::screen::GridEntry>>,
+    /// Grid presses the mods answered this tick, for the players' cursors and inventories: the player and the answer.
+    #[cfg(feature = "mods")]
+    pub(super) grid_answers: Vec<(u128, horizon_mods::GridAnswer)>,
     /// Every block state's collision boxes, by state id, for capability
     /// `world`'s `get-collision`; made on the first lend.
     #[cfg(feature = "mods")]
@@ -950,6 +956,7 @@ impl Game<'_> {
                 | Output::SetComparator { .. }
                 | Output::SetRedstone { .. }
                 | Output::SetItemTransport { .. }
+                | Output::SetMenuGrid { .. }
                 | Output::BreakBlocks { .. }
                 | Output::SpawnParticles { .. }
                 | Output::SetTankFilter { .. }

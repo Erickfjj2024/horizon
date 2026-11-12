@@ -41,6 +41,15 @@ pub(super) enum ModEvent {
         channel: String,
         data: Vec<u8>,
     },
+    /// A player pressed entry `index` of the item grid of their open mod menu (`target`).
+    #[cfg(feature = "mods")]
+    GridClick {
+        who: Who,
+        target: horizon_mods::GridTarget,
+        index: u32,
+        button: u8,
+        shift: bool,
+    },
     /// A player pressed a content mod's key (`<mod>:<name>`).
     Key {
         who: Who,
@@ -631,6 +640,17 @@ mod run {
                             self.mods.mods.net_message(&p, &channel, &data);
                         }
                     }
+                    ModEvent::GridClick { who: w, target, index, button, shift } => {
+                        let Some(p) = who(&w) else { continue };
+                        let Who::Uuid(uuid) = w else { continue };
+                        let carried = self
+                            .lan
+                            .as_ref()
+                            .and_then(|h| h.hub.guests.iter().find(|g| g.uuid == uuid)?.carried.as_ref().map(Self::mod_stack));
+                        if let Some(a) = self.mods.mods.menu_grid_click(&p, &target, index, button, shift, carried.as_ref()) {
+                            self.mods.grid_answers.push((uuid, a));
+                        }
+                    }
                     ModEvent::Key { who: w, key } => {
                         if let Some(p) = who(&w) {
                             let used = self.mods.mods.key_pressed(&p, &key);
@@ -695,6 +715,7 @@ mod run {
             self.lend_world();
             self.tick_item_menus();
             self.return_world();
+            self.apply_grid_answers();
             self.mirror_mod_entity_menus();
             self.walk_mod_entities();
             self.mod_entity_hazards();
@@ -1407,6 +1428,61 @@ mod run {
             self.world.modified.insert((pos[0] >> 4, pos[2] >> 4));
             true
         }
+        /// A mod's `world.set-menu-grid`: kept for the block while the game runs, and sent to the players with its menu open.
+        pub(in crate::game) fn native_set_menu_grid(&mut self, pos: [i32; 3], entries: Vec<horizon_mods::screen::GridEntry>) {
+            let key = (pos[0], pos[1], pos[2]);
+            if !matches!(self.world.block_entities.get(&key), Some(horizon_client_render::containers::BlockEntity::Mod(_))) {
+                return;
+            }
+            let viewers: Vec<u128> = self
+                .lan
+                .as_ref()
+                .map(|h| h.hub.guests.iter().filter(|g| g.menu.as_ref().is_some_and(|m| m.pos == Some(key))).map(|g| g.uuid).collect())
+                .unwrap_or_default();
+            let bytes = horizon_mods::screen::encode_menu_grid(pos, &entries);
+            for uuid in viewers {
+                let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_GRID_CHANNEL, &bytes);
+            }
+            self.mods.menu_grids.insert(pos, entries);
+        }
+
+        /// The last grid of the block at `key`'s menu, to the acting player: its menu just opened.
+        pub(in crate::game) fn send_menu_grid_to_actor(&mut self, key: (i32, i32, i32)) {
+            let pos = [key.0, key.1, key.2];
+            let Some(entries) = self.mods.menu_grids.get(&pos) else {
+                return;
+            };
+            let bytes = horizon_mods::screen::encode_menu_grid(pos, entries);
+            let ints = self.acting_player_uuid();
+            let uuid = ints.iter().fold(0u128, |acc, i| (acc << 32) | u128::from(*i as u32));
+            let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_GRID_CHANNEL, &bytes);
+        }
+
+        /// The grid presses the mods answered (`menu-grid-click`): each player's cursor becomes the answer's, and its stacks for
+        /// the inventory go in (what does not fit falls).
+        fn apply_grid_answers(&mut self) {
+            let answers = std::mem::take(&mut self.mods.grid_answers);
+            if answers.is_empty() {
+                return;
+            }
+            let Some(mut host) = self.lan.take() else {
+                return;
+            };
+            for (uuid, a) in answers {
+                let Some(gi) = host.hub.guests.iter().position(|g| g.uuid == uuid) else { continue };
+                let carried = a.carried.as_ref().and_then(|s| self.game_stack(s));
+                let net = host.hub.stack(&carried);
+                host.hub.guests[gi].carried = carried;
+                host.hub.guests[gi].send(&C::SetCursorItem(play::SetCursorItem { item: net }));
+                let stacks: Vec<horizon_client::items::ItemStack> = a.to_inventory.iter().filter_map(|s| self.game_stack(s)).collect();
+                if !stacks.is_empty() {
+                    self.lan_place_back(&mut host, gi, stacks);
+                    host.hub.send_inventory(gi);
+                }
+            }
+            self.lan = Some(host);
+        }
+
         /// A mod's Transporter Config change: kept in the entity (`eject_color`, `strict_input`, `transmitter_color`).
         pub(in crate::game) fn native_set_item_transport(&mut self, pos: [i32; 3], setting: horizon_mods::TransportSetting) {
             use horizon_mods::TransportSetting as T;
@@ -2843,6 +2919,12 @@ mod run {
                 let bytes = horizon_mods::screen::encode_menu_text(ENTITY_MENU_TEXT_AT, t);
                 let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
             }
+            if let Some(g) = &u.menu_grid {
+                let entries: Vec<horizon_mods::screen::GridEntry> =
+                    g.iter().map(|e| horizon_mods::screen::GridEntry { item: e.item.clone(), components: e.components.clone(), count: e.count }).collect();
+                let bytes = horizon_mods::screen::encode_menu_grid(ENTITY_MENU_TEXT_AT, &entries);
+                let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_GRID_CHANNEL, &bytes);
+            }
             if u.close {
                 self.mods.item_menus[i].closing = true;
             }
@@ -3152,6 +3234,27 @@ mod run {
         /// A player's client half sent `data` on `channel`.
         pub(in crate::game) fn mod_net_event(&mut self, player: u128, channel: &str, data: &[u8]) {
             if !self.hears_players() {
+                return;
+            }
+            // A press on an item grid cell (API 55): the player's open menu, an item menu's or a block's, names the target.
+            if channel == horizon_mods::screen::GRID_CLICK_CHANNEL {
+                let Some((index, button, shift)) = horizon_mods::screen::decode_grid_click(data) else { return };
+                let key = self.lan.as_ref().and_then(|h| h.hub.guests.iter().find(|g| g.uuid == player)?.menu.as_ref()?.pos);
+                let Some(key) = key else { return };
+                let dimension = self.dim.id().to_owned();
+                let target = if key.0 == i32::MAX - 17 && key.1 == crate::game::minecarts::CART_KEY_Y {
+                    let Some(m) = self.mods.item_menus.iter().find(|m| m.conn as i32 == key.2) else { return };
+                    horizon_mods::GridTarget { menu: m.menu.clone(), dimension, pos: None, slot: Some(m.slot) }
+                } else {
+                    let Some(menu) = self.mod_menu_at(key) else { return };
+                    horizon_mods::GridTarget {
+                        menu: menu.to_owned(),
+                        dimension,
+                        pos: Some(horizon_mods::BlockPos { x: key.0, y: key.1, z: key.2 }),
+                        slot: None,
+                    }
+                };
+                self.mods.events.push(ModEvent::GridClick { who: Who::Uuid(player), target, index, button, shift });
                 return;
             }
             // A press of a content mod's key: its id, one the content declares, reaches the mod's `key-pressed`.
@@ -3649,6 +3752,13 @@ mod run {
                         self.native_pull_items(pos, face, &items, max);
                     } else {
                         log::debug!("Horizon: mod {name} pulled items in another level");
+                    }
+                }
+                Output::SetMenuGrid { name, dimension, pos, entries } => {
+                    if dimension == self.dim.id() {
+                        self.native_set_menu_grid(pos, entries);
+                    } else {
+                        log::debug!("Horizon: mod {name} set a menu grid in another level");
                     }
                 }
                 Output::SetItemTransport { name, dimension, pos, setting } => {

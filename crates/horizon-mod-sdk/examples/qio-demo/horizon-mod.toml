@@ -1,0 +1,9 @@
+id = "qio"
+name = "QIO Grid Demo"
+version = "0.1.0"
+description = "Test mod for the item grid (API 55): a QIO-like catalogue shown in a scrolling grid, searched, sorted, taken from and stored into."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["registries", "players", "world", "net"]
+experimental = ["net"]

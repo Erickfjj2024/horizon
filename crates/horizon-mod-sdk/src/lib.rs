@@ -235,7 +235,7 @@ pub mod server {
 
     pub use exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
-        BlockPos, BlockUse, ItemMenu, ItemMenuUpdate, ModEntity, ModEntityUpdate, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,
+        BlockPos, BlockUse, GridAnswer, GridEntry, GridTarget, ItemMenu, ItemMenuUpdate, ModEntity, ModEntityUpdate, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure, Guest as __Guest, Registration, ServerCommand,
     };
     pub use horizon::mods::players::{self, GameMode, Player};
     pub use horizon::mods::player_control::{self, Motion};
@@ -320,6 +320,19 @@ pub mod server {
         }
         /// One of the mod's own entities died of damage. When [`Registration::on_mod_entities`] is set.
         fn mod_entity_died(&mut self, _entity: ModEntity) {}
+        /// A player pressed entry `index` of the item grid of one of the mod's menus (`target`), holding `carried`: the cursor's
+        /// stack after and stacks for their inventory; none leaves the cursor.
+        fn menu_grid_click(
+            &mut self,
+            _player: &Player,
+            _target: GridTarget,
+            _index: u32,
+            _button: u8,
+            _shift: bool,
+            _carried: Option<ItemStack>,
+        ) -> Option<GridAnswer> {
+            None
+        }
         /// A player pressed one of the mod's keys (`data/<mod>/horizon/key/<name>.json`, `key` its id) while playing: true when the
         /// mod used the press.
         fn key_pressed(&mut self, _player: &Player, _key: &str) -> bool {
@@ -681,7 +694,7 @@ macro_rules! export_server_mod {
             use ::std::cell::RefCell;
             use $crate::server::{
                 Args, ArgumentValue, BlockEntity, BlockEntityUpdate, BlockPos, BlockUse, DamageSource, Player, Registration,
-                ItemMenu, ItemMenuUpdate, ItemStack, ModEntity, ModEntityUpdate, ServerMod, Structure,
+                GridAnswer, GridTarget, ItemMenu, ItemMenuUpdate, ItemStack, ModEntity, ModEntityUpdate, ServerMod, Structure,
             };
             ::std::thread_local! {
                 static STATE: RefCell<Option<$t>> = const { RefCell::new(None) };
@@ -764,6 +777,18 @@ macro_rules! export_server_mod {
                 }
                 fn mod_entity_died(entity: ModEntity) {
                     with(|m| m.mod_entity_died(entity));
+                }
+                fn menu_grid_click(
+                    player: Player,
+                    target: GridTarget,
+                    index: u32,
+                    button: u8,
+                    shift: bool,
+                    carried: Option<ItemStack>,
+                ) -> Option<GridAnswer> {
+                    let mut out = None;
+                    with(|m| out = m.menu_grid_click(&player, target, index, button, shift, carried));
+                    out
                 }
                 fn key_pressed(player: Player, key: String) -> bool {
                     let mut out = false;

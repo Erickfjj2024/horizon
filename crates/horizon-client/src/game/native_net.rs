@@ -100,6 +100,7 @@ impl Game<'_> {
         match mod_net::decode(data) {
             Ok(m) if m.channel == horizon_mods::screen::MENU_TEXT_CHANNEL => super::menu_screens::remember_menu_text(&m.data),
             Ok(m) if m.channel == horizon_mods::screen::HUD_CHANNEL => super::mod_hud::remember_hud_line(&m.data),
+            Ok(m) if m.channel == horizon_mods::screen::MENU_GRID_CHANNEL => super::menu_screens::remember_menu_grid(&m.data),
             Ok(m) if m.channel == horizon_mods::screen::RADIAL_CHANNEL => self.open_mod_radial(&m.data),
             Ok(m) => self.native_net_from_server(&m.channel, &m.data),
             Err(e) => log::debug!("Horizon: a bad mod message: {e}"),

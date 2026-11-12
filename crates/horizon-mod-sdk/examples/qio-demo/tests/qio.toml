@@ -1,0 +1,43 @@
+[[step]]
+join = "Alex"
+net = { channel = "qio:open" }
+expect.item-menu-open = ["Alex 4294967295 qio:dashboard"]
+
+[[step]]
+# A tick: the grid shows the catalogue, largest first (counts past a stack's size).
+ticks = 1
+expect.item-menu-grid = ["minecraft:cobblestone*1500000", "minecraft:stone*12345", "minecraft:dirt*64", "minecraft:diamond*3"]
+
+[[step]]
+# Left on entry 1 (the stone): a stack on the cursor.
+grid-click = { index = 1 }
+expect.carried = "minecraft:stone*64"
+
+[[step]]
+# With a stack on the cursor, a press stores it, whatever the cell.
+grid-click = { index = 3 }
+expect.carried = "-"
+
+[[step]]
+# Right on the dirt: half a stack; Shift-left on the diamonds: all 3 into the inventory.
+grid-click = { index = 2, button = 1 }
+expect.carried = "minecraft:dirt*32"
+
+[[step]]
+carried = "-"
+grid-click = { index = 3, shift = true }
+expect.carried = "-"
+expect.to-inventory = ["minecraft:diamond*3"]
+
+[[step]]
+# The search box (`qio:menu_text`, position (i32::MIN, 1, -1), box 1, "stone") filters it: cobblestone and stone.
+net = { channel = "qio:menu_text", data = [0, 0, 0, 128, 1, 0, 0, 0, 255, 255, 255, 255, 1, 0, 0, 0, 115, 116, 111, 110, 101] }
+
+[[step]]
+ticks = 1
+expect.item-menu-grid = ["minecraft:cobblestone*1500000", "minecraft:stone*12345"]
+
+[[step]]
+# A block's menu grid (`world.set-menu-grid`).
+net = { channel = "qio:block" }
+expect.menu-grid = ["minecraft:overworld 1 77 1 2: minecraft:cobblestone*1500000, minecraft:stone*12345"]

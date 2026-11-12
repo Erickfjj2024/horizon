@@ -54,7 +54,7 @@ use bindings::{
 pub use server_bindings::{
     exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockEntity, BlockEntityKind, BlockEntityUpdate,
-        BlockPos, BlockUse, ItemMenu, ItemMenuUpdate, ModEntity, ModEntityUpdate, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
+        BlockPos, BlockUse, GridAnswer, GridEntry as ModGridEntry, GridTarget, ItemMenu, ItemMenuUpdate, ModEntity, ModEntityUpdate, DamageSource, RedirectSpec, ContainerSpec, FlowSide, EnergySpec, ItemStack as ModItemStack, Tank, TankSpec, TransmitterMedium, TransmitterSpec, MultiblockMember, MultiblockSpec, Structure as ModStructure, ServerCommand,
     },
     horizon::mods::player_control::{EffectState, Motion, PlayerState},
     horizon::mods::players::{GameMode, Player as ServerPlayer},
@@ -482,6 +482,8 @@ pub enum Output {
     BreakBlocks { name: String, dimension: String, positions: Vec<[i32; 3]>, tool: String, silk_touch: bool, fortune: u32 },
     /// `players.open-entity-menu`: the container of a mod entity, opened as a chest for a player.
     EntityMenu { name: String, mod_id: String, player: String, dimension: String, id: u32 },
+    /// `world.set-menu-grid`: the entries of the item grid of a block entity's menu, for the players with it open.
+    SetMenuGrid { name: String, dimension: String, pos: [i32; 3], entries: Vec<crate::screen::GridEntry> },
     /// `world.set-redstone-output`: the signal a mod block gives (round 4, item 4).
     SetRedstone { name: String, dimension: String, pos: [i32; 3], level: u8, strong: bool },
     /// `players.open-item-menu`: a menu type of the mod opened over a player's slot (round 4, item 2).
@@ -1781,6 +1783,26 @@ impl Mods {
         let (ns, _) = menu.split_once(':')?;
         self.entries.iter().position(|e| e.run.as_ref().is_some_and(|r| r.hooks.server().is_some()) && e.manifest.as_ref().is_some_and(|m| m.id == ns))
     }
+    /// `player` pressed entry `index` of the item grid of `target` (a menu of a mod's), holding `carried`: what the mod that owns the
+    /// menu type makes of the cursor and the player's inventory.
+    pub fn menu_grid_click(
+        &mut self,
+        player: &ServerPlayer,
+        target: &GridTarget,
+        index: u32,
+        button: u8,
+        shift: bool,
+        carried: Option<&ModItemStack>,
+    ) -> Option<GridAnswer> {
+        let i = self.menu_owner(&target.menu)?;
+        let a = self
+            .call(i, FUEL_EVENT, |run| match &run.hooks {
+                Hooks::Server(m, _) => m.horizon_mods_server_events().call_menu_grid_click(&mut run.store, player, target, index, button, shift, carried),
+                Hooks::Client(..) => Ok(None),
+            })
+            .flatten()?;
+        (a.to_inventory.len() <= 64).then_some(a)
+    }
     /// `player` pressed key `key` (`<mod>:<name>`, a content key mapping): whether the mod that owns it used the press.
     pub fn key_pressed(&mut self, player: &ServerPlayer, key: &str) -> bool {
         let Some(i) = self.menu_owner(key) else { return false };
@@ -2586,7 +2608,8 @@ pub const NO_SLOT: u32 = u32::MAX;
 
 /// Whether a mod's update of an item menu is in bounds: 256 slots, 256 data slots and the menu strings' limits.
 pub fn item_menu_update_ok(u: &ItemMenuUpdate) -> bool {
-    u.items.as_ref().is_none_or(|s| s.len() <= 256)
+    u.menu_grid.as_ref().is_none_or(|g| g.len() <= crate::screen::GRID_ENTRIES)
+        && u.items.as_ref().is_none_or(|s| s.len() <= 256)
         && u.menu_data.as_ref().is_none_or(|d| d.len() <= 256)
         && u.menu_text.as_ref().is_none_or(|t| {
             t.len() <= crate::content::MENU_TEXTS && t.iter().all(|s| s.len() <= crate::content::MENU_TEXT_BYTES)
@@ -2934,6 +2957,18 @@ impl mod_world::Host for State {
             return Err(format!("at most {BLOCKS_PER_CALL} comparator outputs a call"));
         }
         self.out.push(Output::SetComparator { name: self.name.clone(), dimension, pos: [x, y, z], level: level.min(15) });
+        Ok(())
+    }
+    fn set_menu_grid(&mut self, dimension: String, x: i32, y: i32, z: i32, entries: Vec<ModGridEntry>) -> Result<(), String> {
+        if self.out.iter().filter(|o| matches!(o, Output::SetMenuGrid { .. })).count() >= 8 {
+            return Err("at most 8 menu grids a call".into());
+        }
+        let entries = entries
+            .into_iter()
+            .take(crate::screen::GRID_ENTRIES)
+            .map(|e| crate::screen::GridEntry { item: e.item, components: e.components, count: e.count })
+            .collect();
+        self.out.push(Output::SetMenuGrid { name: self.name.clone(), dimension, pos: [x, y, z], entries });
         Ok(())
     }
     fn set_redstone_output(&mut self, dimension: String, x: i32, y: i32, z: i32, level: u8, strong: bool) -> Result<(), String> {

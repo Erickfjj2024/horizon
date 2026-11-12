@@ -4119,7 +4119,10 @@ impl Game<'_> {
             m.items.resize(slots, None);
         }
         #[cfg(feature = "mods")]
-        self.send_menu_text_to_actor(key);
+        {
+            self.send_menu_text_to_actor(key);
+            self.send_menu_grid_to_actor(key);
+        }
         true
     }
     /// Why the mod block at `key` has no menu to open, for the message the
@@ -4513,6 +4516,13 @@ impl Game<'_> {
         let Some(button) = button else {
             return false;
         };
+        // A press on an item grid cell (API 55): its entry goes to the server's mod.
+        if let Some((index, button, shift)) = super::menu_screens::take_grid_press() {
+            let _ = self.native_net_send_to_server(
+                horizon_mods::screen::GRID_CLICK_CHANNEL,
+                &horizon_mods::screen::encode_grid_click(index, button, shift),
+            );
+        }
         // A press that stays on this client (a window opening, a tab chosen) is not a menu button.
         if button == super::menu_screens::LOCAL_PRESS {
             self.audio.play_button_click();

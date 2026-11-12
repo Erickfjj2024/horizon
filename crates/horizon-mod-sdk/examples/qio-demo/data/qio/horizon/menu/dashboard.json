@@ -1,0 +1,13 @@
+{
+  "slots": 0,
+  "screen": {
+    "width": 176,
+    "height": 200,
+    "inventory_y": 118,
+    "slots": [],
+    "widgets": [
+      {"type": "textfield", "x": 8, "y": 6, "w": 120, "h": 12, "id": 1, "max_length": 32},
+      {"type": "item_grid", "x": 7, "y": 22, "columns": 8, "rows": 5}
+    ]
+  }
+}

@@ -48,6 +48,35 @@ pub(super) fn end_drag() -> Option<i32> {
 /// screen being drawn.
 static MENU_TEXT: Mutex<Option<HashMap<[i32; 3], Vec<String>>>> = Mutex::new(None);
 static SCREEN_AT: Mutex<Option<[i32; 3]>> = Mutex::new(None);
+/// The item grids' entries the server sent, by the position of their menu (API 55).
+static MENU_GRID: Mutex<Option<HashMap<[i32; 3], Vec<horizon_mods::screen::GridEntry>>>> = Mutex::new(None);
+/// A press on a grid cell waiting to go to the server: its entry, button and Shift.
+static GRID_PRESS: Mutex<Option<(u32, u8, bool)>> = Mutex::new(None);
+
+/// A `horizon:menu_grid` message arrived: the item grid of the menu at its position.
+pub(super) fn remember_menu_grid(data: &[u8]) {
+    let Some((pos, entries)) = horizon_mods::screen::decode_menu_grid(data) else {
+        return;
+    };
+    if let Ok(mut m) = MENU_GRID.lock() {
+        let map = m.get_or_insert_with(HashMap::new);
+        if map.len() >= MENU_TEXT_BLOCKS && !map.contains_key(&pos) {
+            map.clear();
+        }
+        map.insert(pos, entries);
+    }
+}
+
+/// The open screen's item grid entries.
+fn menu_grid() -> Vec<horizon_mods::screen::GridEntry> {
+    let Some(at) = SCREEN_AT.lock().ok().and_then(|s| *s) else { return Vec::new() };
+    MENU_GRID.lock().ok().and_then(|m| m.as_ref()?.get(&at).cloned()).unwrap_or_default()
+}
+
+/// The press on a grid cell made since the last call, for the server.
+pub(super) fn take_grid_press() -> Option<(u32, u8, bool)> {
+    GRID_PRESS.lock().ok()?.take()
+}
 
 /// The readings each graph of the open screen keeps (FORK-20 part 4), by the graph's place, with the tick of the last reading.
 static GRAPHS: Mutex<Option<HashMap<(i32, i32), (u64, horizon_mods::screen::GraphHistory)>>> = Mutex::new(None);
@@ -358,6 +387,41 @@ impl Game<'_> {
                         self.native_fill(batch, [ox + (*x + *w) as f32 - 2.0, oy + *y as f32 + at, 2.0, bar_h], 0xFF80_8080);
                     }
                 }
+                Widget::ItemGrid { x, y, columns, rows, cell } => {
+                    let entries = menu_grid();
+                    let total = entries.len() as i64;
+                    let top = horizon_mods::screen::grid_top(locals, *columns, *rows, total);
+                    let c = f32::from(*cell);
+                    let (gx, gy) = (ox + *x as f32, oy + *y as f32);
+                    for r in 0..i64::from(*rows) {
+                        for col in 0..i64::from(*columns) {
+                            let cell_rect = [gx + col as f32 * c, gy + r as f32 * c, c, c];
+                            // A slot's frame: dark top left, light bottom right, grey inside.
+                            self.native_fill(batch, cell_rect, 0xFF37_3737);
+                            self.native_fill(batch, [cell_rect[0] + 1.0, cell_rect[1] + 1.0, c - 1.0, c - 1.0], 0xFFFF_FFFF);
+                            self.native_fill(batch, [cell_rect[0] + 1.0, cell_rect[1] + 1.0, c - 2.0, c - 2.0], 0xFF8B_8B8B);
+                            let index = (top + r) * i64::from(*columns) + col;
+                            let Some(e) = entries.get(index as usize) else { continue };
+                            let inset = ((c - 16.0) / 2.0).max(0.0);
+                            self.native_item(batch, &e.item, [cell_rect[0] + inset, cell_rect[1] + inset], c.min(16.0));
+                            let count = horizon_mods::screen::abbreviate(e.count);
+                            let width = count.len() as f32 * 6.0;
+                            self.native_text(batch, &count, [cell_rect[0] + c - width, cell_rect[1] + c - 8.0], 0xFFFF_FFFF, true);
+                            if cursor[0] >= cell_rect[0] && cursor[0] < cell_rect[0] + c && cursor[1] >= cell_rect[1] && cursor[1] < cell_rect[1] + c {
+                                self.native_fill(batch, [cell_rect[0] + 1.0, cell_rect[1] + 1.0, c - 2.0, c - 2.0], 0x80FF_FFFF);
+                            }
+                        }
+                    }
+                    // The bar at its right: the place of the rows shown among all of them.
+                    let lines = (total + i64::from(*columns) - 1) / i64::from(*columns);
+                    let h = f32::from(*rows) * c;
+                    self.native_fill(batch, [gx + f32::from(*columns) * c + 1.0, gy, 4.0, h], 0xFF37_3737);
+                    if lines > i64::from(*rows) {
+                        let bar = (h * f32::from(*rows) / lines as f32).max(6.0);
+                        let at = (h - bar) * top as f32 / (lines - i64::from(*rows)) as f32;
+                        self.native_fill(batch, [gx + f32::from(*columns) * c + 1.0, gy + at, 4.0, bar], 0xFFC6_C6C6);
+                    }
+                }
                 Widget::TextField { x, y, w, h, id, max_length, text_data, .. } => {
                     let rect = [ox + *x as f32, oy + *y as f32, *w as f32, *h as f32];
                     let mut focused = false;
@@ -556,6 +620,7 @@ impl Game<'_> {
         let screen = screen_of(block)?;
         let mut l = LOCALS.lock().ok()?;
         let mut now = l.take().unwrap_or_default();
+        now.grid_total = menu_grid().len() as i64;
         // A press on the title edge of an open window, over none of its buttons, takes the window to drag.
         let grab = open_window(screen, &now).map(|w| {
             let o = window_origin(w, &now);
@@ -610,6 +675,13 @@ impl Game<'_> {
         }
         match result {
             Press::Send(id) => Some(id),
+            // A grid cell: its entry goes to the server (`menu-grid-click`) once the press is handled.
+            Press::Grid(index) => {
+                if let Ok(mut g) = GRID_PRESS.lock() {
+                    *g = Some((index, u8::from(alt), self.has_shift_down()));
+                }
+                Some(LOCAL_PRESS)
+            }
             Press::Local | Press::Field(_) | Press::Row { .. } => Some(LOCAL_PRESS),
         }
     }
@@ -626,6 +698,7 @@ impl Game<'_> {
             return false;
         };
         let mut now = l.take().unwrap_or_default();
+        now.grid_total = menu_grid().len() as i64;
         let took = scroll_lists(screen, &data, &mut now, at, delta.signum() as i64 * (delta.abs().ceil() as i64).max(1));
         *l = Some(now);
         took
@@ -701,8 +774,23 @@ impl Game<'_> {
         data: &[i32],
         at: [f32; 2],
     ) -> Vec<String> {
-        screen_of(block)
-            .and_then(|s| hovered(s, data, &locals(), at))
-            .unwrap_or_default()
+        let Some(screen) = screen_of(block) else { return Vec::new() };
+        // Over a grid cell: the item and its whole count.
+        let mut l = locals();
+        let entries = menu_grid();
+        l.grid_total = entries.len() as i64;
+        for w in showing(&screen.widgets, data, &l) {
+            if let Widget::ItemGrid { x, y, columns, rows, cell } = w {
+                let c = f32::from(*cell);
+                let (col, row) = ((at[0] - *x as f32) / c, (at[1] - *y as f32) / c);
+                if col >= 0.0 && row >= 0.0 && col < f32::from(*columns) && row < f32::from(*rows) {
+                    let index = (horizon_mods::screen::grid_top(&l, *columns, *rows, l.grid_total) + row as i64) * i64::from(*columns) + col as i64;
+                    if let Some(e) = entries.get(index as usize) {
+                        return vec![self.pack.names.display_item(&e.item), format!("{}", e.count)];
+                    }
+                }
+            }
+        }
+        hovered(screen, data, &l, at).unwrap_or_default()
     }
 }

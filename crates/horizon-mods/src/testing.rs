@@ -71,6 +71,9 @@ pub struct TestGame {
     pub release_result: Option<bool>,
     /// What the last `block_break_start` answered.
     pub break_start_result: Option<bool>,
+    /// Each player's cursor stack (for grid presses) and the stacks the last grid press put in the inventory.
+    pub carried: std::collections::BTreeMap<String, crate::ModItemStack>,
+    pub to_inventory: Vec<String>,
     /// What the last `key_pressed` answered, and each player's held hotbar slot.
     pub key_result: Option<bool>,
     pub selected_slots: Vec<(String, u32)>,
@@ -423,6 +426,8 @@ impl TestGame {
             entity_used_result: None,
             break_start_result: None,
             key_result: None,
+            carried: std::collections::BTreeMap::new(),
+            to_inventory: Vec::new(),
             selected_slots: Vec::new(),
             entity_damage_result: None,
             mod_entities: Vec::new(),
@@ -578,6 +583,9 @@ impl TestGame {
         }
         if let Some(t) = u.menu_text {
             m.text = t;
+        }
+        if let Some(g) = u.menu_grid {
+            m.grid = g.into_iter().map(|e| crate::screen::GridEntry { item: e.item, components: e.components, count: e.count }).collect();
         }
         if u.close {
             let mut m = self.item_menus.remove(i);
@@ -1502,6 +1510,24 @@ pub struct HarnessItemMenu {
     pub items: Vec<Option<crate::ModItemStack>>,
     pub data: Vec<i32>,
     pub text: Vec<String>,
+    /// What its item grid shows (API 55).
+    pub grid: Vec<crate::screen::GridEntry>,
+}
+
+/// A press on an item grid cell (API 55): entry `index` with `button` (0 left, 1 right, 2 middle) and Shift, of the actor's open item
+/// menu, or of the block menu at `pos` (menu type `menu`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GridClickSet {
+    index: u32,
+    #[serde(default)]
+    button: u8,
+    #[serde(default)]
+    shift: bool,
+    #[serde(default)]
+    pos: Option<[i32; 3]>,
+    #[serde(default)]
+    menu: Option<String>,
 }
 
 /// A stack the actor puts in slot `slot` of their open item menu (`-` for none).
@@ -1774,6 +1800,9 @@ pub struct Step {
     /// Server mods: the actor presses a mod's key (`<mod>:<name>`) while playing, and holds this hotbar slot from now on.
     key_press: Option<String>,
     selected: Option<u32>,
+    /// Server mods (API 55): the actor's cursor stack from now on (`-` for none), and a press on an item grid cell.
+    carried: Option<String>,
+    grid_click: Option<GridClickSet>,
     /// Server mods (FORK-10 5b): the actor puts stacks in slots of an entity's open menu (`-` empties one), presses one of its
     /// buttons, takes from one of its result slots, or closes it.
     entity_menu_set: Option<Vec<EntityMenuSlotSet>>,
@@ -1851,6 +1880,13 @@ pub struct Expect {
     hit_damage_result: Option<f32>,
     /// Server mods: whether the mod let the step's `release-item` shoot.
     release_result: Option<bool>,
+    /// Server mods (API 55): the entries of the actor's open item menu's grid after the step, as `"item*count"` (components after),
+    /// every `set-menu-grid`, as `"dimension x y z n: item*count, ..."` (the first 4), the actor's cursor stack (`-` for none) and
+    /// what the last grid press put in the inventory.
+    item_menu_grid: Option<Vec<String>>,
+    menu_grid: Option<Vec<String>>,
+    carried: Option<String>,
+    to_inventory: Option<Vec<String>>,
     /// Server mods: whether the mod used the step's `key-press`.
     key_result: Option<bool>,
     /// Server mods: whether the mod cancelled the normal break of the step's `break-start`.
@@ -2168,6 +2204,8 @@ impl Step {
             || self.item_menu_take.is_some()
             || self.item_menu_set.is_some()
             || self.key_press.is_some()
+            || self.carried.is_some()
+            || self.grid_click.is_some()
             || self.selected.is_some()
             || self.close_item_menu
             || self.entity_menu_take.is_some()
@@ -2346,6 +2384,43 @@ impl Step {
             let stack = parse_stack(&b.stack).ok_or("break-start: a stack is item*count")?;
             game.break_start_result = Some(game.mods.block_break_start(who, &stack, b.pos, &b.state));
         }
+        if let (Some(c), Some(who)) = (&self.carried, &who) {
+            match parse_stack(c) {
+                Some(stack) => {
+                    game.carried.insert(who.id.clone(), stack);
+                }
+                None => {
+                    game.carried.remove(&who.id);
+                }
+            }
+        }
+        if let (Some(g), Some(who)) = (&self.grid_click, &who) {
+            let target = match g.pos {
+                Some(p) => crate::GridTarget {
+                    menu: g.menu.clone().ok_or("grid-click: a block's menu names its menu type")?,
+                    dimension: "minecraft:overworld".into(),
+                    pos: Some(crate::BlockPos { x: p[0], y: p[1], z: p[2] }),
+                    slot: None,
+                },
+                None => {
+                    let m = game.item_menus.iter().find(|m| m.player == who.id).ok_or("grid-click: no item menu is open")?;
+                    crate::GridTarget { menu: m.menu.clone(), dimension: "minecraft:overworld".into(), pos: None, slot: Some(m.slot) }
+                }
+            };
+            game.snapshot();
+            let carried = game.carried.get(&who.id).cloned();
+            if let Some(a) = game.mods.menu_grid_click(who, &target, g.index, g.button, g.shift, carried.as_ref()) {
+                match a.carried {
+                    Some(c) => {
+                        game.carried.insert(who.id.clone(), c);
+                    }
+                    None => {
+                        game.carried.remove(&who.id);
+                    }
+                }
+                game.to_inventory = a.to_inventory.iter().map(|s| show_stack(&Some(s.clone()))).collect();
+            }
+        }
         if let (Some(key), Some(who)) = (&self.key_press, &who) {
             game.snapshot();
             game.key_result = Some(game.mods.key_pressed(who, key));
@@ -2435,7 +2510,7 @@ impl Step {
         }
         if let (true, Some(who)) = (self.close_item_menu, &who) {
             let i = mine(game, who).ok_or("close-item-menu: no item menu is open")?;
-            game.apply_item_menu_update(i, crate::ItemMenuUpdate { items: None, menu_data: None, menu_text: None, close: true });
+            game.apply_item_menu_update(i, crate::ItemMenuUpdate { items: None, menu_data: None, menu_text: None, close: true, menu_grid: None });
         }
         if let Some(id) = self.close_entity_menu {
             if !game.entity_menus.remove(&id) {
@@ -2538,9 +2613,9 @@ impl Step {
             let Some(t) = game.menu_types.iter().find(|t| &t.id == menu) else { continue };
             let slots = usize::from(t.slots);
             if let Some(i) = game.item_menus.iter().position(|m| &m.player == player) {
-                game.apply_item_menu_update(i, crate::ItemMenuUpdate { items: None, menu_data: None, menu_text: None, close: true });
+                game.apply_item_menu_update(i, crate::ItemMenuUpdate { items: None, menu_data: None, menu_text: None, close: true, menu_grid: None });
             }
-            game.item_menus.push(HarnessItemMenu { player: player.clone(), slot: *slot, menu: menu.clone(), items: vec![None; slots], data: Vec::new(), text: Vec::new() });
+            game.item_menus.push(HarnessItemMenu { player: player.clone(), slot: *slot, menu: menu.clone(), items: vec![None; slots], data: Vec::new(), text: Vec::new(), grid: Vec::new() });
         }
         // A mod entity spawned or removed (FORK-10): the spawn is answered with its id, as the game does.
         // An entity's menu opened (FORK-10 5b): a kind with a menu type gets its virtual slots, empty, past the container's.
@@ -3130,6 +3205,34 @@ impl Step {
                 })
                 .collect();
             same("mod-entity-menu", want, &got)?;
+        }
+        let shown = |e: &crate::screen::GridEntry| format!("{}*{}{}", e.item, e.count, e.components);
+        if let Some(want) = &e.item_menu_grid {
+            let got: Vec<String> = game.item_menus.first().map(|m| m.grid.iter().map(shown).collect()).unwrap_or_default();
+            same("item-menu-grid", want, &got)?;
+        }
+        if let Some(want) = &e.menu_grid {
+            let got: Vec<String> = out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::SetMenuGrid { dimension, pos, entries, .. } => {
+                        let first: Vec<String> = entries.iter().take(4).map(shown).collect();
+                        Some(format!("{dimension} {} {} {} {}: {}", pos[0], pos[1], pos[2], entries.len(), first.join(", ")))
+                    }
+                    _ => None,
+                })
+                .collect();
+            same("menu-grid", want, &got)?;
+        }
+        if let Some(want) = &e.carried {
+            let id = game.players.first().map(|p| p.id.clone()).unwrap_or_default();
+            let got = game.carried.get(&id).map_or_else(|| "-".to_owned(), |s| show_stack(&Some(s.clone())));
+            if &got != want {
+                return Err(format!("carried: expected {want}, got {got}"));
+            }
+        }
+        if let Some(want) = &e.to_inventory {
+            same("to-inventory", want, &game.to_inventory)?;
         }
         if let Some(want) = e.key_result {
             if game.key_result != Some(want) {
