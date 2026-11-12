@@ -823,7 +823,7 @@ pub enum Widget {
     /// A grid of item cells (Mekanism's QIO Dashboard catalogue): `columns` by `rows` cells of `cell` pixels from `x`, `y`, showing the
     /// entries its mod gives (`world.set-menu-grid`, an item menu's `menu-grid`: item, components, count up to 2^64) from the scroll
     /// down, the count abbreviated over 999 (`1.2k`); the wheel and the bar at its right scroll it by rows, and a press on a cell
-    /// goes to the mod (`menu-grid-click`). One a screen.
+    /// goes to the mod (`menu-grid-click`), a cell with no entry as index 4294967295. One a screen.
     ItemGrid {
         x: i32,
         y: i32,

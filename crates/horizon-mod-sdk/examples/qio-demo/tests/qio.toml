@@ -30,6 +30,17 @@ expect.carried = "-"
 expect.to-inventory = ["minecraft:diamond*3"]
 
 [[step]]
+# A press on a cell with no entry (index 4294967295, past the last one) with a stack on the cursor stores it too: the catalogue
+# has 8 more dirt than before the half stack (32 left + 40).
+carried = "minecraft:dirt*40"
+grid-click = { index = 4294967295 }
+expect.carried = "-"
+
+[[step]]
+ticks = 1
+expect.item-menu-grid = ["minecraft:cobblestone*1500000", "minecraft:stone*12345", "minecraft:dirt*72"]
+
+[[step]]
 # The search box (`qio:menu_text`, position (i32::MIN, 1, -1), box 1, "stone") filters it: cobblestone and stone.
 net = { channel = "qio:menu_text", data = [0, 0, 0, 128, 1, 0, 0, 0, 255, 255, 255, 255, 1, 0, 0, 0, 115, 116, 111, 110, 101] }
 

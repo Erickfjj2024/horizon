@@ -1854,7 +1854,8 @@ interface server-events {
     /// `player` pressed one of the mod's keys (`data/<mod>/horizon/key/<name>.json`, `key` its id `<mod>:<name>`) while playing with
     /// no screen open, as the player bound it in Controls. True when the mod used the press. API 53.
     key-pressed: func(player: player, key: string) -> bool;
-    /// `player` pressed entry `index` of the item grid (`item_grid`) of a menu of the mod (`target`): `button` 0 left, 1 right,
+    /// `player` pressed entry `index` of the item grid (`item_grid`) of a menu of the mod (`target`), or a cell with no entry (past the
+    /// last one, or an empty grid) with `index` 4294967295: `button` 0 left, 1 right,
     /// 2 middle, `shift` with Shift held, `carried` the stack on their cursor now. The mod takes from its catalogue or puts the cursor's
     /// stack in and answers the cursor's stack after (Mekanism's QIO Dashboard: left takes a stack, right half of one, shift into the
     /// inventory, a carried stack is stored); none leaves the cursor as it was. API 55.

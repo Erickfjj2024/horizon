@@ -27,6 +27,9 @@ pub struct Locals {
     pub grid_total: i64,
 }
 
+/// The index a press on an item grid's cell with no entry carries (`menu-grid-click`): the grid, not an entry.
+pub const GRID_EMPTY: u32 = u32::MAX;
+
 /// The variable an item grid keeps its scroll (in rows) in.
 pub const GRID_SCROLL: &str = "@grid";
 
@@ -220,7 +223,8 @@ pub enum Press {
     Row { button: i32, first: u16 },
     /// Menu button `id`, for the server.
     Send(i32),
-    /// Entry `index` of the item grid (its place in the mod's list, the scroll counted), for the server.
+    /// Entry `index` of the item grid (its place in the mod's list, the scroll counted), or [`GRID_EMPTY`] for a cell with none, for
+    /// the server.
     Grid(u32),
     /// Something here: a local action, or a press a window took.
     Local,
@@ -262,7 +266,8 @@ fn press_in(
             let col = ((at[0] - x as f32) / c as f32) as i64;
             let row = ((at[1] - y as f32) / c as f32) as i64;
             let index = (grid_top(locals, columns, rows, locals.grid_total) + row) * i64::from(columns) + col;
-            return Some(if index < locals.grid_total { Press::Grid(index as u32) } else { Press::Local });
+            // A cell with no entry is a press on the grid itself (`GRID_EMPTY`): the mod stores the cursor's stack there.
+            return Some(Press::Grid(if index < locals.grid_total { index as u32 } else { GRID_EMPTY }));
         }
         if inside(at, x + w, y, 6, h) {
             let lines = (locals.grid_total + i64::from(columns) - 1) / i64::from(columns);
@@ -524,8 +529,11 @@ mod tests {
         assert_eq!(press(&screen, &[], &mut locals, [8.0 + 18.0 + 2.0, 18.0 + 18.0 + 2.0], false), Some(Press::Grid(28)));
         assert!(scroll_lists(&screen, &[], &mut locals, [20.0, 30.0], -9));
         assert_eq!(grid_top(&locals, 9, 3, 50), 3);
-        // Past the last entry is nothing to take; the bar's bottom scrolls to the end, its top back to the start.
-        assert_eq!(press(&screen, &[], &mut locals, [8.0 + 8.0 * 18.0 + 2.0, 18.0 + 2.0 * 18.0 + 2.0], false), Some(Press::Local));
+        // A cell past the last entry is the grid itself (the cursor's stack is stored there); the bar's bottom scrolls to the end,
+        // its top back to the start.
+        assert_eq!(press(&screen, &[], &mut locals, [8.0 + 8.0 * 18.0 + 2.0, 18.0 + 2.0 * 18.0 + 2.0], false), Some(Press::Grid(GRID_EMPTY)));
+        let mut empty = Locals::default();
+        assert_eq!(press(&screen, &[], &mut empty, [10.0, 20.0], true), Some(Press::Grid(u32::MAX)), "an empty grid too");
         assert_eq!(press(&screen, &[], &mut locals, [8.0 + 9.0 * 18.0 + 2.0, 18.0], false), Some(Press::Local));
         assert_eq!(grid_top(&locals, 9, 3, 50), 0);
     }

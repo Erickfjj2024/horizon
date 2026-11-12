@@ -243,6 +243,9 @@ pub mod server {
     pub use horizon::mods::entities::{self, Display, Mob, MobOptions};
     pub use horizon::mods::net;
     pub use horizon::mods::{chunks, player_items, world_data};
+    /// The `index` of a `menu_grid_click` on a cell with no entry (past the last one): the grid itself, where Mekanism's QIO
+    /// Dashboard stores the cursor's stack.
+    pub const GRID_EMPTY: u32 = u32::MAX;
     pub use horizon::mods::recipe_types::{self, CookingRecipe, CustomRecipe};
     /// For reading the recipes' JSON.
     pub use serde_json;
