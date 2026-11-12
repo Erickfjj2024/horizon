@@ -459,7 +459,7 @@ pub struct MenuType {
     /// `<mod id>:<path>`.
     #[serde(skip)]
     pub id: String,
-    /// 1 to [`MAX_MENU_SLOTS`].
+    /// 0 to [`MAX_MENU_SLOTS`]: a menu of buttons and text alone has none (the Portable Teleporter's, the Seismic Reader's).
     pub slots: u16,
     /// 0 to [`MAX_MENU_SLOTS`].
     #[serde(default)]
@@ -558,6 +558,10 @@ pub struct MenuScreen {
     /// The screen draws its title and its "Inventory" label itself (as `text` widgets): the game leaves its own out.
     #[serde(default)]
     pub own_labels: bool,
+    /// The player's inventory is not on the screen: its slots are neither drawn nor clicked, and the panel is `width` by `height`
+    /// alone (a menu of buttons and text, the Portable Teleporter's).
+    #[serde(default)]
+    pub hide_inventory: bool,
     /// Where each container slot is (its item's top left); `null` hides the
     /// slot, and so do slots past the list.
     pub slots: Vec<Option<[i32; 2]>>,
@@ -1817,9 +1821,9 @@ impl Content {
         for (menu, name) in menus {
             let file: MenuType =
                 serde_json::from_slice(&self.file(&name)?).map_err(|e| format!("{name}: {e}"))?;
-            if !(1..=MAX_MENU_SLOTS).contains(&file.slots) || file.data_slots > MAX_MENU_SLOTS {
+            if file.slots > MAX_MENU_SLOTS || file.data_slots > MAX_MENU_SLOTS {
                 return Err(format!(
-                    "{name}: slots is 1 to {MAX_MENU_SLOTS}, data_slots 0 to {MAX_MENU_SLOTS}"
+                    "{name}: slots is 0 to {MAX_MENU_SLOTS}, data_slots 0 to {MAX_MENU_SLOTS}"
                 ));
             }
             if file.accepts.iter().any(|a| a.slot >= file.slots || a.items.is_empty() || a.items.len() > 64) {
@@ -2280,8 +2284,7 @@ capabilities = ["registries"]
             [("ruby:bag", 4, 0, vec![]), ("ruby:press", 9, 2, vec![7, 8])]
         );
         for (case, file, why) in [
-            ("menu-empty", r#"{"slots": 0}"#, "slots is 1 to 256"),
-            ("menu-large", r#"{"slots": 257}"#, "slots is 1 to 256"),
+            ("menu-large", r#"{"slots": 257}"#, "slots is 0 to 256"),
             (
                 "menu-data",
                 r#"{"slots": 1, "data_slots": 257}"#,
@@ -2377,6 +2380,20 @@ capabilities = ["registries"]
             let e = hmod(case, MANIFEST_TEXT, &files).unwrap_err();
             assert!(e.contains(why), "{case}: {e}");
         }
+    }
+
+    #[test]
+    fn a_menu_of_buttons_alone_has_no_slots_and_hides_the_inventory() {
+        let file = br#"{"slots": 0, "data_slots": 2, "screen": {"width": 176, "height": 120, "hide_inventory": true, "slots": [],
+            "widgets": [{"type": "button", "x": 8, "y": 20, "w": 50, "h": 14, "id": 1}]}}"#;
+        let files: &[(&str, &[u8])] = &[("data/ruby/horizon/menu/teleporter.json", file)];
+        let content = hmod("menu-none", MANIFEST_TEXT, files).unwrap();
+        let m = &content.menu_types[0];
+        assert_eq!((m.slots, m.data_slots), (0, 2));
+        assert!(m.screen.as_ref().is_some_and(|s| s.hide_inventory && s.height == 120));
+        // A menu of slots keeps the inventory unless it says so.
+        let files: &[(&str, &[u8])] = &[("data/ruby/horizon/menu/bag.json", br#"{"slots": 1, "screen": {"slots": [[8, 8]]}}"#)];
+        assert!(!hmod("menu-inventory", MANIFEST_TEXT, files).unwrap().menu_types[0].screen.as_ref().unwrap().hide_inventory);
     }
 
     #[test]

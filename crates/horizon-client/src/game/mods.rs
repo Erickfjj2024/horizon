@@ -464,6 +464,9 @@ fn register_menu_types(mods: &[horizon_client::mod_content::ContentMod]) {
             .map(|m| (m.id.clone(), m.accepts.iter().map(|a| (usize::from(a.slot), a.items.clone())).collect()))
             .collect(),
     );
+    let _ = containers::register_mod_menu_no_inventory(
+        menus.iter().filter(|m| m.screen.as_ref().is_some_and(|s| s.hide_inventory)).map(|m| m.id.clone()).collect(),
+    );
     let set = containers::register_mod_menu_types(menus.iter().map(|m| {
         let results = m.results.iter().map(|&r| usize::from(r)).collect();
         (m.id.clone(), m.slots.into(), m.data_slots.into(), results, m.armor.as_ref().map_or(0, horizon_mods::content::ArmorSlots::count))

@@ -1,0 +1,16 @@
+{
+  "slots": 0,
+  "data_slots": 1,
+  "screen": {
+    "width": 120,
+    "height": 60,
+    "hide_inventory": true,
+    "own_labels": true,
+    "slots": [],
+    "widgets": [
+      {"type": "text", "x": 8, "y": 6, "text_data": 0},
+      {"type": "text", "x": 8, "y": 20, "text": "reads: {0}"},
+      {"type": "button", "x": 8, "y": 36, "w": 50, "h": 14, "id": 1, "tooltip": "Read again"}
+    ]
+  }
+}

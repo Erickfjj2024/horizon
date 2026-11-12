@@ -28,6 +28,19 @@ static MOD_MENU_TYPES: std::sync::OnceLock<Vec<ModMenuType>> = std::sync::OnceLo
 type MenuAccepts = std::collections::HashMap<String, Vec<(usize, Vec<String>)>>;
 static MOD_MENU_ACCEPTS: std::sync::OnceLock<MenuAccepts> = std::sync::OnceLock::new();
 
+/// The mod menu types whose screen has no player inventory (`"hide_inventory": true`), by id.
+static MOD_MENU_NO_INVENTORY: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+
+/// Registers the mod menu types with no player inventory (once per process).
+pub fn register_mod_menu_no_inventory(ids: std::collections::HashSet<String>) -> bool {
+    MOD_MENU_NO_INVENTORY.set(ids).is_ok()
+}
+
+/// Whether menu type `id`'s screen hides the player's inventory: its 36 slots are neither drawn nor clicked.
+pub fn mod_menu_hides_inventory(id: &str) -> bool {
+    MOD_MENU_NO_INVENTORY.get().is_some_and(|s| s.contains(id))
+}
+
 /// Registers the slots of mod menu types that take only some items (once per process).
 pub fn register_mod_menu_accepts(accepts: MenuAccepts) -> bool {
     MOD_MENU_ACCEPTS.set(accepts).is_ok()

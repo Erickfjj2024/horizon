@@ -944,6 +944,29 @@ mod tests {
         assert_eq!(contents(&view.get(2)), []);
     }
 
+    /// A menu whose screen hides the player's inventory (`hide_inventory`): its 36 slots are hidden, so a click on one does
+    /// nothing and a shift-click from the container has nowhere to go.
+    #[test]
+    fn a_menu_without_the_inventory_never_reaches_it() {
+        let Some(rules) = rules() else {
+            return;
+        };
+        let mut g = guest();
+        g.inventory[0] = Some(ItemStack::new("minecraft:stick", 3));
+        let mut machine = vec![Some(ItemStack::new("minecraft:stone", 5))];
+        let hidden: Vec<usize> = (1..37).collect();
+        let mut drag = None;
+        let mut view = View { guest: &mut g, container: Some(&mut machine), shulker: false, hidden: &hidden, results: &[], equip: 0, accepts: &[] };
+        // The hotbar's first slot is menu slot 1 + 27: a click on it takes nothing.
+        click(&mut view, &mut drag, 28, 0, input::PICKUP, &rules);
+        assert_eq!(view.guest.carried, None);
+        assert_eq!(view.guest.inventory[0].as_ref().map(|s| s.count), Some(3));
+        // A shift-click on the stone keeps it where it is.
+        click(&mut view, &mut drag, 0, 0, input::QUICK_MOVE, &rules);
+        assert_eq!(view.get(0).map(|s| s.count), Some(5));
+        assert!(view.guest.inventory.iter().skip(1).all(Option::is_none));
+    }
+
     /// A mod container saved with more items than its menu has slots: the
     /// menu reads and writes only its count, the rest stay saved.
     #[test]

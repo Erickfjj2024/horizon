@@ -8488,6 +8488,10 @@ impl Game<'_> {
         }
         let mut v: Vec<usize> = (0..36).collect();
         if let Some(shown) = self.native_screen_slots() {
+            // A screen with no player inventory (`hide_inventory`) shows its own slots alone.
+            if self.native_screen_hides_inventory() {
+                v.clear();
+            }
             v.extend(shown);
             // A window open on the screen covers the slots under it.
             v.retain(|i| !self.window_covers_slot(*i));

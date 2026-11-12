@@ -809,6 +809,8 @@ pub struct NativeScreen {
     pub height: f32,
     pub slots: Vec<Option<[f32; 2]>>,
     pub inventory_y: f32,
+    /// The player's inventory is not on the screen (`hide_inventory`): its slots are neither drawn nor clicked.
+    pub hide_inventory: bool,
     /// The inventory's left column (vanilla's is 8).
     pub inventory_x: f32,
     /// The mod draws the title and the "Inventory" label itself
@@ -4328,6 +4330,10 @@ impl Game<'_> {
             .count();
         Some(shown + s.screen.armor.len())
     }
+    /// Whether the open mod screen leaves the player's inventory out (`hide_inventory`).
+    pub(super) fn native_screen_hides_inventory(&self) -> bool {
+        self.shown_native_screen().is_some_and(|s| s.screen.hide_inventory)
+    }
     /// The first row of the player's inventory on the open mod screen.
     pub(super) fn native_screen_inventory_y(&self) -> Option<f32> {
         self.shown_native_screen().map(|s| s.screen.inventory_y)
@@ -4389,9 +4395,11 @@ impl Game<'_> {
         if let Some(title) = self.remote_menu_title() {
             batch.text_styled(atlas, &title, ox + 8.0, oy + 6.0, grey, false);
         }
-        let inventory = self.translate("container.inventory", "Inventory");
-        let label_y = oy + s.screen.inventory_y - 11.0;
-        batch.text(atlas, &inventory, ox + 8.0, label_y, grey, false);
+        if !s.screen.hide_inventory {
+            let inventory = self.translate("container.inventory", "Inventory");
+            let label_y = oy + s.screen.inventory_y - 11.0;
+            batch.text(atlas, &inventory, ox + 8.0, label_y, grey, false);
+        }
         true
     }
     /// The tick of the mod block entity at `pos`.

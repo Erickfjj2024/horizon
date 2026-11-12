@@ -253,6 +253,9 @@ impl Hub {
             title,
         }));
         let mod_type = crate::containers::mod_menu_type(menu_kind);
+        // A screen with no player inventory (`hide_inventory`): its 36 slots after the container's take no click.
+        let no_inventory = mod_type.is_some() && crate::containers::mod_menu_hides_inventory(menu_kind);
+        let inventory_slots: Vec<usize> = if no_inventory { (items.len()..items.len() + 36).collect() } else { Vec::new() };
         g.menu = Some(Menu {
             window,
             kind,
@@ -263,7 +266,7 @@ impl Hub {
             sent: Vec::new(),
             drag: None,
             sent_data: Vec::new(),
-            hidden: Vec::new(),
+            hidden: inventory_slots,
             results: mod_type.map_or_else(Vec::new, |t| t.results.clone()),
             equip: mod_type.map_or(0, |t| t.armor),
             accepts: crate::containers::mod_menu_accepts(menu_kind),
@@ -281,7 +284,10 @@ impl Hub {
             .find(|g| g.conn == conn)
             .and_then(|g| g.menu.as_mut())
         {
+            // The player's inventory slots a `hide_inventory` screen left out stay out.
+            let inventory: Vec<usize> = m.hidden.iter().copied().filter(|&i| i >= m.size).collect();
             m.hidden = hidden;
+            m.hidden.extend(inventory);
         }
     }
 

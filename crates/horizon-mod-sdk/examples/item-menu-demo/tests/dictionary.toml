@@ -44,3 +44,22 @@ item-menu-set = [{ slot = 0, stack = "minecraft:stick*3" }]
 item-menu-button = 2
 expect.item-menus = []
 expect.entity-menu-returned = ["minecraft:stick*3"]
+
+[[step]]
+# A menu of buttons and text alone (round 4, "slots": 0 and "hide_inventory"): it opens with no slots, and its tick and button
+# are called as any other's, `items` empty.
+net = { channel = "imenu:open_reader", data = [0] }
+expect.item-menu-open = ["Alex 0 imenu:reader"]
+expect.item-menus = ["Alex 0 imenu:reader - data=[] text="]
+
+[[step]]
+ticks = 2
+expect.item-menus = ["Alex 0 imenu:reader - data=[2] text=0 slot(s)"]
+
+[[step]]
+item-menu-button = 1
+expect.item-menus = ["Alex 0 imenu:reader - data=[0] text=0 slot(s)"]
+
+[[step]]
+close-item-menu = true
+expect.item-menus = []

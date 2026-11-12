@@ -18,6 +18,10 @@ impl ServerMod for Demo {
     }
     fn net_message(&mut self, player: &Player, channel: &str, data: &[u8]) {
         match channel {
+            // A menu of text and a button alone (no slots, no inventory): what the Seismic Reader shows.
+            "imenu:open_reader" => {
+                let _ = players::open_item_menu(&player.id, u32::from(data.first().copied().unwrap_or(0)), "imenu:reader");
+            }
             "imenu:open" => {
                 let _ = players::open_item_menu(&player.id, u32::from(data.first().copied().unwrap_or(0)), "imenu:dictionary");
             }
@@ -35,6 +39,11 @@ impl ServerMod for Demo {
         }
     }
     fn item_menu_tick(&mut self, _player: &Player, menu: ItemMenu) -> Option<ItemMenuUpdate> {
+        if menu.menu == "imenu:reader" {
+            // Its data slot counts the ticks it has been open (the mod's own count, kept in the menu's data).
+            let reads = menu.menu_data.first().copied().unwrap_or(0) + 1;
+            return Some(ItemMenuUpdate { menu_data: Some(vec![reads]), menu_text: Some(vec![format!("{} slot(s)", menu.items.len())]), ..update() });
+        }
         let input = menu.items.first().cloned().flatten();
         let made = input.as_ref().filter(|s| s.item == "minecraft:oak_log").map(|_| ItemStack {
             item: "minecraft:oak_planks".into(),
@@ -53,6 +62,9 @@ impl ServerMod for Demo {
         Some(u)
     }
     fn item_menu_button(&mut self, _player: &Player, menu: ItemMenu, id: i32) -> Option<ItemMenuUpdate> {
+        if menu.menu == "imenu:reader" {
+            return (id == 1).then(|| ItemMenuUpdate { menu_data: Some(vec![0]), ..update() });
+        }
         let mut u = update();
         match id {
             1 => {

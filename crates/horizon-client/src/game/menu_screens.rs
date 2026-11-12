@@ -184,6 +184,7 @@ impl Game<'_> {
                 .collect(),
             inventory_y: def.inventory_y as f32,
             inventory_x: def.inventory_x as f32,
+            hide_inventory: def.hide_inventory,
             own_labels: def.own_labels,
             armor: armor_of(block),
         })
