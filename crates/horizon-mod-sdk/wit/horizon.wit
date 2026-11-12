@@ -712,6 +712,11 @@ interface players {
     /// one it opened on, or when the mod answers `close`. True when asked; false for a player who is not online, a slot past 40 or
     /// a menu of another mod. API 48.
     open-item-menu: func(player: string, slot: u32, menu: string) -> bool;
+    /// Opens menu type `menu` of the mod for one player with no item behind it (Mekanism's Module Tweaker, opened by a key): as
+    /// `open-item-menu` in all else, its `item-menu` has `slot` 4294967295 and no `stack`, it closes only when the player or the mod
+    /// closes it, and a `textfield`'s message carries `(i32::MIN, 1, -1)`. True when asked; false for a player who is not online or a
+    /// menu of another mod. API 53.
+    open-player-menu: func(player: string, menu: string) -> bool;
     /// A system message to every player and the server's log, after the
     /// mod's name. Counts toward the same 8 per call.
     broadcast: func(text: string);
@@ -1358,6 +1363,9 @@ interface player-items {
     /// Lets two mods or a mod and the player swap a stack without losing it.
     /// Same errors as `set-slot`. API 25.
     compare-and-set-slot: func(player: string, slot: u32, expected: option<item-stack>, replacement: option<item-stack>) -> result<_, string>;
+    /// The hotbar slot (0 to 8) the player holds in the main hand, as of the last tick: with `get-inventory` and `set-slot` (36 the
+    /// feet to 39 the head, 40 the off hand) what an equipment screen reads and writes. None for a player who isn't online. API 53.
+    selected-slot: func(player: string) -> option<u32>;
 }
 
 /// What the server calls in a server mod (manifest `api = "0.3"`,
@@ -1801,6 +1809,9 @@ interface server-events {
     /// An entity of the mod's own kind died of damage (its health reached 0): last look at it, as it was. The game removes it right
     /// after; its drops, if it has any, are the mod's to spawn.
     mod-entity-died: func(entity: mod-entity);
+    /// `player` pressed one of the mod's keys (`data/<mod>/horizon/key/<name>.json`, `key` its id `<mod>:<name>`) while playing with
+    /// no screen open, as the player bound it in Controls. True when the mod used the press. API 53.
+    key-pressed: func(player: player, key: string) -> bool;
     /// Each tick while `player` has an item menu of the mod open (`players.open-item-menu`): what to change in it. API 48.
     item-menu-tick: func(player: player, menu: item-menu) -> option<item-menu-update>;
     /// `player` pressed button `id` (`id`, `shift_id` or `alt_id`, as the client chose it) of one of the mod's item menus.

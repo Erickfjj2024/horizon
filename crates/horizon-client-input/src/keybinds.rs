@@ -74,6 +74,38 @@ pub const MAPPINGS: &[(&str, &str, &str)] = &[
     ("key.debug.lightmapTexture", "key.keyboard.4", "debug"),
     ("key.debug.improvedTransparency", "key.keyboard.x", "debug"),
 ];
+/// A key mapping a content mod declares (`data/<mod>/horizon/key/`): its name `<mod>:<key>`, default key, category and label
+/// (translation keys or text), shown in Controls after vanilla's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModMapping {
+    pub name: &'static str,
+    pub default: &'static str,
+    pub category: &'static str,
+    pub label: &'static str,
+}
+
+static MOD_MAPPINGS: std::sync::OnceLock<Vec<ModMapping>> = std::sync::OnceLock::new();
+
+/// Registers the content mods' key mappings, once per process (false when they already were). `(name, default, category, label)`.
+pub fn register_mod_mappings(list: impl IntoIterator<Item = (String, String, String, String)>) -> bool {
+    let leak = |s: String| -> &'static str { Box::leak(s.into_boxed_str()) };
+    let list = list
+        .into_iter()
+        .map(|(name, default, category, label)| ModMapping { name: leak(name), default: leak(default), category: leak(category), label: leak(label) })
+        .collect();
+    MOD_MAPPINGS.set(list).is_ok()
+}
+
+/// The content mods' key mappings.
+pub fn mod_mappings() -> &'static [ModMapping] {
+    MOD_MAPPINGS.get().map_or(&[], Vec::as_slice)
+}
+
+/// Every mapping as `(name, default, category)`: vanilla's, then the mods'.
+pub fn all_mappings() -> impl Iterator<Item = (&'static str, &'static str, &'static str)> {
+    MAPPINGS.iter().copied().chain(mod_mappings().iter().map(|m| (m.name, m.default, m.category)))
+}
+
 /// Mappings Options builds as `ToggleKeyMapping` (hold or toggle by option).
 pub fn is_toggle(name: &str) -> bool {
     matches!(name, "key.sneak" | "key.sprint" | "key.use" | "key.attack")
@@ -343,22 +375,49 @@ fn distinct<T: PartialEq>(keys: Vec<T>) -> Vec<T> {
 
 impl KeyBinds {
     pub fn get(&self, name: &str) -> &str {
-        self.keys
-            .get(name)
-            .map_or("key.keyboard.unknown", String::as_str)
+        // A mod's mapping registered after these binds were made has its default.
+        self.keys.get(name).map_or_else(|| Self::default_of(name), String::as_str)
     }
     pub fn default_of(name: &str) -> &'static str {
-        MAPPINGS
-            .iter()
-            .find(|m| m.0 == name)
-            .map_or("key.keyboard.unknown", |m| m.1)
+        all_mappings().find(|m| m.0 == name).map_or("key.keyboard.unknown", |m| m.1)
     }
     pub fn is_default(&self, name: &str) -> bool {
         self.get(name) == Self::default_of(name)
     }
     pub fn set(&mut self, name: &str, key: &str) {
-        if let Some((n, _, _)) = MAPPINGS.iter().find(|m| m.0 == name) {
+        if let Some((n, _, _)) = all_mappings().find(|m| m.0 == name) {
             self.keys.insert(n, key.to_owned());
+        }
+    }
+    /// A mod's mapping (`<mod>:<key>`) bound to `key`, read before the mods' content registered it (`horizon-mod-keys.txt`).
+    pub fn set_mod(&mut self, name: &str, key: &str) {
+        if !name.contains(':') || name.starts_with("key.") {
+            return;
+        }
+        let n: &'static str = match all_mappings().find(|m| m.0 == name) {
+            Some((n, _, _)) => n,
+            None => Box::leak(name.to_owned().into_boxed_str()),
+        };
+        self.keys.insert(n, key.to_owned());
+    }
+    /// The mods' mappings bound away from their defaults, as `horizon-mod-keys.txt` keeps them.
+    pub fn mod_saved(&self) -> Vec<(&'static str, String)> {
+        self.keys
+            .iter()
+            .filter(|(n, k)| n.contains(':') && !n.starts_with("key.") && k.as_str() != Self::default_of(n))
+            .map(|(n, k)| (*n, k.clone()))
+            .collect()
+    }
+    /// The `horizon-mod-keys.txt` text: `<mod>:<key>=key.keyboard.x` lines.
+    pub fn mod_keys_text(&self) -> String {
+        self.mod_saved().into_iter().map(|(n, k)| format!("{n}={k}\n")).collect()
+    }
+    /// Reads `horizon-mod-keys.txt`'s lines into the binds.
+    pub fn read_mod_keys(&mut self, text: &str) {
+        for line in text.lines() {
+            if let Some((name, key)) = line.split_once('=') {
+                self.set_mod(name.trim(), key.trim());
+            }
         }
     }
     pub fn saved(&self) -> Vec<(&'static str, String)> {
@@ -370,18 +429,21 @@ impl KeyBinds {
     pub fn reset_all(&mut self) {
         *self = Self::default();
     }
+    /// The mods' mappings bound to `key` (physical input name), for their presses.
+    pub fn mod_mappings_for<'a>(&'a self, key: &'a str) -> impl Iterator<Item = &'static str> + 'a {
+        mod_mappings().iter().map(|m| m.name).filter(move |n| key != "key.keyboard.unknown" && self.get(n) == key)
+    }
     /// Mappings sharing `name`'s key (KeyMapping.same), for conflict marks.
     pub fn conflicts(&self, name: &str) -> Vec<&'static str> {
         let key = self.get(name);
         if key == "key.keyboard.unknown" {
             return Vec::new();
         }
-        MAPPINGS
-            .iter()
+        all_mappings()
             .filter(|(n, _, _)| {
                 *n != name && self.get(n) == key && (!self.is_default(n) || !self.is_default(name))
             })
-            .map(|(n, _, _)| *n)
+            .map(|(n, _, _)| n)
             .collect()
     }
     /// The mapping a physical input triggers (first in list order).
@@ -496,6 +558,34 @@ impl KeyBinds {
 
 #[cfg(test)]
 mod tests {
+    /// A mod's key mapping: its default until rebound, kept apart from options.txt in `horizon-mod-keys.txt`, read back before the
+    /// mod registered it, and found by the key it is bound to.
+    #[test]
+    fn a_mods_key_mapping_has_its_default_and_keeps_its_rebinding() {
+        assert!(register_mod_mappings([(
+            "mekanism:module_tweaker".to_owned(),
+            "key.keyboard.backslash".to_owned(),
+            "key.categories.mekanism".to_owned(),
+            "key.mekanism.module_tweaker".to_owned(),
+        )]));
+        let mut keys = KeyBinds::default();
+        assert_eq!(keys.get("mekanism:module_tweaker"), "key.keyboard.backslash");
+        assert_eq!(keys.mod_mappings_for("key.keyboard.backslash").collect::<Vec<_>>(), ["mekanism:module_tweaker"]);
+        assert_eq!(keys.mod_keys_text(), "", "nothing rebound");
+        keys.set("mekanism:module_tweaker", "key.keyboard.o");
+        assert_eq!(keys.mod_keys_text(), "mekanism:module_tweaker=key.keyboard.o\n");
+        // options.txt keeps vanilla's alone.
+        assert!(keys.saved().iter().all(|(n, _)| n.starts_with("key.")));
+        // Read back, and a line for a mod not loaded now is kept for when it is.
+        let mut again = KeyBinds::default();
+        again.read_mod_keys("mekanism:module_tweaker=key.keyboard.o\nother:boost=key.keyboard.b\nkey.jump=key.keyboard.j\n");
+        assert_eq!(again.get("mekanism:module_tweaker"), "key.keyboard.o");
+        assert_eq!(again.get("key.jump"), "key.keyboard.space", "vanilla's are options.txt's");
+        assert!(again.mod_keys_text().contains("other:boost=key.keyboard.b"));
+        // O is Horizon's Friends key: Controls marks the two as sharing it.
+        assert_eq!(keys.conflicts("mekanism:module_tweaker"), ["key.friends"]);
+    }
+
     use super::*;
     #[test]
     fn container_mouse_hotkeys_follow_slot_bindings_and_pick_item_priority() {

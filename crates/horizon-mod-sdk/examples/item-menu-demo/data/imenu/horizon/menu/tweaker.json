@@ -1,0 +1,13 @@
+{
+  "slots": 0,
+  "screen": {
+    "width": 176,
+    "height": 80,
+    "hide_inventory": true,
+    "slots": [],
+    "widgets": [
+      {"type": "text", "x": 8, "y": 6, "text_data": 0},
+      {"type": "text", "x": 8, "y": 20, "text_data": 1}
+    ]
+  }
+}

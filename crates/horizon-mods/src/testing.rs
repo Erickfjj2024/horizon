@@ -71,6 +71,9 @@ pub struct TestGame {
     pub release_result: Option<bool>,
     /// What the last `block_break_start` answered.
     pub break_start_result: Option<bool>,
+    /// What the last `key_pressed` answered, and each player's held hotbar slot.
+    pub key_result: Option<bool>,
+    pub selected_slots: Vec<(String, u32)>,
     /// What the last `mod_entity_used` answered, and the damage the last `mod_entity_damaged` applied.
     pub entity_used_result: Option<bool>,
     pub entity_damage_result: Option<f32>,
@@ -419,6 +422,8 @@ impl TestGame {
             release_result: None,
             entity_used_result: None,
             break_start_result: None,
+            key_result: None,
+            selected_slots: Vec::new(),
             entity_damage_result: None,
             mod_entities: Vec::new(),
             menu_types: Vec::new(),
@@ -482,6 +487,7 @@ impl TestGame {
             mobs: self.mobs.clone(),
             mobs_dimension: "minecraft:overworld".into(),
             inventories: self.inventories.clone(),
+            selected_slots: self.selected_slots.clone(),
             // The GUI of a 1280 x 720 window at scale 3, as the trial run's.
             gui_size: (427.0, 240.0),
             ..Snapshot::default()
@@ -1764,6 +1770,9 @@ pub struct Step {
     break_start: Option<BreakStartSet>,
     /// Server mods (FORK-10 d): the actor right-clicks one of the mod's entities.
     use_mod_entity: Option<EntityUseSet>,
+    /// Server mods: the actor presses a mod's key (`<mod>:<name>`) while playing, and holds this hotbar slot from now on.
+    key_press: Option<String>,
+    selected: Option<u32>,
     /// Server mods (FORK-10 5b): the actor puts stacks in slots of an entity's open menu (`-` empties one), presses one of its
     /// buttons, takes from one of its result slots, or closes it.
     entity_menu_set: Option<Vec<EntityMenuSlotSet>>,
@@ -1841,6 +1850,8 @@ pub struct Expect {
     hit_damage_result: Option<f32>,
     /// Server mods: whether the mod let the step's `release-item` shoot.
     release_result: Option<bool>,
+    /// Server mods: whether the mod used the step's `key-press`.
+    key_result: Option<bool>,
     /// Server mods: whether the mod cancelled the normal break of the step's `break-start`.
     break_start_result: Option<bool>,
     /// Server mods (FORK-10 d): whether the mod took the step's `use-mod-entity` click.
@@ -2152,6 +2163,8 @@ impl Step {
             || self.item_menu_button.is_some()
             || self.item_menu_take.is_some()
             || self.item_menu_set.is_some()
+            || self.key_press.is_some()
+            || self.selected.is_some()
             || self.close_item_menu
             || self.entity_menu_take.is_some()
             || self.break_start.is_some()
@@ -2231,6 +2244,11 @@ impl Step {
         if let (Some(set), Some(i)) = (&self.motion, actor) {
             let id = game.players[i].id.clone();
             set.apply(game.motion_of(&id));
+        }
+        if let (Some(slot), Some(i)) = (self.selected, actor) {
+            let id = game.players[i].id.clone();
+            game.selected_slots.retain(|(p, _)| *p != id);
+            game.selected_slots.push((id, slot.min(8)));
         }
         if let (Some(list), Some(i)) = (&self.inventory, actor) {
             let id = game.players[i].id.clone();
@@ -2323,6 +2341,10 @@ impl Step {
             game.snapshot();
             let stack = parse_stack(&b.stack).ok_or("break-start: a stack is item*count")?;
             game.break_start_result = Some(game.mods.block_break_start(who, &stack, b.pos, &b.state));
+        }
+        if let (Some(key), Some(who)) = (&self.key_press, &who) {
+            game.snapshot();
+            game.key_result = Some(game.mods.key_pressed(who, key));
         }
         if let (Some(u), Some(who)) = (&self.use_mod_entity, &who) {
             game.snapshot();
@@ -3104,6 +3126,11 @@ impl Step {
                 })
                 .collect();
             same("mod-entity-menu", want, &got)?;
+        }
+        if let Some(want) = e.key_result {
+            if game.key_result != Some(want) {
+                return Err(format!("key-result: expected {want}, got {:?}", game.key_result));
+            }
         }
         if let Some(want) = &e.item_menu_open {
             let name = |id: &str| game.players.iter().find(|p| p.id == id).map_or(id.to_owned(), |p| p.name.clone());

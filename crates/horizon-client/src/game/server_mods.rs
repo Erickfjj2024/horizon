@@ -41,6 +41,11 @@ pub(super) enum ModEvent {
         channel: String,
         data: Vec<u8>,
     },
+    /// A player pressed a content mod's key (`<mod>:<name>`).
+    Key {
+        who: Who,
+        key: String,
+    },
     /// A player pressed menu button `id` of the mod menu at `pos`.
     MenuButton {
         who: Who,
@@ -537,6 +542,7 @@ mod run {
             }
             if self.mods.mods.wants_player_items() {
                 snapshot.inventories = self.server_inventories(&players);
+                snapshot.selected_slots = self.server_selected_slots(&players);
             }
             if self.mods.mods.wants_entities() {
                 let dim = self.dim.id();
@@ -623,6 +629,12 @@ mod run {
                     ModEvent::Net { who: w, channel, data } => {
                         if let Some(p) = who(&w) {
                             self.mods.mods.net_message(&p, &channel, &data);
+                        }
+                    }
+                    ModEvent::Key { who: w, key } => {
+                        if let Some(p) = who(&w) {
+                            let used = self.mods.mods.key_pressed(&p, &key);
+                            log::debug!("Horizon: key {key} of {}: used {used}", p.name);
                         }
                     }
                     ModEvent::MenuButton { who: w, pos, id } => {
@@ -1006,6 +1018,20 @@ mod run {
                 };
                 if let Some(slots) = self.for_player(target, |g| g.inventory_for_mods()) {
                     out.push((p.id.clone(), slots));
+                }
+            }
+            out
+        }
+
+        /// The hotbar slot each player holds (`player-items.selected-slot`).
+        fn server_selected_slots(&mut self, players: &[horizon_mods::ServerPlayer]) -> Vec<(String, u32)> {
+            let mut out = Vec::new();
+            for p in players {
+                let Some((target, _)) = self.mod_player(&p.id) else {
+                    continue;
+                };
+                if let Some(slot) = self.for_player(target, |g| g.selected as u32) {
+                    out.push((p.id.clone(), slot));
                 }
             }
             out
@@ -2683,9 +2709,15 @@ mod run {
             let Some(mut host) = self.lan.take() else {
                 return false;
             };
-            let Some(item) = host.hub.guest(conn).and_then(|g| horizon_client::lan::menu::mod_slot(g, slot)).map(|s| s.item.to_string()) else {
-                self.lan = Some(host);
-                return false;
+            // `open-player-menu` (no slot): no item to stand on.
+            let item = if slot == horizon_mods::NO_SLOT {
+                String::new()
+            } else {
+                let Some(item) = host.hub.guest(conn).and_then(|g| horizon_client::lan::menu::mod_slot(g, slot)).map(|s| s.item.to_string()) else {
+                    self.lan = Some(host);
+                    return false;
+                };
+                item
             };
             self.guest_close_all(&mut host, conn);
             let key = crate::game::mods::OpenItemMenu::key(conn);
@@ -2839,7 +2871,9 @@ mod run {
         /// Whether the item menu of connection `conn` may stay open: the mod did not close it and the slot still holds its item.
         pub(in crate::game) fn item_menu_still_valid(&self, g: &horizon_client::lan::guest::Guest) -> bool {
             self.mods.item_menus.iter().find(|m| m.conn == g.conn).is_some_and(|m| {
-                !m.closing && horizon_client::lan::menu::mod_slot(g, m.slot).is_some_and(|s| *s.item == *m.item)
+                !m.closing
+                    && (m.slot == horizon_mods::NO_SLOT
+                        || horizon_client::lan::menu::mod_slot(g, m.slot).is_some_and(|s| *s.item == *m.item))
             })
         }
 
@@ -3069,6 +3103,14 @@ mod run {
         /// A player's client half sent `data` on `channel`.
         pub(in crate::game) fn mod_net_event(&mut self, player: u128, channel: &str, data: &[u8]) {
             if !self.hears_players() {
+                return;
+            }
+            // A press of a content mod's key: its id, one the content declares, reaches the mod's `key-pressed`.
+            if channel == horizon_mods::screen::KEY_CHANNEL {
+                let Ok(key) = std::str::from_utf8(data) else { return };
+                if horizon_client::keybinds::mod_mappings().iter().any(|m| m.name == key) {
+                    self.mods.events.push(ModEvent::Key { who: Who::Uuid(player), key: key.to_owned() });
+                }
                 return;
             }
             // A text box of a mod entity's menu (FORK-10 5b): the client knows no position for it, the mod gets the entity's id.

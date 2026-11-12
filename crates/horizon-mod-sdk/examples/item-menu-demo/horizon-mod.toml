@@ -5,5 +5,5 @@ description = "Test mod for item menus (round 4, item 2): a message opens a dict
 authors = ["Rust port"]
 api = "0.3"
 side = "server"
-capabilities = ["registries", "players", "net"]
-experimental = ["net"]
+capabilities = ["registries", "players", "player-items", "net"]
+experimental = ["player-items", "net"]

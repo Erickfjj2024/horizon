@@ -320,6 +320,9 @@ fn put_s(f: &mut OptionsFile, key: &str, v: &str) {
         f.set(key, V::Str(v.to_owned()));
     }
 }
+/// The content mods' key mappings the player rebound, beside `options.txt` (`<mod>:<key>=key.keyboard.x` lines).
+pub const MOD_KEYS_FILE: &str = "horizon-mod-keys.txt";
+
 impl Settings {
     /// The index in `video_modes` of the preferred fullscreen mode, -1 (the desktop's own mode)
     /// when none is set or the monitor lacks it: `Monitor.indexOfMode`.
@@ -351,7 +354,7 @@ impl Settings {
             .unwrap_or_default();
         let keypad = crate::keypad::Settings::load(&path.with_file_name("horizon-keypad.json"));
         let touch = crate::touch::Settings::load_from(&path.with_file_name("horizon-touch.json"));
-        let settings = match fs::read(path) {
+        let mut settings = match fs::read(path) {
             Ok(bytes) => Self {
                 horizon,
                 controller,
@@ -371,6 +374,10 @@ impl Settings {
                 ..Self::default()
             },
         };
+        // The mods' own key mappings, rebound (`horizon-mod-keys.txt`, beside options.txt).
+        if let Ok(text) = fs::read_to_string(path.with_file_name(MOD_KEYS_FILE)) {
+            settings.keys.read_mod_keys(&text);
+        }
         settings.describe_for_crashes();
         // Options.load: the backend asked for at startup, what a restart is measured from.
         Self {
@@ -669,6 +676,11 @@ impl Settings {
             let _ = self.touch.save_to(&dir.join("horizon-touch.json"));
             self.extras.save(dir);
             self.mods.save(dir);
+            let mod_keys = self.keys.mod_keys_text();
+            let file = dir.join(MOD_KEYS_FILE);
+            if !mod_keys.is_empty() || file.exists() {
+                let _ = fs::write(file, mod_keys);
+            }
         }
     }
     /// Volume of a sound source (master excluded).

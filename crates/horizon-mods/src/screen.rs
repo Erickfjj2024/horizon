@@ -701,6 +701,9 @@ pub fn decode_menu_input(data: &[u8]) -> Option<([i32; 3], i32, String)> {
     Some(([int(0)?, int(4)?, int(8)?], int(12)?, String::from_utf8(data.get(16..)?.to_vec()).ok()?))
 }
 
+/// The channel a press of a content mod's key travels on, client to host (its id `<mod>:<name>` as the bytes).
+pub const KEY_CHANNEL: &str = "horizon:key";
+
 /// The channel a block entity's menu strings travel on, host to client (`world.set-menu-text`).
 pub const MENU_TEXT_CHANNEL: &str = "horizon:menu_text";
 

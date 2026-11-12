@@ -1486,6 +1486,8 @@ pub struct Content {
     pub entity_types: Vec<EntityType>,
     /// Its own living entity kinds (FORK-10), by id.
     pub entity_kinds: Vec<EntityKind>,
+    /// The key mappings it adds (`data/<id>/horizon/key/`).
+    pub keys: Vec<KeyMapping>,
     pub menu_types: Vec<MenuType>,
     /// Its block entity renderers, by block id.
     pub renderers: Vec<BlockRenderer>,
@@ -1579,6 +1581,7 @@ impl Content {
             creative_tabs: Vec::new(),
             entity_types: Vec::new(),
             entity_kinds: Vec::new(),
+            keys: Vec::new(),
             menu_types: Vec::new(),
             renderers: Vec::new(),
             namespaces: manifest.owned_namespaces().map(str::to_owned).collect(),
@@ -1629,6 +1632,7 @@ impl Content {
         let mut menus = Vec::new();
         let mut renderers = Vec::new();
         let mut kinds = Vec::new();
+        let mut keys = Vec::new();
         for name in &self.files {
             let mut parts = name.splitn(3, '/');
             let (top, namespace, rest) = (
@@ -1681,9 +1685,11 @@ impl Content {
                 menus.push((menu, name.clone()));
             } else if let Some(block) = parse("renderer") {
                 renderers.push((block, name.clone()));
+            } else if let Some(key) = parse("key") {
+                keys.push((key, name.clone()));
             } else {
                 return Err(format!(
-                    "{name}: data/{id}/horizon/ holds block/, item/, mob_effect/, creative_tab/, entity_type/, entity_kind/, menu/ and renderer/*.json only"
+                    "{name}: data/{id}/horizon/ holds block/, item/, mob_effect/, creative_tab/, entity_type/, entity_kind/, menu/, renderer/ and key/*.json only"
                 ));
             }
         }
@@ -1872,7 +1878,51 @@ impl Content {
             }
             self.entity_kinds.push(EntityKind { id: kind, ..file });
         }
+        if keys.len() > MAX_KEYS {
+            return Err(format!("data/{id}/horizon/key/: {MAX_KEYS} keys at most"));
+        }
+        for (key, name) in keys {
+            let file: KeyMapping = serde_json::from_slice(&self.file(&name)?).map_err(|e| format!("{name}: {e}"))?;
+            file.check(&name)?;
+            self.keys.push(KeyMapping { id: key, ..file });
+        }
         Ok(())
+    }
+}
+
+/// The most keys a mod declares.
+pub const MAX_KEYS: usize = 32;
+
+/// A key mapping a mod adds (`data/<mod>/horizon/key/<name>.json`, `<mod>:<name>`): it shows in Controls under its category and the
+/// player binds it as vanilla's; a press while playing reaches the server mod's `key-pressed` (Mekanism's "Open Module Tweaker").
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct KeyMapping {
+    #[serde(skip)]
+    pub id: String,
+    /// What Controls shows: a translation key of the mod's lang files, or the text itself.
+    pub label: String,
+    /// The heading it is under in Controls, a translation key or text; its own after vanilla's.
+    pub category: String,
+    /// The default key as options.txt writes it (`key.keyboard.o`, `key.mouse.4`); empty for none (`key.keyboard.unknown`).
+    #[serde(default)]
+    pub key: String,
+}
+
+impl KeyMapping {
+    fn check(&self, name: &str) -> Result<(), String> {
+        let text = |t: &str| !t.is_empty() && t.len() <= 128;
+        if !text(&self.label) || !text(&self.category) {
+            return Err(format!("{name}: label and category are 1 to 128 bytes"));
+        }
+        if !self.key.is_empty() && !(self.key.starts_with("key.keyboard.") || self.key.starts_with("key.mouse.")) {
+            return Err(format!("{name}: key is empty, key.keyboard.<name> or key.mouse.<name>"));
+        }
+        Ok(())
+    }
+    /// The default key, `key.keyboard.unknown` for none.
+    pub fn default_key(&self) -> &str {
+        if self.key.is_empty() { "key.keyboard.unknown" } else { &self.key }
     }
 }
 
@@ -2378,6 +2428,26 @@ capabilities = ["registries"]
                 files.push(("data/ruby/horizon/menu/robit.json", m));
             }
             let e = hmod(case, MANIFEST_TEXT, &files).unwrap_err();
+            assert!(e.contains(why), "{case}: {e}");
+        }
+    }
+
+    #[test]
+    fn a_mod_declares_keys_with_a_label_a_category_and_a_default() {
+        let tweaker = br#"{"label": "key.mekanism.module_tweaker", "category": "key.categories.mekanism", "key": "key.keyboard.backslash"}"#;
+        let none = br#"{"label": "Boost", "category": "Mekanism"}"#;
+        let files: &[(&str, &[u8])] = &[("data/ruby/horizon/key/module_tweaker.json", tweaker), ("data/ruby/horizon/key/boost.json", none)];
+        let keys = hmod("keys", MANIFEST_TEXT, files).unwrap().keys;
+        let mut found: Vec<(String, String)> = keys.iter().map(|k| (k.id.clone(), k.default_key().to_owned())).collect();
+        found.sort();
+        assert_eq!(found, [("ruby:boost".into(), "key.keyboard.unknown".into()), ("ruby:module_tweaker".into(), "key.keyboard.backslash".into())]);
+        for (case, file, why) in [
+            ("key-label", r#"{"label": "", "category": "x"}"#, "label and category are 1 to 128 bytes"),
+            ("key-name", r#"{"label": "a", "category": "x", "key": "o"}"#, "key is empty, key.keyboard.<name> or key.mouse.<name>"),
+            ("key-field", r#"{"label": "a", "category": "x", "modifier": "shift"}"#, "unknown field"),
+        ] {
+            let files: &[(&str, &[u8])] = &[("data/ruby/horizon/key/a.json", file.as_bytes())];
+            let e = hmod(case, MANIFEST_TEXT, files).unwrap_err();
             assert!(e.contains(why), "{case}: {e}");
         }
     }

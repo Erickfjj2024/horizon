@@ -310,6 +310,8 @@ pub struct Snapshot {
     /// What each player carries (slots 0 to 40, see `player-items`), by player
     /// id, for capability `player-items`.
     pub inventories: Vec<(String, Vec<Option<ModItemStack>>)>,
+    /// The hotbar slot each player holds, by player id (`player-items.selected-slot`).
+    pub selected_slots: Vec<(String, u32)>,
     /// The first block along the player's view within [`RAYCAST_MAX`] and
     /// its distance from the eye, for `game.raycast`; the game works it out
     /// only while a mod calls it ([`Mods::wants_raycast`]).
@@ -1772,6 +1774,15 @@ impl Mods {
         let (ns, _) = menu.split_once(':')?;
         self.entries.iter().position(|e| e.run.as_ref().is_some_and(|r| r.hooks.server().is_some()) && e.manifest.as_ref().is_some_and(|m| m.id == ns))
     }
+    /// `player` pressed key `key` (`<mod>:<name>`, a content key mapping): whether the mod that owns it used the press.
+    pub fn key_pressed(&mut self, player: &ServerPlayer, key: &str) -> bool {
+        let Some(i) = self.menu_owner(key) else { return false };
+        self.call(i, FUEL_EVENT, |run| match &run.hooks {
+            Hooks::Server(m, _) => m.horizon_mods_server_events().call_key_pressed(&mut run.store, player, key),
+            Hooks::Client(..) => Ok(false),
+        })
+        .unwrap_or(false)
+    }
     /// One tick of `player`'s open item menu (round 4, item 2): the update of the mod that owns the menu type, checked.
     pub fn item_menu_tick(&mut self, player: &ServerPlayer, menu: &ItemMenu) -> Option<ItemMenuUpdate> {
         let i = self.menu_owner(&menu.menu)?;
@@ -2552,6 +2563,9 @@ pub fn nearest_first(found: Vec<SeenEntity>, min: [f64; 3], max: [f64; 3]) -> Ve
     found
 }
 
+/// The `slot` of a menu `open-player-menu` opened: none of the player's.
+pub const NO_SLOT: u32 = u32::MAX;
+
 /// Whether a mod's update of an item menu is in bounds: 256 slots, 256 data slots and the menu strings' limits.
 pub fn item_menu_update_ok(u: &ItemMenuUpdate) -> bool {
     u.items.as_ref().is_none_or(|s| s.len() <= 256)
@@ -3103,6 +3117,9 @@ impl chunks::Host for State {
     }
 }
 impl player_items::Host for State {
+    fn selected_slot(&mut self, player: String) -> Option<u32> {
+        self.snapshot.selected_slots.iter().find(|(id, _)| *id == player).map(|(_, s)| *s)
+    }
     fn get_inventory(&mut self, player: String) -> Option<Vec<Option<ModItemStack>>> {
         self.snapshot
             .inventories
@@ -3965,6 +3982,17 @@ impl players::Host for State {
             return false;
         }
         self.out.push(Output::ItemMenu { name: self.name.clone(), mod_id: self.id.clone(), player, slot, menu });
+        true
+    }
+    fn open_player_menu(&mut self, player: String, menu: String) -> bool {
+        let mine = menu.split_once(':').is_some_and(|(ns, path)| ns == self.id && !path.is_empty());
+        if !mine
+            || !self.snapshot.players.iter().any(|p| p.id == player)
+            || self.out.iter().filter(|o| matches!(o, Output::ItemMenu { .. })).count() >= 8
+        {
+            return false;
+        }
+        self.out.push(Output::ItemMenu { name: self.name.clone(), mod_id: self.id.clone(), player, slot: NO_SLOT, menu });
         true
     }
     fn broadcast(&mut self, text: String) {

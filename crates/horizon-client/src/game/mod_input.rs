@@ -118,6 +118,9 @@ impl Game<'_> {
     /// screen) is its `key-down` / `key-up`. Vanilla's mapping on the same
     /// key still runs.
     pub(super) fn mod_key(&mut self, key: KeyCode, pressed: bool, repeat: bool) {
+        if pressed && !repeat && let Some(name) = horizon_client::keybinds::key_name(key) {
+            self.content_key_pressed(name);
+        }
         if repeat || !self.mods.mods.has_keys() {
             return;
         }
@@ -144,9 +147,30 @@ impl Game<'_> {
     /// A mouse button while playing: a mod's key bound to it
     /// (`key.mouse.4`...), as `mod_key`.
     pub(super) fn mod_mouse_key(&mut self, button: MouseButton, pressed: bool) {
+        if pressed {
+            let name = horizon_client::keybinds::mouse_name(button);
+            self.content_key_pressed(&name);
+        }
         if self.mods.mods.has_keys() {
             let name = horizon_client::keybinds::mouse_name(button);
             self.mods.mods.key(&name, pressed);
+        }
+    }
+    /// A key or button `name` went down: each content mod key mapping bound to it (`data/<mod>/horizon/key/`) goes to the server
+    /// while playing with no screen, which hands it to the mod's `key-pressed`.
+    fn content_key_pressed(&mut self, name: &str) {
+        if !self.mod_playing() {
+            return;
+        }
+        let ids: Vec<&'static str> = self.settings.keys.mod_mappings_for(name).collect();
+        for id in ids {
+            if self.remote.is_some() {
+                let _ = self.native_net_send_to_server(horizon_mods::screen::KEY_CHANNEL, id.as_bytes());
+            } else {
+                // A game that is its own server (never the default now): the press is its own player's.
+                let player = self.player_uuid();
+                self.mod_net_event(player, horizon_mods::screen::KEY_CHANNEL, id.as_bytes());
+            }
         }
     }
     /// Wheel steps while playing: true when a mod holds the wheel, so the

@@ -436,6 +436,10 @@ pub(super) static MOD_REDSTONE_EMITTERS: std::sync::OnceLock<std::collections::H
 fn register_menu_types(mods: &[horizon_client::mod_content::ContentMod]) {
     let emitters = mods.iter().flat_map(|m| m.content.blocks.iter()).filter(|b| b.redstone_emitter).map(|b| b.id.clone()).collect();
     let _ = MOD_REDSTONE_EMITTERS.set(emitters);
+    // The mods' key mappings, in Controls with vanilla's (`data/<mod>/horizon/key/`).
+    let _ = horizon_client::keybinds::register_mod_mappings(mods.iter().flat_map(|m| m.content.keys.iter()).map(|k| {
+        (k.id.clone(), k.default_key().to_owned(), k.category.clone(), k.label.clone())
+    }));
     // The mods' items that hold energy, for `recipe-types.item-energy` (round 4, item 5).
     horizon_mods::item_energy::register(mods.iter().flat_map(|m| m.content.items.iter()).filter_map(|i| Some((i.id.clone(), i.energy?))));
     use horizon_client::containers;
@@ -686,6 +690,7 @@ impl Game<'_> {
             mobs: Vec::new(),
             mobs_dimension: String::new(),
             inventories: Vec::new(),
+            selected_slots: Vec::new(),
             view_hit: self.mod_view_hit(),
             recipes,
             known_recipes,

@@ -320,6 +320,11 @@ pub mod server {
         }
         /// One of the mod's own entities died of damage. When [`Registration::on_mod_entities`] is set.
         fn mod_entity_died(&mut self, _entity: ModEntity) {}
+        /// A player pressed one of the mod's keys (`data/<mod>/horizon/key/<name>.json`, `key` its id) while playing: true when the
+        /// mod used the press.
+        fn key_pressed(&mut self, _player: &Player, _key: &str) -> bool {
+            false
+        }
         /// Each tick while a player has one of the mod's item menus open (`players::open_item_menu`): what to change in it.
         fn item_menu_tick(&mut self, _player: &Player, _menu: ItemMenu) -> Option<ItemMenuUpdate> {
             None
@@ -759,6 +764,11 @@ macro_rules! export_server_mod {
                 }
                 fn mod_entity_died(entity: ModEntity) {
                     with(|m| m.mod_entity_died(entity));
+                }
+                fn key_pressed(player: Player, key: String) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.key_pressed(&player, &key));
+                    out
                 }
                 fn item_menu_tick(player: Player, menu: ItemMenu) -> Option<ItemMenuUpdate> {
                     let mut out = None;

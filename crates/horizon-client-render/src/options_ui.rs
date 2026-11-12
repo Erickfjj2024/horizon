@@ -9,7 +9,7 @@ pub use crate::settings::Opt;
 use crate::{
     gamepad::{self, GlyphStyle},
     hud::{HudAtlas, HudBatch, rgba},
-    keybinds::{self, CATEGORIES, KeyBinds, MAPPINGS},
+    keybinds::{self, CATEGORIES, KeyBinds},
     lang::{self, LanguageInfo},
     settings::{SOUND_SOURCES, Settings},
     text::{self, Style, Text},
@@ -3101,10 +3101,14 @@ impl OptionsUi {
                     ));
                 }
                 let label = |name: &str| {
-                    crate::keypad::ACTIONS
-                        .iter()
-                        .find(|a| a.0 == name)
-                        .map_or_else(|| lang::get(name), |a| a.1.to_owned())
+                    crate::keypad::ACTIONS.iter().find(|a| a.0 == name).map_or_else(
+                        || match keybinds::mod_mappings().iter().find(|m| m.name == name) {
+                            // A mod's mapping: its label, a translation key or the text.
+                            Some(m) => lang::get(m.label),
+                            None => lang::get(name),
+                        },
+                        |a| a.1.to_owned(),
+                    )
                 };
                 let mut mappings: Vec<(&str, &str)> = if keypad {
                     crate::keypad::ACTIONS
@@ -3112,7 +3116,8 @@ impl OptionsUi {
                         .map(|a| (a.0, "movement"))
                         .collect()
                 } else {
-                    MAPPINGS.iter().map(|(n, _, c)| (*n, *c)).collect()
+                    // Vanilla's, then the content mods' own (their categories after vanilla's).
+                    keybinds::all_mappings().map(|(n, _, c)| (n, c)).collect()
                 };
                 let query = self.settings_search.value.to_lowercase();
                 mappings.retain(|(name, _)| {
@@ -3148,8 +3153,13 @@ impl OptionsUi {
                     if category != last_category {
                         last_category = category;
                         rows.begin(&out, y);
+                        let heading = if CATEGORIES.contains(&category) || keypad {
+                            format!("key.category.minecraft.{category}")
+                        } else {
+                            category.to_owned()
+                        };
                         let label =
-                            Text::translate(&format!("key.category.minecraft.{category}"), &[])
+                            Text::translate(&heading, &[])
                                 .with_style(&Style {
                                     bold: Some(true),
                                     underlined: Some(true),
@@ -3178,7 +3188,7 @@ impl OptionsUi {
                         w: 200.0,
                         h: 9.0,
                         kind: WKind::Text {
-                            text: if keypad {
+                            text: if keypad || name.contains(':') {
                                 Text::literal(label(name))
                             } else {
                                 tr(name)
@@ -3236,7 +3246,7 @@ impl OptionsUi {
                             .find(|a| a.0 == name)
                             .map_or("", |a| a.0)
                     } else {
-                        MAPPINGS.iter().find(|m| m.0 == name).map_or("", |m| m.0)
+                        keybinds::all_mappings().find(|m| m.0 == name).map_or("", |m| m.0)
                     };
                     out.push(button(change_x, y, 75.0, message, Act::Key(name_static)));
                     if !conflicts.is_empty() {
