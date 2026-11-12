@@ -949,6 +949,7 @@ impl Game<'_> {
                 | Output::SetMenuText { .. }
                 | Output::SetComparator { .. }
                 | Output::SetRedstone { .. }
+                | Output::SetItemTransport { .. }
                 | Output::BreakBlocks { .. }
                 | Output::SpawnParticles { .. }
                 | Output::SetTankFilter { .. }

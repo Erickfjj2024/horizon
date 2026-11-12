@@ -95,6 +95,14 @@ ticks = 1
 expect.comparator = ["minecraft:overworld 1 77 1 9"]
 # API 50: and the redstone signal it gives, 12, strong.
 expect.redstone = ["minecraft:overworld 1 77 1 12 true"]
+# API 54: its Transporter Config (red ejection, strict input, the transporter east painted red); colour 18 was refused, so the one
+# after is made plain.
+expect.item-transport = [
+    "minecraft:overworld 1 77 1 eject-color=14",
+    "minecraft:overworld 1 77 1 strict-input=true",
+    "minecraft:overworld 2 77 1 transmitter-color=14",
+    "minecraft:overworld 3 77 1 transmitter-color=-",
+]
 
 [[step]]
 # API 39: break-blocks answers how many blocks it will break: the stone only (the bedrock is unbreakable, the third cell is air).

@@ -71,6 +71,14 @@ impl ServerMod for Gate {
             let _ = world::set_comparator_output(&player.dimension, pos.x, pos.y, pos.z, 9);
             // API 50: and a redstone signal of 12 to every side, strong (it powers the blocks it touches through them).
             let _ = world::set_redstone_output(&player.dimension, pos.x, pos.y, pos.z, 12, true);
+            // API 54, Mekanism's Transporter Config: it ejects red (14), takes only red from a network, and the transporter east of it
+            // is painted red; a colour past 17 is refused.
+            let _ = world::set_item_eject_color(&player.dimension, pos.x, pos.y, pos.z, Some(14));
+            let _ = world::set_item_strict_input(&player.dimension, pos.x, pos.y, pos.z, true);
+            let _ = world::set_transmitter_color(&player.dimension, pos.x + 1, pos.y, pos.z, Some(14));
+            if world::set_item_eject_color(&player.dimension, pos.x, pos.y, pos.z, Some(18)).is_err() {
+                let _ = world::set_transmitter_color(&player.dimension, pos.x + 2, pos.y, pos.z, None);
+            }
         }
         // API 39: the machine at y 78 mines the 3 blocks east of it (one is air, one bedrock) with a silk touch pickaxe.
         if pos.y == 78 {

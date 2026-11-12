@@ -522,6 +522,13 @@ pub enum Output {
         items: Vec<String>,
         max: u32,
     },
+    /// `world.set-item-eject-color`, `set-item-strict-input` and `set-transmitter-color` (Mekanism's Transporter Config).
+    SetItemTransport {
+        name: String,
+        dimension: String,
+        pos: [i32; 3],
+        setting: TransportSetting,
+    },
     /// `world.set-item-eject`: a block entity pushing its output items out, or not.
     SetItemEject {
         name: String,
@@ -2563,6 +2570,17 @@ pub fn nearest_first(found: Vec<SeenEntity>, min: [f64; 3], max: [f64; 3]) -> Ve
     found
 }
 
+/// One setting of the Transporter Config a mod changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransportSetting {
+    /// The colour ejected items carry (0 to 17), none for plain.
+    EjectColor(Option<u8>),
+    /// Only items of the block's colour come in from a network.
+    StrictInput(bool),
+    /// An item transmitter's paint.
+    TransmitterColor(Option<u8>),
+}
+
 /// The `slot` of a menu `open-player-menu` opened: none of the player's.
 pub const NO_SLOT: u32 = u32::MAX;
 
@@ -2989,6 +3007,15 @@ impl mod_world::Host for State {
         }
         self.out.push(Output::PullItems { name: self.name.clone(), dimension, pos: [x, y, z], face, items, max: max.min(64) });
         Ok(())
+    }
+    fn set_item_eject_color(&mut self, dimension: String, x: i32, y: i32, z: i32, color: Option<u8>) -> Result<(), String> {
+        self.transport_setting(dimension, [x, y, z], TransportSetting::EjectColor(color))
+    }
+    fn set_item_strict_input(&mut self, dimension: String, x: i32, y: i32, z: i32, strict: bool) -> Result<(), String> {
+        self.transport_setting(dimension, [x, y, z], TransportSetting::StrictInput(strict))
+    }
+    fn set_transmitter_color(&mut self, dimension: String, x: i32, y: i32, z: i32, color: Option<u8>) -> Result<(), String> {
+        self.transport_setting(dimension, [x, y, z], TransportSetting::TransmitterColor(color))
     }
     fn set_item_eject(&mut self, dimension: String, x: i32, y: i32, z: i32, on: bool) -> Result<(), String> {
         let made = self
@@ -4303,6 +4330,22 @@ impl ui::Host for State {
         self.ui.settings = clip_widgets(widgets);
     }
 }
+impl State {
+    /// A Transporter Config change, made after the call: an error for a colour past 17 or too many changes a call.
+    fn transport_setting(&mut self, dimension: String, pos: [i32; 3], setting: TransportSetting) -> Result<(), String> {
+        if let TransportSetting::EjectColor(Some(c)) | TransportSetting::TransmitterColor(Some(c)) = setting
+            && c > 17
+        {
+            return Err(format!("colour {c} is past the 18 transporter colours (0 to 17)"));
+        }
+        if self.out.iter().filter(|o| matches!(o, Output::SetItemTransport { .. })).count() >= BLOCKS_PER_CALL {
+            return Err(format!("at most {BLOCKS_PER_CALL} transporter settings a call"));
+        }
+        self.out.push(Output::SetItemTransport { name: self.name.clone(), dimension, pos, setting });
+        Ok(())
+    }
+}
+
 impl world_data::Host for State {
     fn get(&mut self, key: String) -> Option<Vec<u8>> {
         self.world_data.get(&key).cloned()

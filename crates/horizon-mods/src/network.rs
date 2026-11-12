@@ -31,6 +31,8 @@ pub struct Transmitter {
     pub throughput: u64,
     /// The faces it connects through.
     pub connect: [bool; 6],
+    /// An item transporter's colour (Mekanism's 18, 0 to 17), none for a plain one.
+    pub color: Option<u8>,
 }
 
 fn gives(s: FlowSide) -> bool {
@@ -112,6 +114,53 @@ pub fn item_networks(all: &[Transmitter]) -> Vec<(Vec<([i32; 3], usize)>, u64)> 
         .filter(|(members, _)| all[members[0]].medium == Medium::Items)
         .map(|(members, throughput)| (attached(all, &members), throughput))
         .collect()
+}
+
+/// Whether a stack of colour `stack` passes an item transporter of colour `transporter` (Mekanism's
+/// `TransporterPathfinder`: a plain transporter carries a coloured stack, a coloured one only its own colour; a plain stack only
+/// plain transporters).
+pub fn passes(stack: Option<u8>, transporter: Option<u8>) -> bool {
+    match (stack, transporter) {
+        (_, None) => stack.is_none() || transporter.is_none(),
+        (Some(s), Some(t)) => s == t,
+        (None, Some(_)) => false,
+    }
+}
+
+/// The blocks beside the item network that a stack of colour `color` put in by the block at `from` (with the face of the network
+/// side it touches, as [`item_networks`] lists it) reaches through transporters it passes ([`passes`]), in position order, `from`
+/// left out. Empty when the transporter it is put into does not take it.
+pub fn reachable_ends(all: &[Transmitter], from: ([i32; 3], usize), color: Option<u8>) -> Vec<([i32; 3], usize)> {
+    let at: HashMap<[i32; 3], usize> = all.iter().enumerate().map(|(i, t)| (t.pos, i)).collect();
+    let Some(&start) = at.get(&step(from.0, from.1 ^ 1)) else {
+        return Vec::new();
+    };
+    let ok = |i: usize| all[i].medium == Medium::Items && passes(color, all[i].color);
+    if !ok(start) || !all[start].connect[from.1] {
+        return Vec::new();
+    }
+    let mut seen = vec![false; all.len()];
+    let mut members = vec![start];
+    seen[start] = true;
+    let mut next = 0;
+    while next < members.len() {
+        let t = members[next];
+        next += 1;
+        for face in 0..6 {
+            if !all[t].connect[face] {
+                continue;
+            }
+            if let Some(&o) = at.get(&step(all[t].pos, face))
+                && !seen[o]
+                && ok(o)
+                && all[o].connect[face ^ 1]
+            {
+                seen[o] = true;
+                members.push(o);
+            }
+        }
+    }
+    attached(all, &members).into_iter().filter(|e| e.0 != from.0).collect()
 }
 
 /// Shares `total` among `caps` as evenly as their limits allow (water
@@ -307,7 +356,30 @@ mod tests {
             medium,
             throughput,
             connect: [true; 6],
+            color: None,
         }
+    }
+
+    #[test]
+    fn a_coloured_stack_goes_by_plain_transporters_and_its_own_colour_only() {
+        // Plain, plain stack: yes; a coloured transporter takes its own colour alone, a plain stack none.
+        assert!(passes(None, None) && passes(Some(3), None) && passes(Some(3), Some(3)));
+        assert!(!passes(Some(3), Some(4)) && !passes(None, Some(3)));
+        // A line of transporters at x 1..=5, the 4th red (14): a machine at x 0 puts in (through the first one's west face, 4);
+        // chests at y 1 above each.
+        let mut line: Vec<Transmitter> = (1..=5).map(|x| cable(x, Medium::Items, 8)).collect();
+        line[3].color = Some(14);
+        let ends = |color| -> Vec<[i32; 3]> { reachable_ends(&line, ([0, 0, 0], 4), color).into_iter().map(|e| e.0).filter(|p| p[1] == 1).collect() };
+        // A plain stack stops at the red transporter: the chests over x 1 to 3.
+        assert_eq!(ends(None), [[1, 1, 0], [2, 1, 0], [3, 1, 0]]);
+        // A red stack goes all along.
+        assert_eq!(ends(Some(14)), [[1, 1, 0], [2, 1, 0], [3, 1, 0], [4, 1, 0], [5, 1, 0]]);
+        // Another colour stops there too; the machine itself is never its own end.
+        assert_eq!(ends(Some(2)).len(), 3);
+        assert!(reachable_ends(&line, ([0, 0, 0], 4), Some(14)).iter().all(|e| e.0 != [0, 0, 0]));
+        // A first transporter that does not take the stack: nothing.
+        line[0].color = Some(1);
+        assert!(reachable_ends(&line, ([0, 0, 0], 4), None).is_empty());
     }
     fn energy(x: i32, e: u64, side: FlowSide) -> EnergyNode {
         EnergyNode {

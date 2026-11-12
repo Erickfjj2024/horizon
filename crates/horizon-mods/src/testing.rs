@@ -977,6 +977,7 @@ impl TestGame {
                     },
                     throughput: spec.throughput,
                     connect,
+                    color: None,
                 })
             })
             .collect();
@@ -1915,6 +1916,9 @@ pub struct Expect {
     broken: Option<Vec<String>>,
     /// Server mods: every `set-comparator-output`, as `"dimension x y z level"`.
     comparator: Option<Vec<String>>,
+    /// Server mods: every Transporter Config change, as `"dimension x y z eject-color=c"`, `"... strict-input=true"` or
+    /// `"... transmitter-color=c"` (`-` for none).
+    item_transport: Option<Vec<String>>,
     /// Server mods (round 4, item 4): every `set-redstone-output`, as `"dimension x y z level strong"`.
     redstone: Option<Vec<String>>,
     /// Server mods (FORK-20): every `set-menu-text`, as `"dimension x y z text|text"`.
@@ -3223,6 +3227,27 @@ impl Step {
                 })
                 .collect();
             same("hud", want, &got)?;
+        }
+        if let Some(want) = &e.item_transport {
+            let color = |c: &Option<u8>| c.map_or_else(|| "-".to_owned(), |c| c.to_string());
+            let got: Vec<String> = out
+                .iter()
+                .filter_map(|o| match o {
+                    Output::SetItemTransport { dimension, pos, setting, .. } => Some(format!(
+                        "{dimension} {} {} {} {}",
+                        pos[0],
+                        pos[1],
+                        pos[2],
+                        match setting {
+                            crate::TransportSetting::EjectColor(c) => format!("eject-color={}", color(c)),
+                            crate::TransportSetting::StrictInput(b) => format!("strict-input={b}"),
+                            crate::TransportSetting::TransmitterColor(c) => format!("transmitter-color={}", color(c)),
+                        }
+                    )),
+                    _ => None,
+                })
+                .collect();
+            same("item-transport", want, &got)?;
         }
         if let Some(want) = &e.redstone {
             let got: Vec<String> = out

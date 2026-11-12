@@ -1407,6 +1407,42 @@ mod run {
             self.world.modified.insert((pos[0] >> 4, pos[2] >> 4));
             true
         }
+        /// A mod's Transporter Config change: kept in the entity (`eject_color`, `strict_input`, `transmitter_color`).
+        pub(in crate::game) fn native_set_item_transport(&mut self, pos: [i32; 3], setting: horizon_mods::TransportSetting) {
+            use horizon_mods::TransportSetting as T;
+            use horizon_world::nbt::Tag;
+            let key = (pos[0], pos[1], pos[2]);
+            let Some(horizon_client_render::containers::BlockEntity::Mod(m)) = self.world.block_entities.get_mut(&key) else {
+                return;
+            };
+            let (name, value) = match setting {
+                T::EjectColor(c) => ("eject_color", c.map(|c| Tag::Byte(c as i8))),
+                T::StrictInput(b) => ("strict_input", b.then_some(Tag::Byte(1))),
+                T::TransmitterColor(c) => ("transmitter_color", c.map(|c| Tag::Byte(c as i8))),
+            };
+            match value {
+                Some(v) => {
+                    m.nbt.insert(Self::jname(name), v);
+                }
+                None => {
+                    m.nbt.remove(&Self::jname(name));
+                }
+            }
+            self.world.modified.insert((key.0 >> 4, key.2 >> 4));
+        }
+
+        /// What the block entity at `pos` ejects into item networks with: (its ejection on, its colour, strict input).
+        fn item_transport_of(&self, pos: [i32; 3]) -> (bool, Option<u8>, bool) {
+            let Some(horizon_client_render::containers::BlockEntity::Mod(m)) = self.world.block_entities.get(&(pos[0], pos[1], pos[2])) else {
+                return (false, None, false);
+            };
+            let byte = |k: &str| match m.nbt.get(&Self::jname(k)) {
+                Some(horizon_world::nbt::Tag::Byte(v)) => Some(*v as u8),
+                _ => None,
+            };
+            (byte("eject_items") == Some(1), byte("eject_color").filter(|c| *c <= 17), byte("strict_input") == Some(1))
+        }
+
         /// A mod's `world.set-item-eject`: whether the entity pushes its output items out.
         pub(in crate::game) fn native_set_item_eject(&mut self, pos: [i32; 3], on: bool) {
             let key = (pos[0], pos[1], pos[2]);
@@ -1553,6 +1589,10 @@ mod run {
                         },
                         throughput: spec.throughput,
                         connect: Self::transmitter_connect(m),
+                        color: match m.nbt.get(&horizon_world::nbt::JavaString::from("transmitter_color")) {
+                            Some(horizon_world::nbt::Tag::Byte(c)) if (0..=17).contains(c) => Some(*c as u8),
+                            _ => None,
+                        },
                     })
                 })
                 .collect()
@@ -2067,12 +2107,12 @@ mod run {
             }
             let transmitters = self.collect_transmitters(&kinds);
             for (ends, throughput) in horizon_mods::network::item_networks(&transmitters) {
-                self.run_item_network(&ends, throughput, tick / 10);
+                self.run_item_network(&ends, throughput, tick / 10, &transmitters);
             }
         }
 
         /// One network's tick.
-        fn run_item_network(&mut self, ends: &[([i32; 3], usize)], throughput: u64, round: usize) {
+        fn run_item_network(&mut self, ends: &[([i32; 3], usize)], throughput: u64, round: usize, transmitters: &[horizon_mods::network::Transmitter]) {
             use horizon_core::geometry::Direction;
             let face_of = |f: usize| match f {
                 0 => Direction::Down,
@@ -2093,13 +2133,22 @@ mod run {
                 if !self.mod_container_gives(src) {
                     continue;
                 }
+                // Mekanism's Transporter Config: a block ejecting with a colour colours what it puts in; the stack goes through the
+                // transporters it passes, to the blocks there, and a strict one takes only its own colour.
+                let (ejecting, color, _) = self.item_transport_of(src);
+                let color = color.filter(|_| ejecting);
+                let reach = horizon_mods::network::reachable_ends(transmitters, (src, src_face), color);
+                let takes = |g: &Self, dst: [i32; 3]| {
+                    let (on, own, strict) = g.item_transport_of(dst);
+                    !(on && strict) || own == color
+                };
                 while left > 0 {
                     let Some((slot, one)) = self.take_from_mod_container(src, from_dir) else { break };
                     let mut rest = Some(one);
                     let n = ends.len();
                     for k in 0..n {
                         let (dst, dst_face) = ends[(turn + k) % n];
-                        if dst == src {
+                        if dst == src || !reach.contains(&(dst, dst_face)) || !takes(self, dst) {
                             continue;
                         }
                         let Some(stack) = rest.take() else { break };
@@ -3600,6 +3649,13 @@ mod run {
                         self.native_pull_items(pos, face, &items, max);
                     } else {
                         log::debug!("Horizon: mod {name} pulled items in another level");
+                    }
+                }
+                Output::SetItemTransport { name, dimension, pos, setting } => {
+                    if dimension == self.dim.id() {
+                        self.native_set_item_transport(pos, setting);
+                    } else {
+                        log::debug!("Horizon: mod {name} set a transporter config in another level");
                     }
                 }
                 Output::SetItemEject { name, dimension, pos, on } => {

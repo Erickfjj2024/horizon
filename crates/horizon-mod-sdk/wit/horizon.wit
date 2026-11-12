@@ -888,6 +888,19 @@ interface %world {
     /// Mekanism's machines do with auto-eject on. Kept with the entity. Made
     /// after this call returns. API 17.
     set-item-eject: func(dimension: string, x: s32, y: s32, z: s32, on: bool) -> result<_, string>;
+    /// The colour the block entity's ejected items carry into an item network (Mekanism's Transporter Config: one of the 18 transporter
+    /// colours, 0 to 17; none for no colour). A coloured stack goes only through plain transporters and those of its colour, and a
+    /// plain one through plain transporters only (`set-transmitter-color`). It counts only while ejection is on (`set-item-eject`).
+    /// Kept with the entity. An error for a colour past 17. API 54.
+    set-item-eject-color: func(dimension: string, x: s32, y: s32, z: s32, color: option<u8>) -> result<_, string>;
+    /// Strict input (Mekanism's Transporter Config): the block entity takes items from an item network only when their colour is its
+    /// own eject colour (none takes plain stacks alone). Only while its ejection is on; other ways of putting items in (a hopper, a
+    /// player) are not checked. Kept with the entity. API 54.
+    set-item-strict-input: func(dimension: string, x: s32, y: s32, z: s32, strict: bool) -> result<_, string>;
+    /// Paints an item transmitter (a kind with `transmitter` of medium items, Mekanism's logistical transporter): 0 to 17, none for
+    /// plain. A painted one carries stacks of its colour alone, a plain one carries any colour (Mekanism's `TransporterPathfinder`).
+    /// Kept with the entity. An error for a colour past 17. API 54.
+    set-transmitter-color: func(dimension: string, x: s32, y: s32, z: s32, color: option<u8>) -> result<_, string>;
     /// Limits what the block entity's tank number `tank` takes in from neighbouring tanks and transmitters: only these
     /// substances (`mymod:oxygen`); an empty list takes any again (the kind's default). What the mod puts in the tank
     /// itself is not checked. Kept with the entity. Made after this call returns. API 18.
