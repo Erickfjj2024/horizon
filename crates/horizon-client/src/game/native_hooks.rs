@@ -4525,7 +4525,7 @@ impl Game<'_> {
         };
         // A press on an item grid cell (API 55): its entry goes to the server's mod.
         if let Some((index, button, shift)) = super::menu_screens::take_grid_press() {
-            let _ = self.native_net_send_to_server(
+            let _ = self.native_net_send_game_to_server(
                 horizon_mods::screen::GRID_CLICK_CHANNEL,
                 &horizon_mods::screen::encode_grid_click(index, button, shift),
             );

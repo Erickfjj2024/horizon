@@ -165,7 +165,7 @@ impl Game<'_> {
         let ids: Vec<&'static str> = self.settings.keys.mod_mappings_for(name).collect();
         for id in ids {
             if self.remote.is_some() {
-                let _ = self.native_net_send_to_server(horizon_mods::screen::KEY_CHANNEL, id.as_bytes());
+                let _ = self.native_net_send_game_to_server(horizon_mods::screen::KEY_CHANNEL, id.as_bytes());
             } else {
                 // A game that is its own server (never the default now): the press is its own player's.
                 let player = self.player_uuid();

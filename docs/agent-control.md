@@ -255,7 +255,9 @@ turn the switch off.
   stack. An open mod menu (a declared screen) adds its buttons as `menu-button-<ID>` and its text
   fields as `menu-field-<ID>`, by the widget ids in the mod's screen file (`.2` for a repeat; a
   button's tooltip is its label); only what a press reaches is listed (a window's widgets, not
-  the ones under it).
+  the ones under it). The reply's `menu_texts` lists the menu's text widgets as drawn (`text`,
+  `text_data`, `at`): a string the server sent (`world.set-menu-text`, an item menu's
+  `menu-text`) shows there once it reached the client.
 - **Kinds:** `button`, `slider` (`value` 0..1), `field`, `row` (a world, server, pack or
   language), `tab` (`selected`), `slot`.
 - **Actions:**

@@ -167,12 +167,24 @@ impl Game<'_> {
                 let size = self
                     .gui_scale()
                     .map(|b| [b.width.round(), b.height.round()]);
-                Ok(Handled::Reply(json!({
+                let mut reply = json!({
                     "screen": self.screen_label(),
                     "gui_size": size,
                     "frame": widgets::generation(),
                     "widgets": widgets,
-                })))
+                });
+                // An open mod menu's texts as drawn: the strings its server sent show here (`text_data`).
+                if self.screen == Screen::Inventory && self.title.is_none() {
+                    let texts: Vec<Value> = self
+                        .declared_texts()
+                        .into_iter()
+                        .map(|(n, text, at)| json!({ "text_data": n, "text": text, "at": at }))
+                        .collect();
+                    if !texts.is_empty() {
+                        reply["menu_texts"] = json!(texts);
+                    }
+                }
+                Ok(Handled::Reply(reply))
             }
             "click" => {
                 let node = self.find_node(id()?)?;

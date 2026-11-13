@@ -594,7 +594,8 @@ mod run {
             for (id, ticket, entity) in std::mem::take(&mut self.mods.spawn_answers) {
                 self.mods.mods.entity_spawned(&id, ticket, entity);
             }
-            let before = std::mem::take(&mut self.mods.players);
+            // This tick's players stay readable while the mods tick: item and entity menus find their player there.
+            let before = std::mem::replace(&mut self.mods.players, players.clone());
             for p in before
                 .iter()
                 .filter(|p| !players.iter().any(|q| q.id == p.id))
@@ -1303,7 +1304,7 @@ mod run {
                 })
                 .unwrap_or_default();
             for uuid in near {
-                let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
+                let _ = self.native_net_send_game(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
             }
         }
 
@@ -1318,7 +1319,7 @@ mod run {
             };
             let ints = self.acting_player_uuid();
             let uuid = ints.iter().fold(0u128, |acc, i| (acc << 32) | u128::from(*i as u32));
-            let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
+            let _ = self.native_net_send_game(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
         }
 
         /// A mod's `world.set-capabilities-enabled` (FORK-34): which of the entity's capabilities the outside can use, kept in it.
@@ -1441,7 +1442,7 @@ mod run {
                 .unwrap_or_default();
             let bytes = horizon_mods::screen::encode_menu_grid(pos, &entries);
             for uuid in viewers {
-                let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_GRID_CHANNEL, &bytes);
+                let _ = self.native_net_send_game(uuid, horizon_mods::screen::MENU_GRID_CHANNEL, &bytes);
             }
             self.mods.menu_grids.insert(pos, entries);
         }
@@ -1455,7 +1456,7 @@ mod run {
             let bytes = horizon_mods::screen::encode_menu_grid(pos, entries);
             let ints = self.acting_player_uuid();
             let uuid = ints.iter().fold(0u128, |acc, i| (acc << 32) | u128::from(*i as u32));
-            let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_GRID_CHANNEL, &bytes);
+            let _ = self.native_net_send_game(uuid, horizon_mods::screen::MENU_GRID_CHANNEL, &bytes);
         }
 
         /// The grid presses the mods answered (`menu-grid-click`): each player's cursor becomes the answer's, and its stacks for
@@ -2630,7 +2631,7 @@ mod run {
                 host.hub.open_container(conn, &menu, title, key, horizon_client::lan::menu::Slots::Block(key), items);
                 self.lan = Some(host);
                 let bytes = horizon_mods::screen::encode_menu_text(ENTITY_MENU_TEXT_AT, &e.menu_text);
-                let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
+                let _ = self.native_net_send_game(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
                 return true;
             }
             let items: Vec<Option<horizon_client::items::ItemStack>> =
@@ -2813,7 +2814,7 @@ mod run {
                 .unwrap_or_default();
             let bytes = horizon_mods::screen::encode_menu_text(ENTITY_MENU_TEXT_AT, &texts);
             for uuid in viewers {
-                let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
+                let _ = self.native_net_send_game(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
             }
         }
 
@@ -2854,7 +2855,7 @@ mod run {
                 data: Vec::new(),
             };
             self.world.block_entities.insert(key, BlockEntity::Mod(Box::new(placeholder)));
-            let title = horizon_protocol::text::translatable(&format!("menu.{}", menu.replace(':', ".")), &[]);
+            let title = horizon_protocol::text::translatable(&self.item_menu_title_key(menu, &item), &[]);
             host.hub.open_container(conn, menu, title, key, horizon_client::lan::menu::Slots::Block(key), items);
             self.lan = Some(host);
             self.mods.item_menus.retain(|m| m.conn != conn);
@@ -2869,8 +2870,21 @@ mod run {
                 closing: false,
             });
             let bytes = horizon_mods::screen::encode_menu_text(ENTITY_MENU_TEXT_AT, &[]);
-            let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
+            let _ = self.native_net_send_game(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
             true
+        }
+
+        /// The translation key of an item menu's title: `menu.<ns>.<name>` when the language has it, else the name of the item
+        /// it opened over (`Item.getDescriptionId`: a block item's is the block's), as the original's item screens are titled;
+        /// a player menu (no item) keeps the menu's key.
+        fn item_menu_title_key(&self, menu: &str, item: &str) -> String {
+            let menu_key = format!("menu.{}", menu.replace(':', "."));
+            if item.is_empty() || self.pack.names.get(&menu_key).is_some() {
+                return menu_key;
+            }
+            let (namespace, path) = item.split_once(':').unwrap_or(("minecraft", item));
+            let key = format!("item.{namespace}.{path}");
+            if self.pack.names.get(&key).is_some() { key } else { format!("block.{namespace}.{path}") }
         }
 
         /// Item menu `i` as its mod sees it: the player's slot now and the placeholder's slots.
@@ -2917,13 +2931,13 @@ mod run {
             }
             if let Some(t) = &u.menu_text {
                 let bytes = horizon_mods::screen::encode_menu_text(ENTITY_MENU_TEXT_AT, t);
-                let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
+                let _ = self.native_net_send_game(uuid, horizon_mods::screen::MENU_TEXT_CHANNEL, &bytes);
             }
             if let Some(g) = &u.menu_grid {
                 let entries: Vec<horizon_mods::screen::GridEntry> =
                     g.iter().map(|e| horizon_mods::screen::GridEntry { item: e.item.clone(), components: e.components.clone(), count: e.count }).collect();
                 let bytes = horizon_mods::screen::encode_menu_grid(ENTITY_MENU_TEXT_AT, &entries);
-                let _ = self.native_net_send_to_player(uuid, horizon_mods::screen::MENU_GRID_CHANNEL, &bytes);
+                let _ = self.native_net_send_game(uuid, horizon_mods::screen::MENU_GRID_CHANNEL, &bytes);
             }
             if u.close {
                 self.mods.item_menus[i].closing = true;
@@ -3265,6 +3279,10 @@ mod run {
                 }
                 return;
             }
+            // No other channel of the game's comes from a client, and none reaches the mods.
+            if !horizon_protocol::mod_net::channel_ok(channel) {
+                return;
+            }
             // A text box of a mod entity's menu (FORK-10 5b): the client knows no position for it, the mod gets the entity's id.
             let mut data = data.to_vec();
             if channel.ends_with(":menu_text")
@@ -3487,14 +3505,14 @@ mod run {
                 Output::Radial { name, mod_id, player, entries, current } => {
                     let uuid = u128::from_str_radix(&player.replace('-', ""), 16).unwrap_or(0);
                     let data = horizon_mods::screen::encode_radial(&mod_id, &entries, current);
-                    if let Err(e) = self.native_net_send_to_player(uuid, horizon_mods::screen::RADIAL_CHANNEL, &data) {
+                    if let Err(e) = self.native_net_send_game(uuid, horizon_mods::screen::RADIAL_CHANNEL, &data) {
                         log::debug!("Horizon: mod {name}'s radial menu for {player}: {e}");
                     }
                 }
                 Output::HudLine { name, player, id, icon, text, fraction } => {
                     let uuid = u128::from_str_radix(&player.replace('-', ""), 16).unwrap_or(0);
                     let data = horizon_mods::screen::encode_hud_line(&id, &icon, &text, fraction);
-                    if let Err(e) = self.native_net_send_to_player(uuid, horizon_mods::screen::HUD_CHANNEL, &data) {
+                    if let Err(e) = self.native_net_send_game(uuid, horizon_mods::screen::HUD_CHANNEL, &data) {
                         log::debug!("Horizon: mod {name}'s HUD line for {player}: {e}");
                     }
                 }

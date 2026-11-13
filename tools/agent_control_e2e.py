@@ -14,7 +14,8 @@ scenario opens the inventory and the chat over an item in use and checks the use
 eaten behind the GUI; the pick scenario
 middle-clicks slots (AbstractContainerScreen's cloning): a full stack in creative, from the hotbar
 and from an item tab, and nothing in survival;
-the suggestions scenario checks slash-command Tab completion on single player's connected client
+the mod-menu scenario (CLI only) opens the example item-menu-demo's menu with its key and checks that the strings its
+server sends reach the client's text widgets (`ui`'s menu_texts); the suggestions scenario checks slash-command Tab completion on single player's connected client
 after a fresh launch; the no-ai scenario turns No AI on in a scratch game home and checks that
 horizon-ctl, its MCP server and the game's control socket all refuse.
 
@@ -791,9 +792,53 @@ def pause_save_scenario(d, out):
     return {'saved_on_pause': saved}
 
 
+ITEM_MENU_DEMO = ROOT / 'crates/horizon-mod-sdk/examples/item-menu-demo'
+
+
+def item_menu_demo_hmod():
+    """The example mod item-menu-demo as a .hmod (built here with cargo horizon-mod), for mod_menu_scenario."""
+    meta = json.loads(subprocess.run(['cargo', 'metadata', '--format-version', '1', '--no-deps'], cwd=ROOT,
+                                     capture_output=True, text=True, check=True).stdout)
+    target = Path(meta['target_directory'])
+    subprocess.run(['cargo', 'run', '--quiet', '--profile', 'fast', '-p', 'cargo-horizon-mod', '--manifest-path',
+                    str(ROOT / 'Cargo.toml'), '--', 'horizon-mod', 'build'], cwd=ITEM_MENU_DEMO, check=True)
+    return target / 'horizon-mod/imenu.hmod'
+
+
+def mod_menu_scenario(d, out):
+    """A mod's menu with strings from its server: item-menu-demo's key (backslash) opens its tweaker over no item, whose
+    two `text` widgets show `text_data` 0 and 1, which the mod sends each tick (`item-menu-update.menu-text`). The strings
+    must reach the client: they are what `ui` reports as drawn, and they follow the hand when it changes."""
+    d('key', key='backslash', action='tap')
+    def texts():
+        reply = d('ui')
+        return {t['text_data']: t['text'] for t in reply.get('menu_texts', []) if t.get('text_data') is not None}
+    shown = {}
+    for _ in range(20):
+        d('wait', ticks=5)
+        shown = texts()
+        if shown.get(0, '').startswith('main '):
+            break
+    assert shown.get(0) == 'main 0 -' and shown.get(1) == 'head - off -', f'the menu strings did not reach the client: {shown}'
+    d('give', item='minecraft:stone', count=1)
+    for _ in range(20):
+        d('wait', ticks=5)
+        shown = texts()
+        if shown.get(0) == 'main 0 minecraft:stone':
+            break
+    assert shown.get(0) == 'main 0 minecraft:stone', f'the strings did not follow the hand: {shown}'
+    d('close')
+    return {'menu_texts': shown}
+
+
 SCENARIOS = {'survival': scenario, 'ui': ui_scenario, 'options': options_scenario, 'events': events_scenario,
              'consume': consume_scenario, 'use-screen': use_screen_scenario, 'pick': pick_scenario,
-             'suggestions': suggestions_scenario, 'manage': manage_scenario, 'pause-save': pause_save_scenario}
+             'suggestions': suggestions_scenario, 'manage': manage_scenario, 'pause-save': pause_save_scenario,
+             'mod-menu': mod_menu_scenario}
+# Scenarios that start in a world of their own with a mod: what `launch` takes besides the defaults (the CLI passes other
+# arguments to the game, so these run through the CLI only).
+LAUNCHES = {'mod-menu': lambda: {'world': 'modmenu', 'creative': True, 'wait': True, 'dev-mod': item_menu_demo_hmod()}}
+CLI_ONLY = set(LAUNCHES)
 
 
 REFUSAL = "AI features are off: turn off No AI in the launcher's settings"
@@ -933,7 +978,8 @@ def run(mode, ctl, out, resources, which='survival'):
     driver = (Cli if mode == 'cli' else Mcp)(ctl, socket, work, env)
     started = time.time()
     try:
-        driver('launch', wait=False, offscreen=sys.platform == 'darwin')
+        extra = LAUNCHES[which]() if which in LAUNCHES else {'wait': False}
+        driver('launch', offscreen=sys.platform == 'darwin', **extra)
         summary = SCENARIOS[which](driver, out)
         print(f'[{mode}] PASS in {time.time() - started:.0f} s: {summary}')
         return True
@@ -975,7 +1021,8 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     modes = ['cli', 'mcp'] if args.mode == 'both' else [args.mode]
     scenarios = [*SCENARIOS, 'no-ai', 'setting'] if args.scenario == 'all' else [args.scenario]
-    results = {f'{m}/{s}': run(m, bins / 'horizon-ctl', out, resources, s) for m in modes for s in scenarios}
+    results = {f'{m}/{s}': run(m, bins / 'horizon-ctl', out, resources, s) for m in modes for s in scenarios
+               if m == 'cli' or s not in CLI_ONLY}
     print(json.dumps(results))
     sys.exit(0 if all(results.values()) else 1)
 

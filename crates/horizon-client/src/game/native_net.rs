@@ -52,6 +52,7 @@ impl Game<'_> {
             return;
         }
         *count += 1;
+        // `mod_net_event` takes the game's own channels a client sends (a mod key, a grid click) and keeps the others from the mods.
         if let Ok(message) = mod_net::decode(data) {
             self.native_net.from_players.push((player, message));
         }
@@ -102,7 +103,8 @@ impl Game<'_> {
             Ok(m) if m.channel == horizon_mods::screen::HUD_CHANNEL => super::mod_hud::remember_hud_line(&m.data),
             Ok(m) if m.channel == horizon_mods::screen::MENU_GRID_CHANNEL => super::menu_screens::remember_menu_grid(&m.data),
             Ok(m) if m.channel == horizon_mods::screen::RADIAL_CHANNEL => self.open_mod_radial(&m.data),
-            Ok(m) => self.native_net_from_server(&m.channel, &m.data),
+            Ok(m) if mod_net::channel_ok(&m.channel) => self.native_net_from_server(&m.channel, &m.data),
+            Ok(m) => log::debug!("Horizon: a game message on {} this client does not know", m.channel),
             Err(e) => log::debug!("Horizon: a bad mod message: {e}"),
         }
     }
@@ -121,10 +123,22 @@ impl Game<'_> {
         channel: &str,
         data: &[u8],
     ) -> Result<(), String> {
+        if !mod_net::channel_ok(channel) {
+            return Err(format!("the channel {channel:?} is not mod_id:name"));
+        }
+        self.queue_to_player(player, channel, data)
+    }
+
+    /// A message to `player` within this tick's allowance, sent at the tick's end.
+    fn queue_to_player(&mut self, player: u128, channel: &str, data: &[u8]) -> Result<(), String> {
         if self.remote.is_some() {
             return Err("a client has no players to send to".into());
         }
-        let payload = payload(channel, data)?;
+        let payload = mod_net::encode(&Message {
+            channel: channel.to_owned(),
+            data: data.to_vec(),
+        })
+        .map_err(|e| e.to_string())?;
         let count = self.native_net.to_counts.entry(player).or_default();
         if *count >= PER_TICK {
             return Err(format!("past {PER_TICK} messages to this player this tick"));
@@ -132,6 +146,16 @@ impl Game<'_> {
         *count += 1;
         self.native_net.to_players.push((player, payload));
         Ok(())
+    }
+
+    /// The game's own message on `channel` (`horizon:name`: a mod menu's strings, its item grid, a HUD line, a radial
+    /// menu) to `player`'s client, with the same caps as a mod's. Mods' `native_net_send_to_player` refuses these
+    /// channels, so the game's messages go here.
+    pub(super) fn native_net_send_game(&mut self, player: u128, channel: &str, data: &[u8]) -> Result<(), String> {
+        if !mod_net::game_channel_ok(channel) {
+            return Err(format!("the channel {channel:?} is not the game's"));
+        }
+        self.queue_to_player(player, channel, data)
     }
 
     /// The client half: sends `data` on `channel` to the server (the same
@@ -156,6 +180,30 @@ impl Game<'_> {
             return Err("the server carries no mod messages".into());
         }
         let payload = payload(channel, data)?;
+        self.queue_to_server(payload)
+    }
+
+    /// The game's own message on `channel` (`horizon:name`: a mod key's press, a grid cell's click) to the server, with the
+    /// caps of `native_net_send_to_server`, which refuses these channels to mods.
+    pub(super) fn native_net_send_game_to_server(&mut self, channel: &str, data: &[u8]) -> Result<(), String> {
+        if !mod_net::game_channel_ok(channel) {
+            return Err(format!("the channel {channel:?} is not the game's"));
+        }
+        let Some(remote) = self.remote.as_ref() else {
+            return Err("the server carries no mod messages".into());
+        };
+        if !remote.joined || remote.reconfiguring.is_some() {
+            return Err("the player has not joined yet".into());
+        }
+        if !remote.mod_net {
+            return Err("the server carries no mod messages".into());
+        }
+        let payload = mod_net::encode(&Message { channel: channel.to_owned(), data: data.to_vec() }).map_err(|e| e.to_string())?;
+        self.queue_to_server(payload)
+    }
+
+    /// A payload to the server within this tick's allowance.
+    fn queue_to_server(&mut self, payload: Vec<u8>) -> Result<(), String> {
         if self.native_net.to_server >= PER_TICK {
             return Err(format!("past {PER_TICK} messages this tick"));
         }

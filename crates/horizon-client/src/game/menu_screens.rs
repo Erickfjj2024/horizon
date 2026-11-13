@@ -768,6 +768,37 @@ impl Game<'_> {
         controls
     }
 
+    /// The `text` widgets of the open mod screen as they are drawn now (the open window's, then the screen's), each with its
+    /// `text_data` (None for a fixed or data-filled text) and its place in GUI pixels: what the control socket's `ui` reports
+    /// as `menu_texts`, so a test sees whether the strings the server sent reached this client.
+    pub(super) fn declared_texts(&self) -> Vec<(Option<u16>, String, [f32; 2])> {
+        let Some((block, data, [ox, oy])) = self.native_screen_origin() else {
+            return Vec::new();
+        };
+        let Some(screen) = screen_of(&block) else {
+            return Vec::new();
+        };
+        let l = locals();
+        let mut groups = Vec::new();
+        if let Some(w) = open_window(screen, &l) {
+            groups.push((&w.widgets, window_origin(w, &l)));
+        }
+        groups.push((&screen.widgets, [0.0, 0.0]));
+        let mut out = Vec::new();
+        for (widgets, [wx, wy]) in groups {
+            for w in showing(widgets, &data, &l) {
+                if let Widget::Text { x, y, text, text_data, .. } = w {
+                    let shown = match text_data {
+                        Some(n) => menu_string(usize::from(*n)).unwrap_or_default(),
+                        None => fill_text(text, &data),
+                    };
+                    out.push((*text_data, shown, [ox + wx + *x as f32, oy + wy + *y as f32]));
+                }
+            }
+        }
+        out
+    }
+
     /// The control socket's `type --menu-field ID [--replace] [--enter] TEXT`: text box `id` of the open mod screen takes
     /// the focus as a press on it gives it, then the text as typed (what its validator allows; `\b` is a backspace),
     /// and with `enter` the Enter a player presses, which sends `<mod id>:menu_text`. The box's text afterwards, or why

@@ -44,9 +44,24 @@ pub fn channel_ok(channel: &str) -> bool {
         })
 }
 
+/// A channel of the game's own messages to a Horizon client on this payload (a mod menu's strings, its item grid, a HUD
+/// line, a radial menu): `horizon:name`, with a name as a mod's. Only the game sends them: `channel_ok` refuses them to
+/// mods, and a server takes none from a client.
+pub fn game_channel_ok(channel: &str) -> bool {
+    channel != CHANNEL
+        && channel.strip_prefix("horizon:").is_some_and(|name| {
+            (1..=MAX_PART).contains(&name.len())
+                && name.bytes().all(|b| {
+                    b.is_ascii_lowercase()
+                        || b.is_ascii_digit()
+                        || matches!(b, b'_' | b'.' | b'/' | b'-')
+                })
+        })
+}
+
 /// A message's payload; an error for a channel or size outside the caps.
 pub fn encode(message: &Message) -> Result<Vec<u8>> {
-    if !channel_ok(&message.channel) {
+    if !channel_ok(&message.channel) && !game_channel_ok(&message.channel) {
         return Err(Error::new("mod net: bad channel"));
     }
     if message.data.len() > MAX_DATA {
@@ -66,7 +81,7 @@ pub fn decode(data: &[u8]) -> Result<Message> {
     if r.remaining() > 0 {
         return Err(Error::new("mod net: trailing bytes"));
     }
-    if !channel_ok(&channel) {
+    if !channel_ok(&channel) && !game_channel_ok(&channel) {
         return Err(Error::new("mod net: bad channel"));
     }
     Ok(Message { channel, data })
@@ -116,6 +131,33 @@ mod tests {
         )));
         assert!(!channel_ok(&format!("{}:n", "x".repeat(MAX_PART + 1))));
         assert!(!channel_ok(&format!("x:{}", "n".repeat(MAX_PART + 1))));
+    }
+
+    #[test]
+    fn the_games_own_channels_travel_but_are_no_mods() {
+        for game in [
+            "horizon:menu_text",
+            "horizon:menu_grid",
+            "horizon:hud",
+            "horizon:radial",
+        ] {
+            assert!(game_channel_ok(game), "{game}");
+            assert!(!channel_ok(game), "{game}");
+            let m = Message {
+                channel: game.into(),
+                data: vec![1, 2, 3],
+            };
+            assert_eq!(decode(&encode(&m).unwrap()).unwrap(), m);
+        }
+        for bad in [
+            CHANNEL,
+            "horizon:",
+            "horizon:Menu",
+            "minecraft:brand",
+            "cells:state",
+        ] {
+            assert!(!game_channel_ok(bad), "{bad}");
+        }
     }
 
     #[test]
