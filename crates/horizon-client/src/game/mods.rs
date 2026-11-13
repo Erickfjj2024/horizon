@@ -329,6 +329,15 @@ pub(super) fn content_root(
         };
         if let Err(e) = mod_content::accept_mod(&mut mods, candidate, known) {
             log::warn!("Horizon: mod {} content not loaded: {e}", m.id);
+        } else {
+            // Its menus drawn by code (capability `screen`, API 56): the component runs in this game.
+            #[cfg(feature = "mods")]
+            if let Some(screens) = &package.screens
+                && m.capabilities.contains(&Capability::Screen)
+                && let Ok(mut w) = super::code_screens::WASM.lock()
+            {
+                w.insert(m.id.clone(), std::sync::Arc::new(screens.clone()));
+            }
         }
     }
     match mod_content::resource_root(root, &mods, &here.join(".horizon-cache")) {
@@ -1529,7 +1538,7 @@ const MOD_UI_COLUMN: f32 = 200.0;
 const MOD_UI_KEY_ROW: f32 = 26.0;
 
 #[cfg(all(test, feature = "mods"))]
-mod tests {
+mod runtime_tests {
     use super::*;
     use horizon_client::hud::HudAtlas;
 

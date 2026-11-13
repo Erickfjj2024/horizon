@@ -496,7 +496,7 @@ impl Game<'_> {
                 "effects": self.potions.effects.list.iter().map(|e| json!({ "id": e.id, "duration_ticks": e.duration, "amplifier": e.amplifier })).collect::<Vec<_>>(),
             })
         });
-        json!({
+        let mut v = json!({
             "dialog": self.dialog_status(),
             "screen": self.screen_label(),
             "menu": self.title.as_ref().map(|_| self.title_value()),
@@ -526,7 +526,10 @@ impl Game<'_> {
             "looking_at": self.looking_at(),
             "busy": self.agent.task.as_ref().map(|t| t.name),
             "ticks": self.ticks,
-        })
+        });
+        // An open menu drawn by code (API 56): its render times and the fps with it open.
+        v["screen_code"] = self.code_screen_state();
+        v
     }
 
     fn title_value(&self) -> Value {

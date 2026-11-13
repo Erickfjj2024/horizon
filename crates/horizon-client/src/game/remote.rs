@@ -5438,6 +5438,7 @@ impl Game<'_> {
         self.tick_remote_level()?;
         // Client mods tick on any server, single player's own included.
         self.tick_mods();
+        self.tick_code_screen();
         self.native_net.to_server = 0;
         self.native_tick();
         self.tick_chat_session();

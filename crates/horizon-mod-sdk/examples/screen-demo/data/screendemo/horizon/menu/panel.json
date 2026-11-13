@@ -1,0 +1,12 @@
+{
+  "slots": 0,
+  "data_slots": 2,
+  "screen": {
+    "code": true,
+    "own_labels": true,
+    "width": 176,
+    "height": 200,
+    "inventory_y": 118,
+    "slots": []
+  }
+}

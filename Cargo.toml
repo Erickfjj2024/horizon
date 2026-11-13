@@ -53,6 +53,8 @@ members = [
     "crates/horizon-mod-sdk/examples/energy-items-demo",
     "crates/horizon-mod-sdk/examples/anvil-probe",
     "crates/horizon-mod-sdk/examples/qio-demo",
+    "crates/horizon-mod-sdk/examples/screen-demo",
+    "crates/horizon-mod-sdk/examples/screen-demo/screens",
     "crates/horizon-mod-sdk/examples/block-mover",
     "crates/horizon-mod-sdk/examples/energy-demo",
     "crates/horizon-mod-sdk/examples/tank-demo",

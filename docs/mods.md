@@ -233,6 +233,10 @@ types, as with its blocks, and a client that isn't Horizon's is never sent one: 
 yet: per-slot rules beyond `results`, hooks for shift-click routing and `stillValid`, opening with extra data, and
 client prediction of its clicks.
 
+A menu type's screen can also be drawn by the mod's code (`"code": true` in its `screen`, capability `screen`, API 56):
+the mod's `screens.wasm` draws it with a command buffer and hears the player's input; see
+[mods-screen.md](mods-screen.md).
+
 `crafting_remainder` names what the item leaves in the crafting grid when a
 recipe uses it, as a milk bucket leaves a bucket (vanilla's
 `Item.Properties.craftRemainder`, not a data component): a vanilla item or

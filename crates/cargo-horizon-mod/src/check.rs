@@ -276,42 +276,71 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
                 format!("set {} block(s) in {dimension}", blocks.len())
             }
             Output::Teleport { dimension, pos, .. } => {
-                format!("teleported a player to {} {} {} in {dimension}", pos[0], pos[1], pos[2])
+                format!(
+                    "teleported a player to {} {} {} in {dimension}",
+                    pos[0], pos[1], pos[2]
+                )
             }
-            Output::SpawnParticles { particle, count, .. } => format!("{count} {particle} particle(s)"),
+            Output::SpawnParticles {
+                particle, count, ..
+            } => format!("{count} {particle} particle(s)"),
             Output::PackBlock { pos, .. } => format!("packed the block at {pos:?}"),
             Output::UnpackBlock { pos, .. } => format!("unpacked a block at {pos:?}"),
             Output::TellOverlay { text, .. } => format!("action bar: {text}"),
             Output::HudLine { id, text, .. } => format!("HUD line {id}: {text}"),
             Output::EntityMenu { id, .. } => format!("opened the menu of entity {id}"),
-            Output::ItemMenu { slot, menu, .. } => format!("opened item menu {menu} over slot {slot}"),
+            Output::ItemMenu { slot, menu, .. } => {
+                format!("opened item menu {menu} over slot {slot}")
+            }
             Output::Radial { entries, .. } => format!("radial menu of {} entries", entries.len()),
             Output::PlayerBody { change, .. } => format!("body: {change:?}"),
-            Output::SetFood { food, saturation, .. } => format!("set food to {food} and saturation to {saturation}"),
+            Output::SetFood {
+                food, saturation, ..
+            } => format!("set food to {food} and saturation to {saturation}"),
             Output::SetMotion { velocity, .. } => format!("set a player's motion to {velocity:?}"),
             Output::SetAllowFlight { allowed, .. } => format!("allowed flight: {allowed}"),
             Output::TakeXp { points, .. } => format!("took {points} experience point(s)"),
             Output::PlaySound { sound, .. } => format!("played {sound}"),
-            Output::SetBlockProperty { property, value, .. } => format!("set {property}={value}"),
+            Output::SetBlockProperty {
+                property, value, ..
+            } => format!("set {property}={value}"),
             Output::SetItemFaces { faces, .. } => format!("item faces {faces:?}"),
             Output::SetItemEject { on, .. } => format!("item eject {on}"),
-            Output::SetCapabilitiesEnabled { items, fluids, energy, .. } => {
+            Output::SetCapabilitiesEnabled {
+                items,
+                fluids,
+                energy,
+                ..
+            } => {
                 format!("capabilities items {items} fluids {fluids} energy {energy}")
             }
             Output::BreakBlocks { positions, .. } => format!("break {} block(s)", positions.len()),
             Output::SetComparator { level, .. } => format!("comparator output {level}"),
-            Output::SetMenuGrid { entries, .. } => format!("menu grid of {} entries", entries.len()),
+            Output::SetMenuGrid { entries, .. } => {
+                format!("menu grid of {} entries", entries.len())
+            }
             Output::SetItemTransport { setting, .. } => format!("transporter config {setting:?}"),
-            Output::SetRedstone { level, strong, .. } => format!("redstone output {level} (strong {strong})"),
+            Output::SetRedstone { level, strong, .. } => {
+                format!("redstone output {level} (strong {strong})")
+            }
             Output::SetMenuText { texts, .. } => format!("set {} menu text(s)", texts.len()),
             Output::MineBlock { tool, .. } => format!("mined a block with {tool}"),
-            Output::PullItems { face, max, .. } => format!("pulled up to {max} item(s) through face {face}"),
+            Output::PullItems { face, max, .. } => {
+                format!("pulled up to {max} item(s) through face {face}")
+            }
             Output::SetTankFilter { tank, accepts, .. } => format!("tank {tank} takes {accepts:?}"),
             Output::SetEnergyCapacity { capacity, .. } => format!("energy capacity {capacity}"),
             Output::Chunk { chunk, forced, .. } => {
-                format!("{} chunk {} {}", if forced { "kept" } else { "let go of" }, chunk[0], chunk[1])
+                format!(
+                    "{} chunk {} {}",
+                    if forced { "kept" } else { "let go of" },
+                    chunk[0],
+                    chunk[1]
+                )
             }
-            Output::PlayerItems { command, .. } => format!("asked for a player change: {command:?}"),
+            Output::PlayerItems { command, .. } => {
+                format!("asked for a player change: {command:?}")
+            }
             Output::Entity { command, .. } => format!("asked for an entity change: {command:?}"),
             Output::NetSend { channel, data, .. } => {
                 format!("sent {} byte(s) on {channel}", data.len())

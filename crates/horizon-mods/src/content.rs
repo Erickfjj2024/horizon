@@ -572,6 +572,10 @@ pub struct MenuScreen {
     /// its own origin. One is open at a time; a press inside it goes to it alone.
     #[serde(default)]
     pub windows: Vec<Window>,
+    /// The screen is drawn by the mod's code (capability `screen`, API 56: its `screens.wasm`), not by `widgets`:
+    /// `width`, `height`, `slots` and the inventory's place still come from here, as the screen's start.
+    #[serde(default)]
+    pub code: bool,
 }
 
 /// A window of a menu screen: a rectangle over the panel with its own widgets.

@@ -1,0 +1,9 @@
+id = "screendemo"
+name = "Screen Demo"
+version = "0.1.0"
+description = "Test mod for screens drawn by code (API 56, capability screen): a frequency selector and an item grid whose screen is the mod's screens.wasm."
+authors = ["Rust port"]
+api = "0.3"
+side = "server"
+capabilities = ["registries", "players", "net", "screen"]
+experimental = ["net", "screen"]

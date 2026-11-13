@@ -203,6 +203,7 @@ mod native_explosions;
 mod native_falling;
 mod block_renderers;
 mod menu_screens;
+mod code_screens;
 mod mod_radial;
 mod mod_hud;
 #[cfg(feature = "mods")]
@@ -8967,6 +8968,8 @@ impl Game<'_> {
         self.draw_hovered_slot_highlight(batch, false, ox, oy);
         self.draw_inventory_slots(batch, ox, oy);
         self.draw_hovered_slot_highlight(batch, true, ox, oy);
+        // A code screen's windows come over the slots' items (`SLOTS` in its frame).
+        self.code_screen_draw_after_slots(batch);
         self.draw_sort_buttons(batch, ox, oy);
         self.draw_recipe_book(batch);
         let effect_tip = if self.container.is_none() && self.craft_size == 2 && !self.mount_active()

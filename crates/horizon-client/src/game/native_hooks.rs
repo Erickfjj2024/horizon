@@ -1783,6 +1783,10 @@ impl Game<'_> {
         modifiers: u32,
         canceled: &mut bool,
     ) {
+        // A code screen hears the key first (Esc closes its window, not the menu).
+        if !repeat && screen.id == "inventory" && self.code_screen_key(key) {
+            *canceled = true;
+        }
         let _ = (screen, key, repeat, modifiers, canceled);
     }
     /// A character was typed at the open screen
@@ -1815,6 +1819,9 @@ impl Game<'_> {
         modifiers: u32,
         canceled: &mut bool,
     ) {
+        if screen.id == "inventory" && self.code_screen_char(c) {
+            *canceled = true;
+        }
         let _ = (screen, c, modifiers, canceled);
     }
     /// The open screen as a native mod sees it (`NativeScreenView`): its id,
@@ -4285,6 +4292,10 @@ impl Game<'_> {
     /// Where the open mod screen puts container slot `slot`.
     pub(super) fn native_screen_slot(&self, slot: usize) -> Option<(f32, f32)> {
         let s = self.shown_native_screen()?;
+        // Where a code screen put it this frame.
+        if let Some((x, y, _)) = self.code_screen_slot(slot) {
+            return Some((x, y));
+        }
         s.screen
             .slots
             .get(slot)
@@ -4349,24 +4360,9 @@ impl Game<'_> {
     pub(super) fn native_screen_width(&self) -> Option<f32> {
         self.shown_native_screen().map(|s| s.screen.width)
     }
-    /// The open mod screen: a plain panel with its slots' frames, the mod's
-    /// drawing over it, then the title and the inventory's label. False when
-    /// none is showing.
-    pub(super) fn draw_native_screen(&self, batch: &mut HudBatch, ox: f32, oy: f32) -> bool {
-        let Some(s) = self.shown_native_screen() else {
-            return false;
-        };
+    /// The frames of the open mod screen's slots, the player's 36 and the menu's own.
+    pub(super) fn draw_native_slot_frames(&self, batch: &mut HudBatch, ox: f32, oy: f32) {
         let atlas = &self.gui.atlas;
-        let (w, h) = (s.screen.width, s.screen.height);
-        batch.fill(atlas, ox, oy, w, h, rgba(0, 0, 0, 255));
-        batch.fill(
-            atlas,
-            ox + 1.0,
-            oy + 1.0,
-            w - 2.0,
-            h - 2.0,
-            rgba(198, 198, 198, 255),
-        );
         let container = self.native_screen_slots().unwrap_or_default();
         for i in (0..36).chain(container) {
             let (x, y) = self.slot_position(i);
@@ -4388,6 +4384,29 @@ impl Game<'_> {
                 16.0,
                 rgba(139, 139, 139, 255),
             );
+        }
+    }
+    /// The open mod screen: a plain panel with its slots' frames, the mod's
+    /// drawing over it, then the title and the inventory's label. False when
+    /// none is showing.
+    pub(super) fn draw_native_screen(&self, batch: &mut HudBatch, ox: f32, oy: f32) -> bool {
+        let Some(s) = self.shown_native_screen() else {
+            return false;
+        };
+        let atlas = &self.gui.atlas;
+        let (w, h) = (s.screen.width, s.screen.height);
+        batch.fill(atlas, ox, oy, w, h, rgba(0, 0, 0, 255));
+        batch.fill(
+            atlas,
+            ox + 1.0,
+            oy + 1.0,
+            w - 2.0,
+            h - 2.0,
+            rgba(198, 198, 198, 255),
+        );
+        // A code screen draws its own panel and has the frames drawn where it says (`SLOTS`).
+        if !super::menu_screens::screen_of(&s.block).is_some_and(|d| d.code) {
+            self.draw_native_slot_frames(batch, ox, oy);
         }
         super::menu_screens::set_screen_at([s.at.0, s.at.1, s.at.2]);
         self.native_screen_draw(&s.block, &s.data, batch, [ox, oy]);
@@ -4530,6 +4549,11 @@ impl Game<'_> {
                 &horizon_mods::screen::encode_grid_click(index, button, shift),
             );
         }
+        // A code screen took the press: what it asked for goes out (its own click sound included).
+        if button == super::code_screens::CODE_PRESS {
+            self.code_screen_actions();
+            return true;
+        }
         // A press that stays on this client (a window opening, a tab chosen) is not a menu button.
         if button == super::menu_screens::LOCAL_PRESS {
             self.audio.play_button_click();
@@ -4559,6 +4583,10 @@ impl Game<'_> {
         // Over no item: an empty slot still gets the mod's hint (which fuel it takes).
         let slot = self.slot_at(batch, self.cursor.0, self.cursor.1);
         if self.carried.is_some() || slot.is_some_and(|i| self.slot_view(i).is_some()) {
+            return;
+        }
+        // A code screen's tooltip is in its frame.
+        if self.code_screen_tooltip(batch) {
             return;
         }
         let Some((block, data, at)) = self.native_screen_at() else {

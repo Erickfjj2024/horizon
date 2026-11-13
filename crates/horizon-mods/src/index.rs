@@ -559,7 +559,9 @@ pub fn inspect(kind: &Kind, path: &Path) -> Result<Facts, String> {
     match kind {
         Kind::NativeMod => Ok(native::Bundle::read(path)?.manifest.facts()),
         Kind::Mod => {
-            let Package { manifest: m, wasm } = Package::read(path)?;
+            let Package {
+                manifest: m, wasm, ..
+            } = Package::read(path)?;
             crate::Content::read(path, &m)?;
             let api_level = match wasm {
                 Some(wasm) => {

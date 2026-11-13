@@ -1815,7 +1815,7 @@ mod run {
         }
 
         /// A slot as the mod sees it: id, count and the SNBT of its components.
-        fn mod_stack(stack: &horizon_client::items::ItemStack) -> horizon_mods::ModItemStack {
+        pub(in crate::game) fn mod_stack(stack: &horizon_client::items::ItemStack) -> horizon_mods::ModItemStack {
             let tag = horizon_client::save::item_to_nbt(stack);
             let components = tag
                 .get("components")

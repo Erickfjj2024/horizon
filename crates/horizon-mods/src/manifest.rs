@@ -10,6 +10,8 @@ use std::{
 pub const MANIFEST: &str = "horizon-mod.toml";
 /// The component's file name in a `.hmod` or a mod folder.
 pub const WASM: &str = "mod.wasm";
+/// A mod's screens component (capability `screen`, API 56): menu screens drawn by code in the player's game.
+pub const SCREENS_WASM: &str = "screens.wasm";
 /// The API (WIT package `horizon:mods`) versions this build runs: a mod
 /// built for any 0.1.x SDK.
 pub const API: &str = "0.1";
@@ -122,9 +124,11 @@ pub enum Capability {
     /// The recipes and items the game knows, for recipe viewers
     /// (interface `recipes`).
     Recipes,
+    /// Menu screens drawn by code: the mod's `screens.wasm`, run in the player's game (interface `screen-host`, API 56).
+    Screen,
 }
 impl Capability {
-    pub const ALL: [Capability; 19] = [
+    pub const ALL: [Capability; 20] = [
         Capability::GameRead,
         Capability::Chat,
         Capability::Hud,
@@ -144,6 +148,7 @@ impl Capability {
         Capability::Chunks,
         Capability::NetClient,
         Capability::Recipes,
+        Capability::Screen,
     ];
     /// Whether a server mod may have it: the others act on a local player.
     pub fn on_server(self) -> bool {
@@ -158,6 +163,7 @@ impl Capability {
                 | Capability::Entities
                 | Capability::PlayerItems
                 | Capability::Chunks
+                | Capability::Screen
         )
     }
     /// The WIT interface it grants, in `horizon:mods`.
@@ -182,6 +188,7 @@ impl Capability {
             Capability::Chunks => "chunks",
             Capability::NetClient => "net-client",
             Capability::Recipes => "recipes",
+            Capability::Screen => "screen-host",
         }
     }
     /// May change in any release: a mod uses it only with
@@ -200,6 +207,7 @@ impl Capability {
                 | Capability::PlayerItems
                 | Capability::Chunks
                 | Capability::NetClient
+                | Capability::Screen
         )
     }
     /// What the player reads before turning the mod on: "May <this>".
@@ -229,6 +237,7 @@ impl Capability {
             Capability::Entities => "see the mobs of the world, spawn, move, hurt and remove them",
             Capability::Net => "send bytes to its half running in players' games, and hear theirs",
             Capability::NetClient => "send bytes to its half running on the server, and hear it",
+            Capability::Screen => "draw its menus' screens in your game",
             Capability::Recipes => {
                 "read the game's recipes and items and which recipes you know, place recipes in your crafting grid and, in creative mode, give you items"
             }
@@ -284,6 +293,7 @@ impl fmt::Display for Capability {
             Capability::Chunks => "chunks",
             Capability::NetClient => "net-client",
             Capability::Recipes => "recipes",
+            Capability::Screen => "screen",
         };
         f.write_str(name)
     }
@@ -395,19 +405,23 @@ pub struct Package {
     pub manifest: Manifest,
     /// None for a content-only mod (capability `registries`, no code).
     pub wasm: Option<Vec<u8>>,
+    /// The screens component ([`SCREENS_WASM`]), when the mod draws screens by code.
+    pub screens: Option<Vec<u8>>,
 }
 impl Package {
     /// A `.hmod` (a zip holding `horizon-mod.toml`, `mod.wasm` and, for
     /// content, `assets/` and `data/`) or a folder holding the same.
     pub fn read(path: &Path) -> Result<Self, String> {
-        let (toml, wasm) = if path.is_dir() {
+        let (toml, wasm, screens) = if path.is_dir() {
             let toml = std::fs::read_to_string(path.join(MANIFEST));
-            let wasm = path.join(WASM);
-            let wasm = match wasm.exists() {
-                true => Some(std::fs::read(wasm).map_err(|e| format!("{WASM}: {e}"))?),
-                false => None,
+            let read = |name: &str| -> Result<Option<Vec<u8>>, String> {
+                let file = path.join(name);
+                match file.exists() {
+                    true => Ok(Some(std::fs::read(file).map_err(|e| format!("{name}: {e}"))?)),
+                    false => Ok(None),
+                }
             };
-            (toml.map_err(|e| format!("{MANIFEST}: {e}"))?, wasm)
+            (toml.map_err(|e| format!("{MANIFEST}: {e}"))?, read(WASM)?, read(SCREENS_WASM)?)
         } else {
             let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
             let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
@@ -425,10 +439,13 @@ impl Package {
             };
             let toml = entry(MANIFEST)?.ok_or_else(|| format!("{MANIFEST}: missing"))?;
             let toml = String::from_utf8(toml).map_err(|_| format!("{MANIFEST}: not UTF-8"))?;
-            (toml, entry(WASM)?)
+            (toml, entry(WASM)?, entry(SCREENS_WASM)?)
         };
         if wasm.as_ref().is_some_and(|w| w.len() as u64 > MAX_WASM) {
             return Err(format!("{WASM} is over {} MiB", MAX_WASM >> 20));
+        }
+        if screens.as_ref().is_some_and(|w| w.len() as u64 > MAX_WASM) {
+            return Err(format!("{SCREENS_WASM} is over {} MiB", MAX_WASM >> 20));
         }
         let manifest = Manifest::parse(&toml)?;
         if wasm.is_none() && !manifest.capabilities.contains(&Capability::Registries) {
@@ -436,7 +453,7 @@ impl Package {
                 "{WASM}: missing (only a content mod, with capability registries, may have no code)"
             ));
         }
-        Ok(Package { manifest, wasm })
+        Ok(Package { manifest, wasm, screens })
     }
     /// The `.hmod` bytes for `manifest_text` and a component.
     pub fn write(manifest_text: &str, wasm: &[u8]) -> Result<Vec<u8>, String> {
@@ -447,6 +464,15 @@ impl Package {
     pub fn write_files(
         manifest_text: &str,
         wasm: Option<&[u8]>,
+        files: &[(&str, &[u8])],
+    ) -> Result<Vec<u8>, String> {
+        Self::write_all(manifest_text, wasm, None, files)
+    }
+    /// [`Package::write_files`] with a screens component ([`SCREENS_WASM`]).
+    pub fn write_all(
+        manifest_text: &str,
+        wasm: Option<&[u8]>,
+        screens: Option<&[u8]>,
         files: &[(&str, &[u8])],
     ) -> Result<Vec<u8>, String> {
         use std::io::Write;
@@ -461,6 +487,9 @@ impl Package {
         put(MANIFEST, manifest_text.as_bytes())?;
         if let Some(wasm) = wasm {
             put(WASM, wasm)?;
+        }
+        if let Some(screens) = screens {
+            put(SCREENS_WASM, screens)?;
         }
         for (name, bytes) in files {
             crate::content::check_path(name)?;

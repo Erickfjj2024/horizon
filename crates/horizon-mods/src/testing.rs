@@ -1288,6 +1288,268 @@ pub struct Script {
     pub anvil: Vec<AnvilSet>,
     #[serde(default, rename = "step")]
     pub steps: Vec<Step>,
+    /// Screens drawn by code (`[[screen]]`, capability `screen`, API 56): the mod's `screens.wasm`, run after the steps
+    /// with the menu data each step gives, its drawing and what it sent checked.
+    #[serde(default, rename = "screen")]
+    pub screens: Vec<ScreenStep>,
+}
+
+/// An entry of a screen step's item grid.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenGridSet {
+    item: String,
+    #[serde(default)]
+    components: String,
+    count: u64,
+}
+
+/// A text field edit in a screen step.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenFieldSet {
+    id: i32,
+    text: String,
+    /// Enter after it (`field-submitted`).
+    #[serde(default)]
+    submit: bool,
+}
+
+/// What a screen step checks.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct ScreenExpect {
+    /// Lines of the frame's commands (`TEXT "No frequency" 8 6`, `AREA 9100 tab ...`): each is the start of one of the
+    /// frame's lines, in this order (others may come between).
+    commands: Option<Vec<String>>,
+    /// Lines that no command of the frame starts with.
+    absent: Option<Vec<String>>,
+    /// What the screen sent during the step, exactly (`button 9100`, `text 8533 "Base"`, `grid 3 0`, `click`, `close`).
+    sent: Option<Vec<String>>,
+    /// Whether the screen took the step's input.
+    taken: Option<bool>,
+    /// The panel size `open` asked for (0 keeps the menu's).
+    setup: Option<[u32; 2]>,
+    /// The step fails with an error holding this text (`open` refused, the screen crashed, a bad buffer).
+    error: Option<String>,
+}
+
+/// A step of a code screen (`[[screen]]`).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct ScreenStep {
+    /// Opens the screen of this menu type (closing the one open).
+    open: Option<String>,
+    /// The GUI's size in GUI pixels (427 by 240 if not given).
+    gui: Option<[f32; 2]>,
+    /// The menu's data slots, strings, item grid, slots (`item*count`, `""` empty) and the cursor's stack, as the
+    /// server synchronised them; kept until a later step changes them.
+    data: Option<Vec<i32>>,
+    strings: Option<Vec<String>>,
+    grid: Option<Vec<ScreenGridSet>>,
+    slots: Option<Vec<String>>,
+    carried: Option<String>,
+    /// Ticks to run (`tick`).
+    #[serde(default)]
+    ticks: u32,
+    /// The cursor for the frame (and the hover).
+    mouse: Option<[f32; 2]>,
+    /// A left click (press and release) at x, y; `right-click` the right button; `shift` holds Shift.
+    click: Option<[f32; 2]>,
+    right_click: Option<[f32; 2]>,
+    #[serde(default)]
+    shift: bool,
+    /// A left-button drag: press at the first point, move to the second, release.
+    drag: Option<[f32; 4]>,
+    /// The wheel at x, y by delta (positive away from the player).
+    scroll: Option<[f32; 3]>,
+    /// A key (`key.keyboard.escape`).
+    key: Option<String>,
+    /// Typed characters.
+    chars: Option<String>,
+    /// A text field's edit.
+    field: Option<ScreenFieldSet>,
+    #[serde(default)]
+    expect: ScreenExpect,
+}
+
+/// The screen running for `[[screen]]` steps.
+struct ScreenRun {
+    screen: crate::screen_runtime::ScreenMod,
+    host: crate::screen_runtime::HostData,
+    open: bool,
+    started: std::time::Instant,
+}
+
+fn screen_stack(text: &str) -> Option<crate::screen_runtime::Stack> {
+    let s = parse_stack(text)?;
+    Some(crate::screen_runtime::Stack { item: s.item, components: s.components, count: s.count })
+}
+
+/// A plain font for the screen tests: 6 a character, 4 for a space (Minecraft's default advance and its space).
+fn test_font() -> std::sync::Arc<[f32]> {
+    (0..256).map(|c| if c == 32 { 4.0 } else { 6.0 }).collect::<Vec<f32>>().into()
+}
+
+impl ScreenStep {
+    fn run(&self, run: &mut Option<ScreenRun>, hmod: &std::path::Path) -> Result<(), String> {
+        use crate::screen_runtime::{Frame, InputEvent, Modifiers, MouseButton, OpenInfo, Pointer, ScreenMod, Wheel};
+        let result = (|| -> Result<(), String> {
+            if self.open.is_some() {
+                if let Some(r) = run.as_mut()
+                    && r.open
+                {
+                    r.screen.close(&r.host);
+                }
+                let wasm = crate::manifest::Package::read(hmod)?.screens.ok_or("the mod has no screens.wasm (no screens/ crate)")?;
+                let id = crate::manifest::Package::read(hmod)?.manifest.id;
+                let screen = ScreenMod::load(&id, &wasm)?;
+                let host = crate::screen_runtime::HostData { font_widths: test_font(), ..Default::default() };
+                *run = Some(ScreenRun { screen, host, open: false, started: std::time::Instant::now() });
+            }
+            let r = run.as_mut().ok_or("no screen is open: the first [[screen]] step opens one (open = \"<menu type>\")")?;
+            if let Some(d) = &self.data {
+                r.host.data.clone_from(d);
+            }
+            if let Some(t) = &self.strings {
+                r.host.strings.clone_from(t);
+            }
+            if let Some(g) = &self.grid {
+                r.host.grid = g
+                    .iter()
+                    .map(|e| crate::screen_runtime::GridEntry { item: e.item.clone(), components: e.components.clone(), count: e.count })
+                    .collect();
+            }
+            if let Some(slots) = &self.slots {
+                r.host.slots = slots.iter().map(|s| screen_stack(s)).collect();
+            }
+            if let Some(c) = &self.carried {
+                r.host.carried = screen_stack(c);
+            }
+            let mut sent = Vec::new();
+            if let Some(menu) = &self.open {
+                let [w, h] = self.gui.unwrap_or([427.0, 240.0]);
+                let (setup, actions) = r.screen.open(&r.host, &OpenInfo { menu: menu.clone(), gui_width: w, gui_height: h, touch: false })?;
+                r.open = true;
+                sent.extend(actions);
+                if let Some([w, h]) = self.expect.setup
+                    && (setup.width, setup.height) != (w, h)
+                {
+                    return Err(format!("setup: expected {w} by {h}, got {} by {}", setup.width, setup.height));
+                }
+            }
+            for _ in 0..self.ticks {
+                sent.extend(r.screen.tick(&r.host)?);
+            }
+            let mods = Modifiers { shift: self.shift, ctrl: false, alt: false };
+            let mut events = Vec::new();
+            let press = |x: f32, y: f32, button: MouseButton| {
+                [
+                    InputEvent::MousePressed(Pointer { x, y, button, modifiers: mods }),
+                    InputEvent::MouseReleased(Pointer { x, y, button, modifiers: mods }),
+                ]
+            };
+            if let Some([x, y]) = self.click {
+                events.extend(press(x, y, MouseButton::Left));
+            }
+            if let Some([x, y]) = self.right_click {
+                events.extend(press(x, y, MouseButton::Right));
+            }
+            if let Some([x0, y0, x1, y1]) = self.drag {
+                events.push(InputEvent::MousePressed(Pointer { x: x0, y: y0, button: MouseButton::Left, modifiers: mods }));
+                events.push(InputEvent::MouseDragged(crate::screen_runtime::Drag { x: x1, y: y1, button: MouseButton::Left, dx: x1 - x0, dy: y1 - y0 }));
+                events.push(InputEvent::MouseReleased(Pointer { x: x1, y: y1, button: MouseButton::Left, modifiers: mods }));
+            }
+            if let Some([x, y, delta]) = self.scroll {
+                events.push(InputEvent::MouseScrolled(Wheel { x, y, delta }));
+            }
+            if let Some(k) = &self.key {
+                events.push(InputEvent::KeyPressed(crate::screen_runtime::Key { key: k.clone(), modifiers: mods }));
+            }
+            if let Some(c) = &self.chars {
+                events.push(InputEvent::CharTyped(c.clone()));
+            }
+            if let Some(f) = &self.field {
+                let text = crate::screen_runtime::FieldText { id: f.id, text: f.text.clone() };
+                events.push(InputEvent::FieldChanged(text.clone()));
+                if f.submit {
+                    events.push(InputEvent::FieldSubmitted(text));
+                }
+            }
+            let mut taken = false;
+            for e in &events {
+                let (t, actions) = r.screen.input(&r.host, e)?;
+                taken |= t;
+                sent.extend(actions);
+            }
+            if let Some(want) = self.expect.taken
+                && !events.is_empty()
+                && want != taken
+            {
+                return Err(format!("taken: expected {want}, got {taken}"));
+            }
+            if self.expect.commands.is_some() || self.expect.absent.is_some() {
+                let [mx, my] = self.mouse.unwrap_or([-1.0, -1.0]);
+                let frame = Frame { mouse_x: mx, mouse_y: my, partial_tick: 0.0, time_ms: r.started.elapsed().as_millis() as u64 };
+                let rendered = r.screen.render(&r.host, frame)?;
+                sent.extend(rendered.actions);
+                let frame = rendered.frame?;
+                let lines: Vec<String> = frame.commands.iter().map(crate::screen_runtime::format::describe).collect();
+                if let Some(want) = &self.expect.commands {
+                    let mut at = 0;
+                    for w in want {
+                        match lines[at..].iter().position(|l| l.starts_with(w.as_str())) {
+                            Some(i) => at += i + 1,
+                            None => {
+                                return Err(format!("commands: no {w:?} after line {at}; the frame:\n    {}", lines.join("\n    ")));
+                            }
+                        }
+                    }
+                }
+                if let Some(absent) = &self.expect.absent
+                    && let Some(l) = lines.iter().find(|l| absent.iter().any(|a| l.starts_with(a.as_str())))
+                {
+                    return Err(format!("commands: {l:?} should not be drawn"));
+                }
+            }
+            if let Some(want) = &self.expect.sent {
+                let got: Vec<String> = sent.iter().map(crate::screen_runtime::ScreenAction::describe).collect();
+                if &got != want {
+                    return Err(format!("sent: expected {want:?}, got {got:?}"));
+                }
+            }
+            Ok(())
+        })();
+        match (&self.expect.error, result) {
+            (None, r) => r,
+            (Some(want), Err(e)) if e.contains(want.as_str()) => Ok(()),
+            (Some(want), Err(e)) => Err(format!("error: expected one holding {want:?}, got {e:?}")),
+            (Some(want), Ok(())) => Err(format!("error: expected one holding {want:?}, the step passed")),
+        }
+    }
+
+    fn describe(&self) -> String {
+        let mut parts = Vec::new();
+        if let Some(m) = &self.open {
+            parts.push(format!("open {m}"));
+        }
+        if self.click.is_some() || self.right_click.is_some() {
+            parts.push("click".into());
+        }
+        if self.drag.is_some() {
+            parts.push("drag".into());
+        }
+        if self.scroll.is_some() {
+            parts.push("scroll".into());
+        }
+        if self.key.is_some() || self.chars.is_some() || self.field.is_some() {
+            parts.push("keys".into());
+        }
+        if parts.is_empty() {
+            parts.push("render".into());
+        }
+        parts.join(", ")
+    }
 }
 
 /// A cooking recipe in a test.
@@ -2017,6 +2279,11 @@ impl Script {
         for (i, step) in self.steps.iter().enumerate() {
             step.run(game)
                 .map_err(|e| format!("step {} ({}): {e}", i + 1, step.describe()))?;
+        }
+        let mut screen = None;
+        for (i, step) in self.screens.iter().enumerate() {
+            step.run(&mut screen, &game.hmod)
+                .map_err(|e| format!("screen step {} ({}): {e}", i + 1, step.describe()))?;
         }
         Ok(())
     }

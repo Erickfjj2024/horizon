@@ -74,7 +74,38 @@ impl Game<'_> {
         }
         // A mod menu's own buttons and text boxes (declared screens): `menu-button-ID` and `menu-field-ID` by the widget's
         // id, with `.2`, `.3`... when the screen repeats one (buttons that act on this client alone share id 0).
-        if self.screen == Screen::Inventory && self.title.is_none() {
+        // A menu drawn by code (API 56): its areas as `screen-ID`, its text fields as `menu-field-ID`.
+        if self.screen == Screen::Inventory
+            && self.title.is_none()
+            && let Some(controls) = self.code_screen_controls()
+        {
+            let mut seen: Vec<String> = Vec::new();
+            for c in controls {
+                let base = if c.kind == "field" {
+                    format!("menu-field-{}", c.id)
+                } else {
+                    format!("screen-{}", c.id)
+                };
+                let n = seen.iter().filter(|s| **s == base).count();
+                seen.push(base.clone());
+                nodes.push(Node {
+                    id: if n == 0 {
+                        base
+                    } else {
+                        format!("{base}.{}", n + 1)
+                    },
+                    kind: match c.kind {
+                        "field" => Kind::Field,
+                        "row" => Kind::Row,
+                        "tab" => Kind::Tab(!c.active),
+                        _ => Kind::Button,
+                    },
+                    label: (!c.label.is_empty()).then_some(c.label),
+                    rect: c.rect,
+                    enabled: c.active,
+                });
+            }
+        } else if self.screen == Screen::Inventory && self.title.is_none() {
             let mut seen: Vec<String> = Vec::new();
             for c in self.declared_controls() {
                 let base = format!("menu-{}-{}", if c.field { "field" } else { "button" }, c.id);
@@ -173,8 +204,20 @@ impl Game<'_> {
                     "frame": widgets::generation(),
                     "widgets": widgets,
                 });
-                // An open mod menu's texts as drawn: the strings its server sent show here (`text_data`).
-                if self.screen == Screen::Inventory && self.title.is_none() {
+                // A code screen's last frame, one line a command (`horizon-ctl ui` shows what it drew).
+                if self.screen == Screen::Inventory
+                    && self.title.is_none()
+                    && let Some(commands) = self.code_screen_commands()
+                {
+                    reply["screen_commands"] = json!(commands);
+                    let texts: Vec<Value> = self
+                        .code_screen_texts()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|(text, at)| json!({ "text_data": null, "text": text, "at": at }))
+                        .collect();
+                    reply["menu_texts"] = json!(texts);
+                } else if self.screen == Screen::Inventory && self.title.is_none() {
                     let texts: Vec<Value> = self
                         .declared_texts()
                         .into_iter()

@@ -257,7 +257,10 @@ turn the switch off.
   button's tooltip is its label); only what a press reaches is listed (a window's widgets, not
   the ones under it). The reply's `menu_texts` lists the menu's text widgets as drawn (`text`,
   `text_data`, `at`): a string the server sent (`world.set-menu-text`, an item menu's
-  `menu-text`) shows there once it reached the client.
+  `menu-text`) shows there once it reached the client. A menu drawn by code (API 56,
+  docs/mods-screen.md) lists the areas its frame declared as `screen-<ID>` and its text fields
+  as `menu-field-<ID>`, and the reply's `screen_commands` is its last frame, one line a command;
+  `state`'s `screen_code` has its render times and the fps with it open.
 - **Kinds:** `button`, `slider` (`value` 0..1), `field`, `row` (a world, server, pack or
   language), `tab` (`selected`), `slot`.
 - **Actions:**

@@ -171,7 +171,8 @@ fn new(args: &[String]) -> Result<(), String> {
 
 /// Builds the mod in the current folder and packs `target/horizon-mod/<id>.hmod`:
 /// the manifest, the crate's component (none without a `Cargo.toml`: a
-/// content mod) and the files in `assets/` and `data/`.
+/// content mod), the screens crate's component (`screens/`, capability `screen`)
+/// and the files in `assets/` and `data/`.
 fn build(release: bool) -> Result<PathBuf, String> {
     build_in(Path::new("."), release)
 }
@@ -192,6 +193,28 @@ fn build_in(root: &Path, release: bool) -> Result<PathBuf, String> {
             "no Cargo.toml: only a content mod (capability registries in {MANIFEST}) has no code"
         ));
     };
+    // Screens drawn by code (capability `screen`, API 56): the crate in `screens/`, built into `screens.wasm`.
+    let screens = if root.join("screens").join("Cargo.toml").exists() {
+        if !manifest.capabilities.contains(&Capability::Screen) {
+            return Err(format!(
+                "screens/ draws screens by code: add capability screen to {MANIFEST}"
+            ));
+        }
+        let (screens, _) = compile(&root.join("screens"), release)?;
+        for name in component_imports(&screens)? {
+            match Capability::of_import(&name)? {
+                None | Some(Capability::Screen) => {}
+                Some(c) => {
+                    return Err(format!(
+                        "screens/ imports {name} (capability {c}): a screen may use log and screen-host only"
+                    ));
+                }
+            }
+        }
+        Some(screens)
+    } else {
+        None
+    };
     // The same checks as the game's, and the files in the order it lists them.
     let content = Content::read(root, &manifest)?;
     let mut reader = content.reader()?;
@@ -205,7 +228,7 @@ fn build_in(root: &Path, release: bool) -> Result<PathBuf, String> {
     let path = dir.join(format!("{}.hmod", manifest.id));
     // Write then rename, so a running game never reads half a file.
     let partial = path.with_extension("hmod.partial");
-    let bytes = Package::write_files(&manifest_text, wasm.as_deref(), &files)?;
+    let bytes = Package::write_all(&manifest_text, wasm.as_deref(), screens.as_deref(), &files)?;
     std::fs::write(&partial, bytes).map_err(|e| e.to_string())?;
     std::fs::rename(&partial, &path).map_err(|e| e.to_string())?;
     Ok(path)
@@ -317,10 +340,14 @@ fn test(args: &[String]) -> Result<(), String> {
             .and_then(|script| {
                 let mut game = TestGame::load(&hmod)?;
                 script.run(&mut game)?;
-                Ok(script.steps.len())
+                Ok((script.steps.len(), script.screens.len()))
             });
         match result {
-            Ok(steps) => println!("test {} ... ok ({steps} steps)", path.display()),
+            Ok((steps, 0)) => println!("test {} ... ok ({steps} steps)", path.display()),
+            Ok((steps, screens)) => println!(
+                "test {} ... ok ({steps} steps, {screens} screen steps)",
+                path.display()
+            ),
             Err(e) => {
                 failed += 1;
                 println!("test {} ... FAILED\n  {e}", path.display());

@@ -237,7 +237,7 @@ pub const COMMANDS: &[Cmd] = &[
         ["horizon-ctl screenshot view.png"], &[], mcp: true, local: false),
     // Observe
     cmd!("state", Observe, "state", "player, world, screen and crosshair target in one reply",
-        "position, block_pos, eye, yaw, pitch, velocity, on_ground, health, food, saturation, xp, effects, gamemode, dimension, time, weather, the screen or title menu, the held item, what the crosshair points at and whether an action is running.",
+        "position, block_pos, eye, yaw, pitch, velocity, on_ground, health, food, saturation, xp, effects, gamemode, dimension, time, weather, the screen or title menu, the held item, what the crosshair points at and whether an action is running; with a menu drawn by code open (API 56), screen_code: its last and average render time in ms, renders and the fps with it open.",
         ["horizon-ctl state"], &[], mcp: true, local: false),
     cmd!("looking-at", Observe, "looking-at", "the block or entity under the crosshair",
         "kind is block, entity or none; a block has pos, state, face, point and distance; an entity has id, type, health and distance.",
@@ -347,7 +347,7 @@ pub const COMMANDS: &[Cmd] = &[
         &[p("slot", Ty::Int, "slot id"), opt("right", Ty::Bool, "right-click"), opt("shift", Ty::Bool, "shift-click")], mcp: true, local: false),
     cmd!("close", Screens, "close", "close the open menu and return to the game", "", ["horizon-ctl close"], &[], mcp: true, local: false),
     cmd!("ui", Screens, "ui", "every widget of the open screen: id, kind, label, bounds, value (a mod menu's buttons and text fields too)",
-        "Kinds: button, slider (value 0..1), field, row (worlds, servers, packs, languages), tab (selected), slot (slot-ID, with its stack). An open mod menu adds its buttons as menu-button-ID and its text fields as menu-field-ID (the widget ids of its screen, .2 for a repeat; a button's tooltip is its label), and menu_texts lists its text widgets as drawn (text, text_data, at): the strings its server sent show there. Ids come from labels (\"FOV: 70\" is fov, a repeat gets -2) or kind-N without one, and stay put when a value changes. Reflects the last drawn frame (frame counts them).",
+        "Kinds: button, slider (value 0..1), field, row (worlds, servers, packs, languages), tab (selected), slot (slot-ID, with its stack). An open mod menu adds its buttons as menu-button-ID and its text fields as menu-field-ID (the widget ids of its screen, .2 for a repeat; a button's tooltip is its label), and menu_texts lists its text widgets as drawn (text, text_data, at): the strings its server sent show there. A menu drawn by code (API 56) lists its areas as screen-ID and its fields as menu-field-ID, with screen_commands, its last frame. Ids come from labels (\"FOV: 70\" is fov, a repeat gets -2) or kind-N without one, and stay put when a value changes. Reflects the last drawn frame (frame counts them).",
         ["horizon-ctl ui"], &[], mcp: true, local: false),
     cmd!("click", Screens, "click ID [right|middle] [shift]", "click a widget of ui by its id, as the mouse would",
         "A field takes focus (then type); slot-ID clicks a slot like click-slot. middle presses the middle button (pick block: a creative player clones the stack).",

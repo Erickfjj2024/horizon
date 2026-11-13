@@ -68,7 +68,7 @@ pub(super) fn remember_menu_grid(data: &[u8]) {
 }
 
 /// The open screen's item grid entries.
-fn menu_grid() -> Vec<horizon_mods::screen::GridEntry> {
+pub(super) fn menu_grid() -> Vec<horizon_mods::screen::GridEntry> {
     let Some(at) = SCREEN_AT.lock().ok().and_then(|s| *s) else { return Vec::new() };
     MENU_GRID.lock().ok().and_then(|m| m.as_ref()?.get(&at).cloned()).unwrap_or_default()
 }
@@ -85,14 +85,14 @@ static GRAPHS: Mutex<Option<HashMap<(i32, i32), (u64, horizon_mods::screen::Grap
 const MENU_TEXT_BLOCKS: usize = 64;
 
 /// The text box of the open mod screen that has the focus (FORK-20): its widget `id`, what it takes and the edit box.
-struct ModField {
-    id: i32,
-    validator: Validator,
-    edit: horizon_client::ui::EditBox,
+pub(super) struct ModField {
+    pub(super) id: i32,
+    pub(super) validator: Validator,
+    pub(super) edit: horizon_client::ui::EditBox,
 }
-static FIELD: Mutex<Option<ModField>> = Mutex::new(None);
+pub(super) static FIELD: Mutex<Option<ModField>> = Mutex::new(None);
 /// A text box just took the focus: a touch screen opens its keyboard once (`take_field_keyboard`).
-static FIELD_KEYBOARD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub(super) static FIELD_KEYBOARD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Whether a text box took the focus since the last call.
 pub(super) fn take_field_keyboard() -> bool {
@@ -139,6 +139,12 @@ pub(super) fn set_screen_at(pos: [i32; 3]) {
     }
 }
 
+/// Every string of the open screen's block (a code screen's `menu-strings`).
+pub(super) fn menu_strings() -> Vec<String> {
+    let Some(at) = SCREEN_AT.lock().ok().and_then(|s| *s) else { return Vec::new() };
+    MENU_TEXT.lock().ok().and_then(|m| m.as_ref()?.get(&at).cloned()).unwrap_or_default()
+}
+
 /// String `n` of the open screen's block.
 fn menu_string(n: usize) -> Option<String> {
     let at = (*SCREEN_AT.lock().ok()?)?;
@@ -150,6 +156,7 @@ pub(super) const LOCAL_PRESS: i32 = i32::MIN;
 
 /// A new screen opened: its windows are closed and its variables unset.
 pub(super) fn reset_locals() {
+    super::code_screens::reset();
     drop_field();
     if let Ok(mut g) = GRAPHS.lock() {
         *g = None;
@@ -448,7 +455,7 @@ impl Game<'_> {
 
     /// Fills the bottom `frac` of rectangle `rect` with `texture` tiled from its bottom left corner and tinted (a tank's
     /// contents, as `GuiUtils.drawTiledSprite` with `TilingDirection.UP_RIGHT` draws them).
-    fn draw_tiled_bottom_up(&self, batch: &mut HudBatch, texture: &str, rect: [f32; 4], frac: f32, tint: u32) {
+    pub(super) fn draw_tiled_bottom_up(&self, batch: &mut HudBatch, texture: &str, rect: [f32; 4], frac: f32, tint: u32) {
         let Some(sprite) = self.gui.atlas.sprites.get(texture).copied() else {
             return;
         };
@@ -516,6 +523,10 @@ impl Game<'_> {
         let Some(def) = screen_of(block) else {
             return false;
         };
+        // Drawn by the mod's code (capability `screen`, API 56).
+        if def.code {
+            return self.code_screen_draw(batch, origin);
+        }
         let [ox, oy] = origin;
         let locals = locals();
         if let Some(texture) = &def.texture
@@ -573,6 +584,7 @@ impl Game<'_> {
 
     /// The cursor moved with a window held: it follows (kept on the screen's near area).
     pub(super) fn drag_declared_window(&self, at: [f32; 2]) {
+        self.code_screen_motion();
         if let Ok(mut p) = LIST_PRESS.lock()
             && let Some(p) = p.as_mut()
         {
@@ -603,6 +615,12 @@ impl Game<'_> {
     /// Whether the open window covers container slot `slot` (16 by 16 at its position): a window is over everything, so
     /// the slots under it are neither drawn nor pressed (as Mekanism's windows take the clicks that land on them).
     pub(super) fn window_covers_slot(&self, slot: usize) -> bool {
+        // A code screen hides a slot it says is inactive (a window over it).
+        if slot >= 300
+            && let Some((_, _, active)) = self.code_screen_slot(slot - 300)
+        {
+            return !active;
+        }
         let Some([wx, wy, ww, wh]) = self.open_window_rect() else {
             return false;
         };
@@ -618,6 +636,9 @@ impl Game<'_> {
     /// here (a window opened); `alt` is a right press.
     pub(super) fn declared_screen_press(&self, block: &str, data: &[i32], at: [f32; 2], alt: bool) -> Option<i32> {
         let screen = screen_of(block)?;
+        if screen.code {
+            return (self.code_screen_press(at, alt) == Some(true)).then_some(super::code_screens::CODE_PRESS);
+        }
         let mut l = LOCALS.lock().ok()?;
         let mut now = l.take().unwrap_or_default();
         now.grid_total = menu_grid().len() as i64;
@@ -694,6 +715,9 @@ impl Game<'_> {
         let Some(screen) = screen_of(&block) else {
             return false;
         };
+        if screen.code {
+            return self.code_screen_scroll(delta) == Some(true);
+        }
         let Ok(mut l) = LOCALS.lock() else {
             return false;
         };
@@ -709,6 +733,8 @@ impl Game<'_> {
         if let Some(button) = end_drag() {
             self.native_menu_button_send(button);
         }
+        self.code_screen_release();
+        self.code_screen_actions();
     }
 
     /// Whether a text box of the open mod screen has the focus (FORK-20).
@@ -740,6 +766,9 @@ impl Game<'_> {
                 field.edit.insert_text(&allowed);
             }
         }
+        let (id, value) = (field.id, field.edit.value.clone());
+        drop(f);
+        self.code_screen_field(id, &value, false);
     }
 
     /// A key in the focused text box (cursor, delete, select...): Enter confirms, and false lets the key go on.
@@ -749,7 +778,15 @@ impl Game<'_> {
             return true;
         }
         let (ctrl, shift) = (self.has_control_down(), self.has_shift_down());
-        FIELD.lock().ok().and_then(|mut f| f.as_mut().map(|f| f.edit.key(key, ctrl, shift))).unwrap_or(false)
+        let before = FIELD.lock().ok().and_then(|f| f.as_ref().map(|f| (f.id, f.edit.value.clone())));
+        let took = FIELD.lock().ok().and_then(|mut f| f.as_mut().map(|f| f.edit.key(key, ctrl, shift))).unwrap_or(false);
+        let after = FIELD.lock().ok().and_then(|f| f.as_ref().map(|f| (f.id, f.edit.value.clone())));
+        if let Some((id, value)) = after
+            && before.as_ref().map(|b| &b.1) != Some(&value)
+        {
+            self.code_screen_field(id, &value, false);
+        }
+        took
     }
 
     /// The buttons and text boxes of the open mod screen, in GUI pixels: what the control socket's `ui` lists.
@@ -806,6 +843,25 @@ impl Game<'_> {
     pub(super) fn mod_field_type(&mut self, id: i32, text: &str, replace: bool, enter: bool) -> Result<String, String> {
         let block = self.native_open_block().ok_or("--menu-field needs a mod menu open")?;
         let screen = screen_of(&block).ok_or_else(|| format!("the open menu {block} has no declared screen"))?;
+        // A code screen's field: focused as a press would, then typed as below.
+        if screen.code {
+            let fields: Vec<i32> =
+                self.code_screen_controls().unwrap_or_default().into_iter().filter(|c| c.kind == "field").map(|c| c.id).collect();
+            self.code_screen_focus_field(id).ok_or_else(|| format!("no text field {id} showing on the {block} screen; its fields: {fields:?}"))?;
+            if replace && let Ok(mut f) = FIELD.lock() && let Some(f) = f.as_mut() {
+                f.edit.set_value("");
+            }
+            if text == "\\b" {
+                self.mod_field_text(None, true);
+            } else if !text.is_empty() {
+                self.mod_field_text(Some(text), false);
+            }
+            let value = self.mod_field_value();
+            if enter {
+                self.mod_field_confirm();
+            }
+            return Ok(value);
+        }
         let fields: Vec<i32> = self.declared_controls().into_iter().filter(|c| c.field).map(|c| c.id).collect();
         if !fields.contains(&id) {
             return Err(format!("no text field {id} showing on the {block} menu; its fields: {fields:?}"));
@@ -843,6 +899,11 @@ impl Game<'_> {
         let Some((id, text)) = FIELD.lock().ok().and_then(|mut f| f.take()).map(|f| (f.id, f.edit.value)) else {
             return;
         };
+        // A code screen's field: the screen hears Enter and sends what it wants (`send-text`).
+        if self.code_screen_field(id, &text, true) {
+            self.code_screen_actions();
+            return;
+        }
         let (Some(at), Some(block)) = (*SCREEN_AT.lock().ok().as_deref().unwrap_or(&None), self.native_open_block()) else {
             return;
         };
@@ -861,6 +922,9 @@ impl Game<'_> {
         at: [f32; 2],
     ) -> Vec<String> {
         let Some(screen) = screen_of(block) else { return Vec::new() };
+        if screen.code {
+            return Vec::new();
+        }
         // Over a grid cell: the item and its whole count.
         let mut l = locals();
         let entries = menu_grid();

@@ -192,6 +192,8 @@ macro_rules! export_mod {
 /// and messages the players with capability `players`.
 pub mod components;
 pub mod config;
+pub mod screen;
+pub mod screen_format;
 
 pub mod server {
     wit_bindgen::generate!({

@@ -14,7 +14,9 @@ scenario opens the inventory and the chat over an item in use and checks the use
 eaten behind the GUI; the pick scenario
 middle-clicks slots (AbstractContainerScreen's cloning): a full stack in creative, from the hotbar
 and from an item tab, and nothing in survival;
-the mod-menu scenario (CLI only) opens the example item-menu-demo's menu with its key and checks that the strings its
+the screen scenario (CLI only) opens screen-demo's menu drawn by code (API 56), checks its frame, clicks an area
+it drew, types into its field, opens and closes its window and reads its render time; the mod-menu scenario (CLI
+only) opens the example item-menu-demo's menu with its key and checks that the strings its
 server sends reach the client's text widgets (`ui`'s menu_texts); the suggestions scenario checks slash-command Tab completion on single player's connected client
 after a fresh launch; the no-ai scenario turns No AI on in a scratch game home and checks that
 horizon-ctl, its MCP server and the game's control socket all refuse.
@@ -792,17 +794,22 @@ def pause_save_scenario(d, out):
     return {'saved_on_pause': saved}
 
 
-ITEM_MENU_DEMO = ROOT / 'crates/horizon-mod-sdk/examples/item-menu-demo'
+EXAMPLES = ROOT / 'crates/horizon-mod-sdk/examples'
 
 
-def item_menu_demo_hmod():
-    """The example mod item-menu-demo as a .hmod (built here with cargo horizon-mod), for mod_menu_scenario."""
+def example_hmod(folder, mod_id):
+    """An example mod of crates/horizon-mod-sdk/examples as a .hmod (built here with cargo horizon-mod)."""
     meta = json.loads(subprocess.run(['cargo', 'metadata', '--format-version', '1', '--no-deps'], cwd=ROOT,
                                      capture_output=True, text=True, check=True).stdout)
     target = Path(meta['target_directory'])
     subprocess.run(['cargo', 'run', '--quiet', '--profile', 'fast', '-p', 'cargo-horizon-mod', '--manifest-path',
-                    str(ROOT / 'Cargo.toml'), '--', 'horizon-mod', 'build'], cwd=ITEM_MENU_DEMO, check=True)
-    return target / 'horizon-mod/imenu.hmod'
+                    str(ROOT / 'Cargo.toml'), '--', 'horizon-mod', 'build'], cwd=EXAMPLES / folder, check=True)
+    return target / f'horizon-mod/{mod_id}.hmod'
+
+
+def item_menu_demo_hmod():
+    """item-menu-demo, for mod_menu_scenario."""
+    return example_hmod('item-menu-demo', 'imenu')
 
 
 def mod_menu_scenario(d, out):
@@ -831,13 +838,73 @@ def mod_menu_scenario(d, out):
     return {'menu_texts': shown}
 
 
+def screen_scenario(d, out):
+    """A menu screen drawn by code (API 56): screen-demo's key (backslash) opens screendemo:panel, whose screens.wasm
+    draws it. Its frame (`ui`'s screen_commands) holds what the code drew; a click on an area it declared (`screen-ID`)
+    reaches the screen and, through it, the server, whose strings come back drawn; its text field takes `type
+    --menu-field`; its side tab opens a window and Esc closes the window, not the menu; `state` has the render time."""
+    d('key', key='backslash', action='tap')
+    def ui():
+        return d('ui')
+    def texts(reply):
+        return [t['text'] for t in reply.get('menu_texts', [])]
+    reply = {}
+    for _ in range(20):
+        d('wait', ticks=5)
+        reply = ui()
+        if 'No frequency' in texts(reply):
+            break
+    commands = reply.get('screen_commands', [])
+    for want in ['NINE screendemo:gui/base 0 0 176 200', 'TEXT "Screen Demo"', 'AREA 10 button 8 30 38 20',
+                 'TEXT "Base"', 'FIELD 1 8 100 100 12', 'ITEM minecraft:cobblestone*1500000', 'SLOTS',
+                 'AREA 9100 tab -26 20 26 18']:
+        assert any(c.startswith(want) for c in commands), f'{want!r} not drawn: {commands}'
+    ids = {w['id'] for w in reply['widgets']}
+    assert {'screen-10', 'screen-101', 'screen-9100', 'menu-field-1'} <= ids, ids
+    d('screenshot', path=str(out / 'screen-demo.png'))
+    # A row: the screen sends menu button 101, the server selects Mine and its header comes back.
+    d('click', id='screen-101')
+    shown = []
+    for _ in range(20):
+        d('wait', ticks=5)
+        shown = texts(ui())
+        if 'Frequency: Mine' in shown:
+            break
+    assert 'Frequency: Mine' in shown, f'the click did not reach the server: {shown}'
+    # The text field: Enter sends the name; the server adds it and selects it.
+    d('type', **{'menu-field': 1, 'enter': True, 'text': 'Home'})
+    for _ in range(20):
+        d('wait', ticks=5)
+        shown = texts(ui())
+        if 'Frequency: Home' in shown:
+            break
+    assert 'Frequency: Home' in shown and 'Home' in shown, f'the field did not reach the server: {shown}'
+    # The side tab opens the window over the panel; Esc closes the window and leaves the menu open.
+    d('click', id='screen-9100')
+    d('wait', ticks=5)
+    commands = ui()['screen_commands']
+    assert 'NINE screendemo:gui/base 20 20 136 80' in commands, commands
+    d('screenshot', path=str(out / 'screen-demo-window.png'))
+    d('key', key='esc', action='tap')
+    d('wait', ticks=5)
+    state = d('state')
+    assert state['screen'] == 'container', state['screen']
+    assert 'NINE screendemo:gui/base 20 20 136 80' not in ui()['screen_commands']
+    code = state['screen_code']
+    assert code and code['menu'] == 'screendemo:panel' and code['renders'] > 0 and code['error'] is None, code
+    d('close')
+    return {'render_ms': code['last_render_ms'], 'average_render_ms': code['average_render_ms'], 'fps': code['fps']}
+
+
 SCENARIOS = {'survival': scenario, 'ui': ui_scenario, 'options': options_scenario, 'events': events_scenario,
              'consume': consume_scenario, 'use-screen': use_screen_scenario, 'pick': pick_scenario,
              'suggestions': suggestions_scenario, 'manage': manage_scenario, 'pause-save': pause_save_scenario,
-             'mod-menu': mod_menu_scenario}
+             'mod-menu': mod_menu_scenario, 'screen': screen_scenario}
 # Scenarios that start in a world of their own with a mod: what `launch` takes besides the defaults (the CLI passes other
 # arguments to the game, so these run through the CLI only).
-LAUNCHES = {'mod-menu': lambda: {'world': 'modmenu', 'creative': True, 'wait': True, 'dev-mod': item_menu_demo_hmod()}}
+LAUNCHES = {'mod-menu': lambda: {'world': 'modmenu', 'creative': True, 'wait': True, 'dev-mod': item_menu_demo_hmod()},
+            'screen': lambda: {'world': 'screens', 'creative': True, 'wait': True,
+                               'dev-mod': example_hmod('screen-demo', 'screendemo')}}
 CLI_ONLY = set(LAUNCHES)
 
 

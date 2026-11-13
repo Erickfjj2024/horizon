@@ -1,0 +1,113 @@
+# The menu's screen drawn by code: what it draws from the data the server gave, and what it sends back.
+
+[[screen]]
+open = "screendemo:panel"
+data = [0, 0, -1]
+strings = ["No frequency", "Base", "Mine"]
+grid = [
+    { item = "minecraft:cobblestone", count = 1500000 },
+    { item = "minecraft:stone", count = 12345 },
+    { item = "minecraft:dirt", count = 64 },
+    { item = "minecraft:diamond", count = 3 },
+    { item = "minecraft:oak_log", count = 1 },
+]
+expect.setup = [0, 0]
+# The panel, the title centred by text-width (11 characters of 6 with one space of 4: 64 wide), the header, the three
+# image buttons with their icon in the middle, the list's rows, the field, Delete (inactive: nothing selected), the
+# grid's first four items, its bar, the slots' place, then the side tab.
+expect.commands = [
+    'NINE screendemo:gui/base 0 0 176 200',
+    'TEXT "Screen Demo" 56 6',
+    'TEXT "No frequency" 8 18',
+    'NINE screendemo:gui/button 8 30 38 20',
+    'BLIT screendemo:gui/public 18 31 18 18',
+    'AREA 10 button 8 30 38 20',
+    'AREA 11 button 50 30 38 20',
+    'AREA 12 button 92 30 38 20',
+    'NINE screendemo:gui/inner_screen 8 54 112 42',
+    'TEXT "Base" 10 56',
+    'AREA 100 row 9 55 104 10',
+    'TEXT "Mine" 10 66',
+    'AREA 101 row 9 65 104 10',
+    'FIELD 1 8 100 100 12 ""',
+    'AREA 2 button 112 98 56 16 off',
+    'ITEM minecraft:cobblestone*1500000 125 55',
+    'ITEM minecraft:stone*12345 143 55',
+    'ITEM minecraft:dirt*64 125 73',
+    'ITEM minecraft:diamond*3 143 73',
+    'BLIT screendemo:gui/scroll_bar 157 55 12 15',
+    'SLOTS',
+    'AREA 9100 tab -26 20 26 18',
+]
+expect.absent = ['ITEM minecraft:oak_log', 'TOOLTIP']
+
+[[screen]]
+# The cursor over the Trusted button: its tooltip.
+mouse = [60.0, 40.0]
+expect.commands = ['TOOLTIP "Trusted"']
+
+[[screen]]
+# A click on the Private button presses menu button 12, with the click sound.
+click = [100.0, 35.0]
+expect.taken = true
+expect.sent = ["button 12", "click"]
+
+[[screen]]
+# A click on the list's second row selects it on the server (menu button 101).
+click = [20.0, 70.0]
+expect.sent = ["button 101"]
+
+[[screen]]
+# Selected (data slot 2): Delete is active and deletes it.
+data = [2, 2, 1]
+click = [140.0, 105.0]
+expect.sent = ["button 2", "click"]
+expect.commands = ['AREA 2 button 112 98 56 16']
+
+[[screen]]
+# The text field: what is typed comes back from the game; Enter sends it (`<mod>:menu_text`).
+field = { id = 1, text = "Home", submit = true }
+expect.sent = ['text 1 "Home"']
+
+[[screen]]
+# A grid cell: the entry under it (the bar at the top: entry 3, the diamond); past the last entry, u32::MAX.
+click = [150.0, 80.0]
+expect.sent = ["grid 3 0"]
+
+[[screen]]
+# The wheel over the grid scrolls it a row: the dirt and the diamond on top, the log below.
+scroll = [130.0, 60.0, -1.0]
+expect.taken = true
+expect.commands = ['ITEM minecraft:dirt*64 125 55', 'ITEM minecraft:diamond*3 143 55', 'ITEM minecraft:oak_log*1 125 73']
+
+[[screen]]
+# The side tab opens the window over the panel, drawn after the slots; its title is centred past the close button.
+click = [-13.0, 29.0]
+expect.sent = ["click"]
+expect.commands = ['SLOTS', 'AREA 9100 tab -26 20 26 18 off', 'NINE screendemo:gui/shadow 17 17 142 86', 'NINE screendemo:gui/base 20 20 136 80', 'AREA -1 button 26 26 8 12', 'TEXT "Set Frequency"']
+
+[[screen]]
+# Dragged by its title band, it follows the cursor.
+drag = [60.0, 25.0, 90.0, 45.0]
+expect.commands = ['NINE screendemo:gui/base 50 40 136 80']
+
+[[screen]]
+# A press outside the window over the inventory is the game's (a slot click); elsewhere the window takes it.
+click = [20.0, 150.0]
+expect.taken = false
+
+[[screen]]
+# Esc closes the window, not the menu.
+key = "key.keyboard.escape"
+expect.taken = true
+expect.absent = ['NINE screendemo:gui/base 50 40']
+
+[[screen]]
+# Reopened, it comes back where it was left.
+click = [-13.0, 29.0]
+expect.commands = ['NINE screendemo:gui/base 50 40 136 80']
+
+[[screen]]
+# A screen for a menu type it doesn't know refuses to open.
+open = "screendemo:other"
+expect.error = "no screen for screendemo:other"

@@ -1963,6 +1963,144 @@ interface world-data {
     keys: func(prefix: string) -> list<string>;
 }
 
+/// Capability `screen` (experimental, API 56): a menu type's screen drawn by code instead of its JSON widgets
+/// (`"code": true` in `data/<mod>/horizon/menu/<name>.json`'s `screen`). The code is a second component in the
+/// `.hmod`, `screens.wasm`, built from the mod's screens crate; it runs in the player's game (the window, also on
+/// Android), never on the server. What the screen reads is what the server synchronised to this client; what it
+/// sends goes through the menu's own paths (a menu button, `<mod>:menu_text`, a grid click). API 56.
+interface screen-host {
+    /// An item stack: id, components (SNBT, empty for none) and count.
+    record stack {
+        item: string,
+        components: string,
+        count: u32,
+    }
+    /// An entry of the menu's item grid (`world.set-menu-grid`, API 55).
+    record grid-entry {
+        item: string,
+        components: string,
+        count: u64,
+    }
+    /// The menu's data slots as the server last synchronised them (`menu-data`).
+    menu-data: func() -> list<s32>;
+    /// The menu's strings (`world.set-menu-text`, `item-menu-update.menu-text`).
+    menu-strings: func() -> list<string>;
+    /// The menu's item grid.
+    menu-grid: func() -> list<grid-entry>;
+    /// Container slot `index` of the open menu (the menu's own slots first, then the player's 36), as this client has it.
+    slot: func(index: u32) -> option<stack>;
+    /// The stack on the cursor.
+    carried: func() -> option<stack>;
+    /// The width in GUI pixels of one line of `text` in the GUI font (`Font.width`).
+    text-width: func(text: string) -> f32;
+    /// The size in pixels of texture `texture` (`<ns>:gui/<path>`, as `blit` names it); none when the game has no such texture.
+    texture-size: func(texture: string) -> option<tuple<u32, u32>>;
+    /// `key` in the player's language with `%s` / `%1$s` filled from `args`; the key itself when the language has none.
+    translate: func(key: string, args: list<string>) -> string;
+    /// Presses menu button `id`, as a JSON screen's `button` does (`AbstractContainerMenu.clickMenuButton`).
+    send-button: func(id: s32);
+    /// Sends text field `id`'s text to the server as `<mod>:menu_text` (`menu_input` on the server), as Enter in a JSON
+    /// screen's `textfield` does.
+    send-text: func(id: s32, text: string);
+    /// Presses item grid entry `index` (`u32::MAX` for an empty cell): button 0 left, 1 right; `menu-grid-click` on the server.
+    send-grid-click: func(index: u32, button: u8, shift: bool);
+    /// Plays the button click (`ui.button.click`).
+    play-click: func();
+    /// Closes the menu, as Esc does.
+    close: func();
+}
+
+/// What the game calls on a screens component (capability `screen`). One screen of the mod is open at a time: `open`
+/// starts it, `close` ends it. API 56.
+interface screen-events {
+    /// The screen opening: the menu type, the GUI's size in GUI pixels and whether the game is played by touch.
+    record open-info {
+        menu: string,
+        gui-width: f32,
+        gui-height: f32,
+        touch: bool,
+    }
+    /// What the screen needs from the host: its panel's size (0 keeps the menu JSON's) and whether the game draws the
+    /// player's inventory, the title and the "Inventory" label.
+    record setup {
+        width: u32,
+        height: u32,
+        hide-inventory: bool,
+        own-labels: bool,
+    }
+    /// One rendered frame: the cursor from the panel's top left, the partial tick and the milliseconds since the screen
+    /// opened.
+    record frame {
+        mouse-x: f32,
+        mouse-y: f32,
+        partial-tick: f32,
+        time-ms: u64,
+    }
+    enum mouse-button {
+        left,
+        right,
+        middle,
+    }
+    /// The modifier keys held.
+    record modifiers {
+        shift: bool,
+        ctrl: bool,
+        alt: bool,
+    }
+    record pointer {
+        x: f32,
+        y: f32,
+        button: mouse-button,
+        modifiers: modifiers,
+    }
+    record drag {
+        x: f32,
+        y: f32,
+        button: mouse-button,
+        dx: f32,
+        dy: f32,
+    }
+    record wheel {
+        x: f32,
+        y: f32,
+        delta: f32,
+    }
+    record key {
+        /// The key as options.txt names it: `key.keyboard.enter`, `key.keyboard.a`.
+        key: string,
+        modifiers: modifiers,
+    }
+    record field-text {
+        id: s32,
+        text: string,
+    }
+    /// What the player did, in GUI pixels from the panel's top left.
+    variant input-event {
+        mouse-pressed(pointer),
+        mouse-released(pointer),
+        mouse-dragged(drag),
+        mouse-scrolled(wheel),
+        key-pressed(key),
+        char-typed(string),
+        /// A text field of the screen's (`FIELD` in the buffer) changed as the player typed.
+        field-changed(field-text),
+        /// Enter in a text field.
+        field-submitted(field-text),
+    }
+    /// The screen opens for `info.menu`. An error closes the menu and is shown.
+    open: func(info: open-info) -> result<setup, string>;
+    /// 20 times a second while the screen is open, after the server's data for the tick arrived.
+    tick: func();
+    /// The screen's drawing for this frame: a command buffer (`horizon_mod_sdk::screen::Canvas` writes it; the format
+    /// is in docs/mods-screen.md). The game calls it when something changed (a tick, an input, the cursor moving to
+    /// another area) or when the last buffer asked for animation, and draws the last buffer otherwise.
+    render: func(frame: frame) -> list<u8>;
+    /// An input on the screen: true when the screen took it (the game does nothing more with it).
+    input: func(event: input-event) -> bool;
+    /// The screen closed.
+    close: func();
+}
+
 /// A client mod: runs in the player's game.
 world horizon-mod {
     import log;
@@ -2029,4 +2167,12 @@ world render-host {
 world recipes-host {
     import recipes;
     import browser;
+}
+
+/// A mod's screens component (`screens.wasm`, capability `screen`, API 56): menu screens drawn by code in the
+/// player's game.
+world horizon-screen-mod {
+    import log;
+    import screen-host;
+    export screen-events;
 }

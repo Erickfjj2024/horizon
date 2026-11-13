@@ -26,6 +26,7 @@ The contract between Horizon and its mods: the WIT package `horizon:mods@0.1.0`,
 | `chunks` | [`chunks`](#chunks) | keep chunks loaded and add to chunks as they are generated |
 | `net-client` | [`net-client`](#net-client) | send bytes to its half running on the server, and hear it |
 | `recipes` | [`recipes`](#recipes) | read the game's recipes and items and which recipes you know, place recipes in your crafting grid and, in creative mode, give you items |
+| `screen` | [`screen-host`](#screen-host) | draw its menus' screens in your game |
 
 ## World `horizon-mod`
 
@@ -75,6 +76,13 @@ The game's side of capability `recipes` (imports only).
 
 - Imports (what the game offers): `recipes`, `browser`
 - Exports (what the mod provides): 
+
+## World `horizon-screen-mod`
+
+A mod's screens component (`screens.wasm`, capability `screen`, API 56): menu screens drawn by code in the player's game.
+
+- Imports (what the game offers): `log`, `screen-host`
+- Exports (what the mod provides): `screen-events`
 
 ## `log`
 
@@ -1530,3 +1538,166 @@ Part of capability `world` (server mods, FORK-36): byte values the mod keeps in 
 | `set` | `func(key: string, value: list<u8>) -> result<_, string>` | Sets `key` to `value`; an error for a key that is not the mod's, a value over 256 KiB or a 65th value. API 47. |
 | `remove` | `func(key: string)` | Takes `key` away; nothing for a key the mod does not have. API 47. |
 | `keys` | `func(prefix: string) -> list<string>` | The mod's keys that start with `prefix` (`mekanism:frequencies/`), in order. API 47. |
+
+## `screen-host`
+
+Access: capability `screen`.
+
+Capability `screen` (experimental, API 56): a menu type's screen drawn by code instead of its JSON widgets (`"code": true` in `data/<mod>/horizon/menu/<name>.json`'s `screen`). The code is a second component in the `.hmod`, `screens.wasm`, built from the mod's screens crate; it runs in the player's game (the window, also on Android), never on the server. What the screen reads is what the server synchronised to this client; what it sends goes through the menu's own paths (a menu button, `<mod>:menu_text`, a grid click). API 56.
+
+### record `stack`
+
+An item stack: id, components (SNBT, empty for none) and count.
+
+| Field | Type | |
+| --- | --- | --- |
+| `item` | `string` |  |
+| `components` | `string` |  |
+| `count` | `u32` |  |
+
+### record `grid-entry`
+
+An entry of the menu's item grid (`world.set-menu-grid`, API 55).
+
+| Field | Type | |
+| --- | --- | --- |
+| `item` | `string` |  |
+| `components` | `string` |  |
+| `count` | `u64` |  |
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `menu-data` | `func() -> list<s32>` | The menu's data slots as the server last synchronised them (`menu-data`). |
+| `menu-strings` | `func() -> list<string>` | The menu's strings (`world.set-menu-text`, `item-menu-update.menu-text`). |
+| `menu-grid` | `func() -> list<grid-entry>` | The menu's item grid. |
+| `slot` | `func(index: u32) -> option<stack>` | Container slot `index` of the open menu (the menu's own slots first, then the player's 36), as this client has it. |
+| `carried` | `func() -> option<stack>` | The stack on the cursor. |
+| `text-width` | `func(text: string) -> f32` | The width in GUI pixels of one line of `text` in the GUI font (`Font.width`). |
+| `texture-size` | `func(texture: string) -> option<tuple<u32, u32>>` | The size in pixels of texture `texture` (`<ns>:gui/<path>`, as `blit` names it); none when the game has no such texture. |
+| `translate` | `func(key: string, args: list<string>) -> string` | `key` in the player's language with `%s` / `%1$s` filled from `args`; the key itself when the language has none. |
+| `send-button` | `func(id: s32)` | Presses menu button `id`, as a JSON screen's `button` does (`AbstractContainerMenu.clickMenuButton`). |
+| `send-text` | `func(id: s32, text: string)` | Sends text field `id`'s text to the server as `<mod>:menu_text` (`menu_input` on the server), as Enter in a JSON screen's `textfield` does. |
+| `send-grid-click` | `func(index: u32, button: u8, shift: bool)` | Presses item grid entry `index` (`u32::MAX` for an empty cell): button 0 left, 1 right; `menu-grid-click` on the server. |
+| `play-click` | `func()` | Plays the button click (`ui.button.click`). |
+| `close` | `func()` | Closes the menu, as Esc does. |
+
+## `screen-events`
+
+Access: exported by the mod: the game calls it.
+
+What the game calls on a screens component (capability `screen`). One screen of the mod is open at a time: `open` starts it, `close` ends it. API 56.
+
+### record `open-info`
+
+The screen opening: the menu type, the GUI's size in GUI pixels and whether the game is played by touch.
+
+| Field | Type | |
+| --- | --- | --- |
+| `menu` | `string` |  |
+| `gui-width` | `f32` |  |
+| `gui-height` | `f32` |  |
+| `touch` | `bool` |  |
+
+### record `setup`
+
+What the screen needs from the host: its panel's size (0 keeps the menu JSON's) and whether the game draws the player's inventory, the title and the "Inventory" label.
+
+| Field | Type | |
+| --- | --- | --- |
+| `width` | `u32` |  |
+| `height` | `u32` |  |
+| `hide-inventory` | `bool` |  |
+| `own-labels` | `bool` |  |
+
+### record `frame`
+
+One rendered frame: the cursor from the panel's top left, the partial tick and the milliseconds since the screen opened.
+
+| Field | Type | |
+| --- | --- | --- |
+| `mouse-x` | `f32` |  |
+| `mouse-y` | `f32` |  |
+| `partial-tick` | `f32` |  |
+| `time-ms` | `u64` |  |
+
+### enum `mouse-button`
+
+| Case | |
+| --- | --- |
+| `left` |  |
+| `right` |  |
+| `middle` |  |
+
+### record `modifiers`
+
+The modifier keys held.
+
+| Field | Type | |
+| --- | --- | --- |
+| `shift` | `bool` |  |
+| `ctrl` | `bool` |  |
+| `alt` | `bool` |  |
+
+### record `pointer`
+
+| Field | Type | |
+| --- | --- | --- |
+| `x` | `f32` |  |
+| `y` | `f32` |  |
+| `button` | `mouse-button` |  |
+| `modifiers` | `modifiers` |  |
+
+### record `drag`
+
+| Field | Type | |
+| --- | --- | --- |
+| `x` | `f32` |  |
+| `y` | `f32` |  |
+| `button` | `mouse-button` |  |
+| `dx` | `f32` |  |
+| `dy` | `f32` |  |
+
+### record `wheel`
+
+| Field | Type | |
+| --- | --- | --- |
+| `x` | `f32` |  |
+| `y` | `f32` |  |
+| `delta` | `f32` |  |
+
+### record `key`
+
+| Field | Type | |
+| --- | --- | --- |
+| `key` | `string` | The key as options.txt names it: `key.keyboard.enter`, `key.keyboard.a`. |
+| `modifiers` | `modifiers` |  |
+
+### record `field-text`
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | `s32` |  |
+| `text` | `string` |  |
+
+### variant `input-event`
+
+What the player did, in GUI pixels from the panel's top left.
+
+| Case | Payload | |
+| --- | --- | --- |
+| `mouse-pressed` | `pointer` |  |
+| `mouse-released` | `pointer` |  |
+| `mouse-dragged` | `drag` |  |
+| `mouse-scrolled` | `wheel` |  |
+| `key-pressed` | `key` |  |
+| `char-typed` | `string` |  |
+| `field-changed` | `field-text` | A text field of the screen's (`FIELD` in the buffer) changed as the player typed. |
+| `field-submitted` | `field-text` | Enter in a text field. |
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `open` | `func(info: open-info) -> result<setup, string>` | The screen opens for `info.menu`. An error closes the menu and is shown. |
+| `tick` | `func()` | 20 times a second while the screen is open, after the server's data for the tick arrived. |
+| `render` | `func(frame: frame) -> list<u8>` | The screen's drawing for this frame: a command buffer (`horizon_mod_sdk::screen::Canvas` writes it; the format is in docs/mods-screen.md). The game calls it when something changed (a tick, an input, the cursor moving to another area) or when the last buffer asked for animation, and draws the last buffer otherwise. |
+| `input` | `func(event: input-event) -> bool` | An input on the screen: true when the screen took it (the game does nothing more with it). |
+| `close` | `func()` | The screen closed. |
