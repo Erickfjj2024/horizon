@@ -348,6 +348,46 @@ pub fn press_with(
     press_in(&screen.widgets, data, locals, at, alt, shift)
 }
 
+/// A button or text box of a declared screen as the control socket lists it (`horizon-ctl ui`): `field` for a text
+/// box, its widget `id` and its rectangle from the screen's top left.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Control {
+    pub field: bool,
+    pub id: i32,
+    pub rect: [f32; 4],
+    pub tooltip: Option<String>,
+}
+
+/// The buttons and text boxes showing now on `screen`, as `press_with` reaches them: the open window's (at its place),
+/// then the screen's that the window does not cover (a press at a covered one's centre lands on the window).
+pub fn controls(screen: &MenuScreen, data: &[i32], locals: &Locals) -> Vec<Control> {
+    fn collect(widgets: &[Widget], data: &[i32], locals: &Locals, origin: [f32; 2], out: &mut Vec<Control>) {
+        for w in showing(widgets, data, locals) {
+            let (field, id, x, y, w, h, tooltip) = match w {
+                Widget::Button { x, y, w, h, id, tooltip, .. } => (false, *id, *x, *y, *w, *h, tooltip.clone()),
+                Widget::TextField { x, y, w, h, id, .. } => (true, *id, *x, *y, *w, *h, None),
+                _ => continue,
+            };
+            out.push(Control { field, id, rect: [origin[0] + x as f32, origin[1] + y as f32, w as f32, h as f32], tooltip });
+        }
+    }
+    let mut out = Vec::new();
+    let window = open_window(screen, locals);
+    if let Some(window) = window {
+        collect(&window.widgets, data, locals, window_origin(window, locals), &mut out);
+    }
+    let mut panel = Vec::new();
+    collect(&screen.widgets, data, locals, [0.0, 0.0], &mut panel);
+    out.extend(panel.into_iter().filter(|c| {
+        window.is_none_or(|w| {
+            let o = window_origin(w, locals);
+            let centre = [c.rect[0] + c.rect[2] / 2.0, c.rect[1] + c.rect[3] / 2.0];
+            !inside(centre, o[0] as i32, o[1] as i32, w.width, w.height)
+        })
+    }));
+    out
+}
+
 /// The wheel over a list: `notches` (positive up) scroll the first list showing under `at` (the open window's, else the screen's)
 /// by that many rows. True when a list took it.
 pub fn scroll_lists(screen: &MenuScreen, data: &[i32], locals: &mut Locals, at: [f32; 2], notches: i64) -> bool {
@@ -942,6 +982,39 @@ mod menu_text_tests {
         assert_eq!(decode_menu_input(&bytes[..15]), None);
         // An empty text is a message too (a cleared box).
         assert_eq!(decode_menu_input(&encode_menu_input([0; 3], 1, "")), Some(([0; 3], 1, String::new())));
+    }
+
+    #[test]
+    fn controls_list_what_a_press_reaches_and_hide_what_the_window_covers() {
+        use crate::content::MenuScreen;
+        let screen: MenuScreen = serde_json::from_str(
+            r#"{"slots": [], "widgets": [
+                {"type": "textfield", "x": 10, "y": 20, "w": 60, "h": 12, "id": 7800},
+                {"type": "button", "x": 10, "y": 40, "w": 20, "h": 10, "id": 3, "tooltip": "Sort"},
+                {"type": "button", "x": 100, "y": 100, "w": 20, "h": 10, "id": 4},
+                {"type": "button", "x": 0, "y": 0, "w": 8, "h": 8, "local": {"open": "w"}}],
+              "windows": [{"id": "w", "x": 90, "y": 90, "width": 50, "height": 40, "widgets": [
+                {"type": "button", "x": 5, "y": 5, "w": 10, "h": 10, "id": 9}]}]}"#,
+        )
+        .unwrap();
+        let mut locals = Locals::default();
+        let ids = |c: &[Control]| c.iter().map(|c| (c.field, c.id)).collect::<Vec<_>>();
+        let shut = controls(&screen, &[], &locals);
+        assert_eq!(ids(&shut), [(true, 7800), (false, 3), (false, 4), (false, 0)]);
+        assert_eq!(shut[0].rect, [10.0, 20.0, 60.0, 12.0]);
+        assert_eq!(shut[1].tooltip.as_deref(), Some("Sort"));
+        // Every listed control is what a press at its centre reaches.
+        for c in &shut[..3] {
+            let centre = [c.rect[0] + c.rect[2] / 2.0, c.rect[1] + c.rect[3] / 2.0];
+            let want = if c.field { Press::Field(c.id) } else { Press::Send(c.id) };
+            assert_eq!(press(&screen, &[], &mut locals.clone(), centre, false), Some(want));
+        }
+        // The window open: its button at its place; button 4 sits under it and leaves the list.
+        assert_eq!(press(&screen, &[], &mut locals, [4.0, 4.0], false), Some(Press::Local));
+        let open = controls(&screen, &[], &locals);
+        assert_eq!(ids(&open), [(false, 9), (true, 7800), (false, 3), (false, 0)]);
+        assert_eq!(open[0].rect, [95.0, 95.0, 10.0, 10.0]);
+        assert_eq!(press(&screen, &[], &mut locals, [100.0, 100.0], false), Some(Press::Send(9)));
     }
 
     #[test]

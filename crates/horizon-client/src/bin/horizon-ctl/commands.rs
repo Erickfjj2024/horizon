@@ -346,8 +346,8 @@ pub const COMMANDS: &[Cmd] = &[
         ["horizon-ctl click-slot 36", "horizon-ctl click-slot 100 right", "horizon-ctl click-slot 200 shift"],
         &[p("slot", Ty::Int, "slot id"), opt("right", Ty::Bool, "right-click"), opt("shift", Ty::Bool, "shift-click")], mcp: true, local: false),
     cmd!("close", Screens, "close", "close the open menu and return to the game", "", ["horizon-ctl close"], &[], mcp: true, local: false),
-    cmd!("ui", Screens, "ui", "every widget of the open screen: id, kind, label, bounds, value",
-        "Kinds: button, slider (value 0..1), field, row (worlds, servers, packs, languages), tab (selected), slot (slot-ID, with its stack). Ids come from labels (\"FOV: 70\" is fov, a repeat gets -2) or kind-N without one, and stay put when a value changes. Reflects the last drawn frame (frame counts them).",
+    cmd!("ui", Screens, "ui", "every widget of the open screen: id, kind, label, bounds, value (a mod menu's buttons and text fields too)",
+        "Kinds: button, slider (value 0..1), field, row (worlds, servers, packs, languages), tab (selected), slot (slot-ID, with its stack). An open mod menu adds its buttons as menu-button-ID and its text fields as menu-field-ID (the widget ids of its screen, .2 for a repeat; a button's tooltip is its label). Ids come from labels (\"FOV: 70\" is fov, a repeat gets -2) or kind-N without one, and stay put when a value changes. Reflects the last drawn frame (frame counts them).",
         ["horizon-ctl ui"], &[], mcp: true, local: false),
     cmd!("click", Screens, "click ID [right|middle] [shift]", "click a widget of ui by its id, as the mouse would",
         "A field takes focus (then type); slot-ID clicks a slot like click-slot. middle presses the middle button (pick block: a creative player clones the stack).",
@@ -374,9 +374,9 @@ pub const COMMANDS: &[Cmd] = &[
         ["horizon-ctl drag-at 130 100 148 100 166 100", "horizon-ctl drag-at right 130 100 148 100"], &[p("points", Ty::Rest, "right, then GUI x y pairs")], mcp: true, local: false),
     cmd!("scroll-at", Screens, "scroll-at X Y STEPS", "turn the mouse wheel at GUI pixel X Y (positive scrolls up)", "",
         ["horizon-ctl scroll-at 130 100 -1"], &[p("x", Ty::Num, "GUI x"), p("y", Ty::Num, "GUI y"), p("steps", Ty::Num, "wheel steps")], mcp: true, local: false),
-    cmd!("type", Screens, "type [--field name|seed] [--replace] TEXT", "type into the focused text field (chat box, world name, anvil, sign...)",
-        "On the title's create-world screen, --field name|seed picks the field and --replace clears it first; type \\b deletes one character.",
-        ["horizon-ctl type hello everyone", "horizon-ctl type --field name --replace Agent World", "horizon-ctl type --field seed 12345"], &[flag("field", Ty::Enum(&["name", "seed"]), "create-world field to type into"), flag("replace", Ty::Bool, "clear the field first"), p("text", Ty::Rest, "text to type")], mcp: true, local: false),
+    cmd!("type", Screens, "type [--field name|seed] [--menu-field ID] [--replace] TEXT [--enter]", "type into the focused text field (chat box, world name, anvil, sign, mod menu...)",
+        "On the title's create-world screen, --field name|seed picks the field and --replace clears it first; type \\b deletes one character. --menu-field ID types into the text field ID of the open mod menu (menu-field-ID in ui): it takes the focus as a click gives it, keeps what the field allows, and --enter presses Enter, which sends the text to the mod (<mod>:menu_text). The reply has the field's text.",
+        ["horizon-ctl type hello everyone", "horizon-ctl type --field name --replace Agent World", "horizon-ctl type --field seed 12345", "horizon-ctl type --menu-field 7800 forge:ores/iron --enter"], &[flag("field", Ty::Enum(&["name", "seed"]), "create-world field to type into"), flag("menu-field", Ty::Int, "id of the open mod menu's text field"), flag("replace", Ty::Bool, "clear the field first"), flag("enter", Ty::Bool, "press Enter after typing (mod menu field: sends it)"), p("text", Ty::Rest, "text to type")], mcp: true, local: false),
     cmd!("chat", Screens, "chat TEXT", "send a chat line (or a /command) as if typed", "", ["horizon-ctl chat hello"],
         &[p("text", Ty::Rest, "message")], mcp: true, local: false),
     cmd!("command", Screens, "command TEXT", "run a command (the leading / is optional)", "",
@@ -795,6 +795,12 @@ mod tests {
             line_for(slot, &json!({ "slot": 200, "shift": true })).unwrap(),
             ["click-slot", "200", "shift"]
         );
+        let typed = find("type").unwrap();
+        assert_eq!(
+            line_for(typed, &json!({ "menu-field": 7800, "enter": true, "text": "forge:ores/iron" })).unwrap(),
+            ["type", "--menu-field", "7800", "--enter", "forge:ores/iron"]
+        );
+        assert!(line_for(typed, &json!({ "menu-field": "iron", "text": "x" })).is_err());
         let open = find("open").unwrap();
         assert!(
             line_for(open, &json!({ "world": "A", "mode": "creative" }))

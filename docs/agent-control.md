@@ -252,13 +252,18 @@ turn the switch off.
 - **Ids are stable and readable.** An id is the label up to its `:`, as a slug (`FOV: 70` is
   `fov`, `AI Agent...` is `ai-agent`). A repeated slug gets `-2`, `-3`; unlabelled elements are
   `<kind>-<n>`. A slider's id doesn't change with its value. Slots are `slot-<ID>` with their
-  stack.
+  stack. An open mod menu (a declared screen) adds its buttons as `menu-button-<ID>` and its text
+  fields as `menu-field-<ID>`, by the widget ids in the mod's screen file (`.2` for a repeat; a
+  button's tooltip is its label); only what a press reaches is listed (a window's widgets, not
+  the ones under it).
 - **Kinds:** `button`, `slider` (`value` 0..1), `field`, `row` (a world, server, pack or
   language), `tab` (`selected`), `slot`.
 - **Actions:**
   - `click ID [right|middle] [shift]` clicks where the mouse would.
   - `set ID VALUE` moves a slider.
-  - `type` types into the focused field.
+  - `type` types into the focused field. `type --menu-field ID TEXT [--enter]` types into text
+    field ID of the open mod menu as a player would (focus, the field's validator), and
+    `--enter` presses Enter, which sends the same `<mod>:menu_text` message the field sends.
 
   After a click, the next `ui`, `click` or `set` waits for a redrawn frame.
 - **No new code paths in screens.** The tree is built from what the draw functions already

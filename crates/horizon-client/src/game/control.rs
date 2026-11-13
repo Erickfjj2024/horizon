@@ -810,6 +810,14 @@ impl Game<'_> {
                     .unwrap_or("")
                     .strip_prefix(' ')
                     .unwrap_or("");
+                // A text box of an open mod menu (`textfield`), as a player types into it.
+                if let Some((id, typed, replace, enter)) = menu_field_args(text)? {
+                    self.require_world()?;
+                    let value = self.mod_field_type(id, typed, replace, enter)?;
+                    return Ok(Some(
+                        json!({ "ok": true, "field": id, "text": value, "sent": enter }),
+                    ));
+                }
                 // A server's dialog, in configuration too.
                 if self.dialog_type(text) {
                     return ok();
@@ -1441,5 +1449,81 @@ mod tests {
         ] {
             assert_eq!(released_modifier(line), None, "{line}");
         }
+    }
+}
+
+/// `type`'s words for a mod menu's text box: `--menu-field ID` with `--replace` and `--enter` before the text, or
+/// `--enter` as its last word. `(id, text, replace, enter)`; None when the line has no `--menu-field`.
+fn menu_field_args(line: &str) -> Result<Option<(i32, &str, bool, bool)>> {
+    let (mut id, mut replace, mut enter) = (None, false, false);
+    let mut text = line.trim_start();
+    loop {
+        if let Some(rest) = text.strip_prefix("--menu-field") {
+            let rest = rest.trim_start();
+            let (word, rest) = rest.split_once(' ').unwrap_or((rest, ""));
+            id = Some(word.parse::<i32>().map_err(|_| {
+                format!("--menu-field takes the field's id, a number, not {word:?}")
+            })?);
+            text = rest;
+        } else if let Some(rest) = text
+            .strip_prefix("--replace")
+            .filter(|r| r.is_empty() || r.starts_with(' '))
+        {
+            replace = true;
+            text = rest.trim_start();
+        } else if let Some(rest) = text
+            .strip_prefix("--enter")
+            .filter(|r| r.is_empty() || r.starts_with(' '))
+        {
+            enter = true;
+            text = rest.trim_start();
+        } else {
+            break;
+        }
+    }
+    let Some(id) = id else {
+        return Ok(None);
+    };
+    if let Some(rest) = text
+        .strip_suffix("--enter")
+        .filter(|r| r.is_empty() || r.ends_with(' '))
+    {
+        enter = true;
+        text = rest.strip_suffix(' ').unwrap_or(rest);
+    }
+    Ok(Some((id, text, replace, enter)))
+}
+
+#[cfg(test)]
+mod menu_field_args_tests {
+    use super::menu_field_args;
+
+    #[test]
+    fn menu_field_words_in_either_place_and_plain_type_is_left_alone() {
+        assert_eq!(
+            menu_field_args("--menu-field 7800 forge:ores/iron --enter").unwrap(),
+            Some((7800, "forge:ores/iron", false, true))
+        );
+        // horizon-ctl's MCP form puts the flags before the text.
+        assert_eq!(
+            menu_field_args("--menu-field 7800 --replace --enter iron ore").unwrap(),
+            Some((7800, "iron ore", true, true))
+        );
+        assert_eq!(
+            menu_field_args("--menu-field 3 12").unwrap(),
+            Some((3, "12", false, false))
+        );
+        // Enter alone confirms what the box holds.
+        assert_eq!(
+            menu_field_args("--menu-field 3 --enter").unwrap(),
+            Some((3, "", false, true))
+        );
+        // A word that only starts with --enter is text.
+        assert_eq!(
+            menu_field_args("--menu-field 3 a--enter").unwrap(),
+            Some((3, "a--enter", false, false))
+        );
+        assert_eq!(menu_field_args("hello everyone").unwrap(), None);
+        assert!(menu_field_args("--menu-field name x").is_err());
     }
 }

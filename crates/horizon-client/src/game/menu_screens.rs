@@ -752,6 +752,61 @@ impl Game<'_> {
         FIELD.lock().ok().and_then(|mut f| f.as_mut().map(|f| f.edit.key(key, ctrl, shift))).unwrap_or(false)
     }
 
+    /// The buttons and text boxes of the open mod screen, in GUI pixels: what the control socket's `ui` lists.
+    pub(super) fn declared_controls(&self) -> Vec<horizon_mods::screen::Control> {
+        let Some((block, data, [ox, oy])) = self.native_screen_origin() else {
+            return Vec::new();
+        };
+        let Some(screen) = screen_of(&block) else {
+            return Vec::new();
+        };
+        let mut controls = horizon_mods::screen::controls(screen, &data, &locals());
+        for c in &mut controls {
+            c.rect[0] += ox;
+            c.rect[1] += oy;
+        }
+        controls
+    }
+
+    /// The control socket's `type --menu-field ID [--replace] [--enter] TEXT`: text box `id` of the open mod screen takes
+    /// the focus as a press on it gives it, then the text as typed (what its validator allows; `\b` is a backspace),
+    /// and with `enter` the Enter a player presses, which sends `<mod id>:menu_text`. The box's text afterwards, or why
+    /// nothing was typed.
+    pub(super) fn mod_field_type(&mut self, id: i32, text: &str, replace: bool, enter: bool) -> Result<String, String> {
+        let block = self.native_open_block().ok_or("--menu-field needs a mod menu open")?;
+        let screen = screen_of(&block).ok_or_else(|| format!("the open menu {block} has no declared screen"))?;
+        let fields: Vec<i32> = self.declared_controls().into_iter().filter(|c| c.field).map(|c| c.id).collect();
+        if !fields.contains(&id) {
+            return Err(format!("no text field {id} showing on the {block} menu; its fields: {fields:?}"));
+        }
+        let focused = FIELD.lock().ok().is_some_and(|f| f.as_ref().is_some_and(|f| f.id == id));
+        if !focused {
+            let Some(Widget::TextField { max_length, validator, text_data, .. }) = find_field(screen, id) else {
+                return Err(format!("no text field {id} on the {block} menu"));
+            };
+            let mut edit = horizon_client::ui::EditBox::new(0.0, 0.0, 100.0, 20.0);
+            edit.max_length = usize::from(*max_length);
+            edit.set_value(&text_data.and_then(|n| menu_string(usize::from(n))).unwrap_or_default());
+            edit.move_cursor_to_end(false);
+            if let Ok(mut f) = FIELD.lock() {
+                *f = Some(ModField { id, validator: *validator, edit });
+            }
+        }
+        if replace && let Ok(mut f) = FIELD.lock() && let Some(f) = f.as_mut() {
+            f.edit.set_value("");
+        }
+        if text == "\\b" {
+            self.mod_field_text(None, true);
+        } else if !text.is_empty() {
+            self.mod_field_text(Some(text), false);
+        }
+        let value = self.mod_field_value();
+        if enter {
+            self.mod_field_confirm();
+        }
+        Ok(value)
+    }
+
     /// Enter: the text goes to the server, as a mod message on `<mod id>:menu_text`, and the box lets go of the focus.
     pub(super) fn mod_field_confirm(&mut self) {
         let Some((id, text)) = FIELD.lock().ok().and_then(|mut f| f.take()).map(|f| (f.id, f.edit.value)) else {

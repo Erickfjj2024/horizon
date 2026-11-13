@@ -72,6 +72,27 @@ impl Game<'_> {
                 }
             }));
         }
+        // A mod menu's own buttons and text boxes (declared screens): `menu-button-ID` and `menu-field-ID` by the widget's
+        // id, with `.2`, `.3`... when the screen repeats one (buttons that act on this client alone share id 0).
+        if self.screen == Screen::Inventory && self.title.is_none() {
+            let mut seen: Vec<String> = Vec::new();
+            for c in self.declared_controls() {
+                let base = format!("menu-{}-{}", if c.field { "field" } else { "button" }, c.id);
+                let n = seen.iter().filter(|s| **s == base).count();
+                seen.push(base.clone());
+                nodes.push(Node {
+                    id: if n == 0 {
+                        base
+                    } else {
+                        format!("{base}.{}", n + 1)
+                    },
+                    kind: if c.field { Kind::Field } else { Kind::Button },
+                    label: c.tooltip,
+                    rect: c.rect,
+                    enabled: true,
+                });
+            }
+        }
         nodes
     }
 

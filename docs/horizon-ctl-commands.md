@@ -80,7 +80,7 @@ Every command `horizon-ctl` takes, its MCP tool in `horizon-ctl mcp` (the launch
 | `open-inventory` | `open_inventory` | Open the inventory screen (crafting grid 100-103, result 200) | none |
 | `click-slot SLOT [right] [shift]` | `click_slot` | Click a slot of the open inventory or menu | `slot` (integer, required): slot id<br>`right` (boolean): right-click<br>`shift` (boolean): shift-click |
 | `close` | `close` | Close the open menu and return to the game | none |
-| `ui` | `ui` | Every widget of the open screen: id, kind, label, bounds, value | none |
+| `ui` | `ui` | Every widget of the open screen: id, kind, label, bounds, value (a mod menu's buttons and text fields too) | none |
 | `click ID [right\|middle] [shift]` | `click` | Click a widget of ui by its id, as the mouse would | `id` (string, required): widget id from ui<br>`right` (boolean): right-click<br>`middle` (boolean): middle-click<br>`shift` (boolean): shift-click (slots) |
 | `set ID VALUE` | `set` | Move a slider of ui to VALUE (0..1), as a click on its track | `id` (string, required): slider id from ui<br>`value` (number, required): 0..1 along the track |
 | `options-get [KEY...]` | `options_get` | The game's options (options.txt) by key, with their type and range or choices | `keys` (text): option keys (default: all) |
@@ -89,7 +89,7 @@ Every command `horizon-ctl` takes, its MCP tool in `horizon-ctl mcp` (the launch
 | `click-at X Y [right]` | `click_at` | Click at GUI pixel X Y of the window (screen gives button rectangles) | `x` (number, required): GUI x<br>`y` (number, required): GUI y<br>`right` (boolean): right-click |
 | `drag-at [right] X Y X Y...` | `drag_at` | Press at the first GUI point, move through the others, release at the last | `points` (text, required): right, then GUI x y pairs |
 | `scroll-at X Y STEPS` | `scroll_at` | Turn the mouse wheel at GUI pixel X Y (positive scrolls up) | `x` (number, required): GUI x<br>`y` (number, required): GUI y<br>`steps` (number, required): wheel steps |
-| `type [--field name\|seed] [--replace] TEXT` | `type` | Type into the focused text field (chat box, world name, anvil, sign...) | `--field` (name, seed): create-world field to type into<br>`--replace` (boolean): clear the field first<br>`text` (text, required): text to type |
+| `type [--field name\|seed] [--menu-field ID] [--replace] TEXT [--enter]` | `type` | Type into the focused text field (chat box, world name, anvil, sign, mod menu...) | `--field` (name, seed): create-world field to type into<br>`--menu-field` (integer): id of the open mod menu's text field<br>`--replace` (boolean): clear the field first<br>`--enter` (boolean): press Enter after typing (mod menu field: sends it)<br>`text` (text, required): text to type |
 | `chat TEXT` | `chat` (network) | Send a chat line (or a /command) as if typed | `text` (text, required): message |
 | `command TEXT` | `command` (network) | Run a command (the leading / is optional) | `command` (text, required): command line |
 | `respawn` | `respawn` | Respawn from the death screen | none |

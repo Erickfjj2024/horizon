@@ -4502,6 +4502,13 @@ impl Game<'_> {
         let at = [self.cursor.0 - ox, self.cursor.1 - oy];
         Some((s.block.clone(), s.data.clone(), at))
     }
+    /// The open mod screen's block, data and top left in GUI pixels.
+    pub(super) fn native_screen_origin(&self) -> Option<(String, Vec<i32>, [f32; 2])> {
+        let s = self.shown_native_screen()?;
+        let r = self.renderer.as_ref()?;
+        let (ox, oy) = self.inventory_origin(&HudBatch::new([r.config.width, r.config.height]));
+        Some((s.block.clone(), s.data.clone(), [ox, oy]))
+    }
     /// A press on the open mod screen's own button (`native_screen_click`)
     /// goes to the server as a menu button click (true).
     pub(super) fn native_screen_press(&mut self, right: bool) -> bool {
