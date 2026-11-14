@@ -688,12 +688,16 @@ mod imp {
             for p in &o.before {
                 self.code_draw(batch, origin, o, p);
             }
+            let frames = o.slots.is_empty();
+            let error = o.error.clone();
+            // Unlocked first: the frames ask where the slots are (`code_screen_slot`), which locks the screen too.
+            drop(guard);
             // The slots' frames, where the items will be: the game's own unless the screen places its slots
             // (`SLOT`) and draws their frames itself, as Mekanism's `GuiSlot`s do.
-            if o.slots.is_empty() {
+            if frames {
                 self.draw_native_slot_frames(batch, origin[0], origin[1]);
             }
-            if let Some(e) = &o.error {
+            if let Some(e) = &error {
                 let text = horizon_client::text::Text::literal(format!("Screen error: {e}"));
                 batch.text_styled(
                     &self.gui.atlas,

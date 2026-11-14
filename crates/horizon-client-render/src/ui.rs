@@ -48,10 +48,24 @@ fn parse_nine_slice(v: &serde_json::Value) -> Option<NineSlice> {
         stretch_inner: s["stretch_inner"].as_bool().unwrap_or(false),
     })
 }
-/// Read `gui.scaling` metadata for every GUI sprite under `root`.
+/// Read `gui.scaling` metadata for every GUI sprite under `root`: vanilla's (`gui/sprites/...`) and the content mods'
+/// (`<namespace>:gui/sprites/...`, as the atlas names them).
 pub fn load_metadata(root: &Path) {
     let mut map = HashMap::new();
-    let base = root.join("assets/minecraft/textures");
+    load_namespace(root, "minecraft", &mut map);
+    if let Ok(namespaces) = std::fs::read_dir(root.join("assets")) {
+        for ns in namespaces.flatten() {
+            let name = ns.file_name().to_string_lossy().into_owned();
+            if name != "minecraft" {
+                load_namespace(root, &name, &mut map);
+            }
+        }
+    }
+    *NINE_SLICE.write().unwrap_or_else(|e| e.into_inner()) = Some(map);
+}
+/// The nine-slice metadata of namespace `namespace`'s GUI sprites, keyed as the atlas names them.
+fn load_namespace(root: &Path, namespace: &str, map: &mut HashMap<String, NineSlice>) {
+    let base = root.join("assets").join(namespace).join("textures");
     let mut stack = vec![base.join("gui/sprites")];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -81,10 +95,10 @@ pub fn load_metadata(root: &Path) {
                 .strip_prefix(&base)
                 .map(|r| r.to_string_lossy().replace('\\', "/"))
                 .unwrap_or_default();
+            let key = if namespace == "minecraft" { key } else { format!("{namespace}:{key}") };
             map.insert(key, nine_slice);
         }
     }
-    *NINE_SLICE.write().unwrap_or_else(|e| e.into_inner()) = Some(map);
 }
 /// The sprite's nine-slice metadata, when its `.png.mcmeta` has any.
 fn nine_slice_metadata(sprite: &str) -> Option<NineSlice> {
@@ -1390,6 +1404,24 @@ impl EditBox {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_content_mods_gui_sprites_keep_their_nine_slice_metadata() {
+        let root = std::env::temp_dir().join(format!("horizon-mod-nine-slice-{}", std::process::id()));
+        let meta = r#"{"gui": {"scaling": {"type": "nine_slice", "width": 16, "height": 16, "border": 4}}}"#;
+        for (ns, rel) in [("mymod", "base"), ("mymod", "bar/base"), ("minecraft", "widget/button")] {
+            let path = root.join(format!("assets/{ns}/textures/gui/sprites/{rel}.png.mcmeta"));
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, meta).unwrap();
+        }
+        load_metadata(&root);
+        let _ = std::fs::remove_dir_all(&root);
+        // A mod's sprites by the atlas's names (`<ns>:gui/sprites/...`), vanilla's without a namespace.
+        for key in ["mymod:gui/sprites/base", "mymod:gui/sprites/bar/base", "gui/sprites/widget/button"] {
+            let n = nine_slice_metadata(key).unwrap_or_else(|| panic!("no nine-slice for {key}"));
+            assert_eq!((n.width, n.height, n.border), (16, 16, [4; 4]));
+        }
+        assert!(nine_slice_metadata("gui/sprites/base").is_none());
+    }
     use super::*;
 
     /// The quads' destination rectangles and their UVs.
