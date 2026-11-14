@@ -523,9 +523,9 @@ impl Game<'_> {
         let Some(def) = screen_of(block) else {
             return false;
         };
-        // Drawn by the mod's code (capability `screen`, API 56).
-        if def.code {
-            return self.code_screen_draw(batch, origin);
+        // Drawn by the mod's code (capability `screen`, API 56); if that cannot run, the JSON screen below, with why.
+        if def.code && self.code_screen_draw(block, batch, origin) {
+            return true;
         }
         let [ox, oy] = origin;
         let locals = locals();
@@ -556,6 +556,13 @@ impl Game<'_> {
                 );
             }
             self.draw_widgets(&window.widgets, data, &locals, batch, at, cursor);
+        }
+        // A code screen that could not run: this JSON screen stands in for it, and says why.
+        if def.code
+            && let Some(why) = super::code_screens::failure(block)
+        {
+            let text = horizon_client::text::Text::literal(format!("Screen by code unavailable: {why}"));
+            batch.text_styled(&self.gui.atlas, &text, ox + 2.0, oy + def.height as f32 + 2.0, rgba(255, 85, 85, 255), true);
         }
         true
     }
@@ -636,7 +643,7 @@ impl Game<'_> {
     /// here (a window opened); `alt` is a right press.
     pub(super) fn declared_screen_press(&self, block: &str, data: &[i32], at: [f32; 2], alt: bool) -> Option<i32> {
         let screen = screen_of(block)?;
-        if screen.code {
+        if screen.code && self.code_screen_running() {
             return (self.code_screen_press(at, alt) == Some(true)).then_some(super::code_screens::CODE_PRESS);
         }
         let mut l = LOCALS.lock().ok()?;
@@ -715,7 +722,7 @@ impl Game<'_> {
         let Some(screen) = screen_of(&block) else {
             return false;
         };
-        if screen.code {
+        if screen.code && self.code_screen_running() {
             return self.code_screen_scroll(delta) == Some(true);
         }
         let Ok(mut l) = LOCALS.lock() else {
@@ -922,7 +929,7 @@ impl Game<'_> {
         at: [f32; 2],
     ) -> Vec<String> {
         let Some(screen) = screen_of(block) else { return Vec::new() };
-        if screen.code {
+        if screen.code && self.code_screen_running() {
             return Vec::new();
         }
         // Over a grid cell: the item and its whole count.

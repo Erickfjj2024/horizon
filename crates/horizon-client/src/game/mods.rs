@@ -323,6 +323,13 @@ pub(super) fn content_root(
                 }
             },
         };
+        // Its menus whose screen is drawn by code (capability `screen`, API 56).
+        let code_menus: Vec<String> = content
+            .menu_types
+            .iter()
+            .filter(|t| t.screen.as_ref().is_some_and(|s| s.code))
+            .map(|t| t.id.clone())
+            .collect();
         let candidate = ContentMod {
             id: m.id.clone(),
             content,
@@ -331,12 +338,30 @@ pub(super) fn content_root(
             log::warn!("Horizon: mod {} content not loaded: {e}", m.id);
         } else {
             // Its menus drawn by code (capability `screen`, API 56): the component runs in this game.
-            #[cfg(feature = "mods")]
-            if let Some(screens) = &package.screens
-                && m.capabilities.contains(&Capability::Screen)
-                && let Ok(mut w) = super::code_screens::WASM.lock()
-            {
-                w.insert(m.id.clone(), std::sync::Arc::new(screens.clone()));
+            match &package.screens {
+                Some(screens) if m.capabilities.contains(&Capability::Screen) => {
+                    #[cfg(feature = "mods")]
+                    if let Ok(mut w) = super::code_screens::WASM.lock() {
+                        w.insert(m.id.clone(), std::sync::Arc::new(screens.clone()));
+                    }
+                    log::info!(
+                        "Horizon: mod {} draws {} menu screen(s) by code (screens.wasm, {} bytes): {}",
+                        m.id,
+                        code_menus.len(),
+                        screens.len(),
+                        code_menus.join(", ")
+                    );
+                }
+                Some(_) => log::warn!(
+                    "Horizon: mod {} has a screens.wasm but not capability screen in its manifest: its screens are not run",
+                    m.id
+                ),
+                None if !code_menus.is_empty() => log::warn!(
+                    "Horizon: mod {} has menus drawn by code ({}) but no screens.wasm: their JSON screens are shown",
+                    m.id,
+                    code_menus.join(", ")
+                ),
+                None => {}
             }
         }
     }

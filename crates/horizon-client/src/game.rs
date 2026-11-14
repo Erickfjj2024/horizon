@@ -19045,6 +19045,10 @@ impl Progress {
 /// Harness and dedicated runs keep the fully-synchronous startup so their
 /// output stays byte-identical; only an ordinary launch shows the window first.
 fn synchronous_startup(options: &Options) -> bool {
+    // Tests of the loading screen's path (the one Android always takes) under the control socket.
+    if std::env::var_os("HORIZON_ASYNC_STARTUP").is_some() && !options.headless {
+        return false;
+    }
     // A headless game has no window for the loading screen.
     options.headless
         || options.frames.is_some()

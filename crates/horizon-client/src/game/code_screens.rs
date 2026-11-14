@@ -57,6 +57,31 @@ mod imp {
     static INSTANCES: Mutex<BTreeMap<String, ScreenMod>> = Mutex::new(BTreeMap::new());
     /// The open screen.
     static OPEN: Mutex<Option<Open>> = Mutex::new(None);
+    /// The menu whose code screen could not run, and why: logged once, shown on the JSON screen drawn instead and in
+    /// `horizon-ctl state`'s `screen_code`.
+    static FAILED: Mutex<Option<(String, String)>> = Mutex::new(None);
+
+    /// A code screen that could not run: warned once per menu and reason, kept for the panel and `state`.
+    fn fail(menu: &str, reason: String) {
+        let Ok(mut f) = FAILED.lock() else { return };
+        if f.as_ref().is_some_and(|(m, r)| m == menu && *r == reason) {
+            return;
+        }
+        log::warn!(
+            "Horizon: the code screen of {menu} could not run, its JSON screen is shown instead: {reason}"
+        );
+        *f = Some((menu.to_owned(), reason));
+    }
+
+    /// Why the code screen of `menu` could not run, if it could not.
+    pub(in crate::game) fn failure(menu: &str) -> Option<String> {
+        FAILED
+            .lock()
+            .ok()?
+            .as_ref()
+            .filter(|(m, _)| m == menu)
+            .map(|(_, r)| r.clone())
+    }
     /// What the screen asked for, waiting for a place with the game mutable to send it.
     static ACTIONS: Mutex<Vec<ScreenAction>> = Mutex::new(Vec::new());
     /// Renders a second at most for an animated screen.
@@ -325,7 +350,7 @@ mod imp {
             open: &'a mut Option<Open>,
             menu: &str,
             data: &[i32],
-        ) -> Option<&'a mut Open> {
+        ) -> Result<&'a mut Open, String> {
             let at = self.native_screen_pos().unwrap_or([0; 3]);
             if open.as_ref().is_some_and(|o| o.menu != menu || o.at != at) {
                 close(open);
@@ -367,13 +392,23 @@ mod imp {
                         s
                     }
                     None => {
-                        log::warn!("Horizon: {}", error.clone().unwrap_or_default());
-                        return None;
+                        return Err(error
+                            .unwrap_or_else(|| format!("mod {namespace}'s screens did not load")));
                     }
                 };
-                if let Some(e) = &error {
-                    log::warn!("Horizon: {e}");
+                // `open` refused: the JSON screen instead, and the component kept for the next menu.
+                if let Some(e) = error {
+                    if screen.failed.is_none()
+                        && let Ok(mut i) = INSTANCES.lock()
+                    {
+                        i.insert(screen.id.clone(), screen);
+                    }
+                    return Err(e);
                 }
+                if let Ok(mut f) = FAILED.lock() {
+                    *f = None;
+                }
+                log::info!("Horizon: the screen of {menu} is drawn by mod {namespace}'s code");
                 *open = Some(Open {
                     menu: menu.to_owned(),
                     at,
@@ -398,7 +433,7 @@ mod imp {
                     frames: VecDeque::new(),
                 });
             }
-            open.as_mut()
+            open.as_mut().ok_or_else(|| "the screen closed".to_owned())
         }
 
         /// Renders when the frame is stale.
@@ -661,20 +696,31 @@ mod imp {
             );
         }
 
-        /// The panel's commands up to `SLOTS` (all of them without one); true when the open menu has a code screen.
+        /// The panel's commands up to `SLOTS` (all of them without one) of the code screen of menu `block`; false
+        /// when it could not run (the reason is logged once and kept: the caller draws the JSON screen instead).
         pub(in crate::game) fn code_screen_draw(
             &self,
+            block: &str,
             batch: &mut HudBatch,
             origin: [f32; 2],
         ) -> bool {
             let Some((menu, data, _)) = self.code_target() else {
+                fail(
+                    block,
+                    "the open menu's panel was not found (no screen shown or no renderer)".into(),
+                );
                 return false;
             };
             let Ok(mut guard) = OPEN.lock() else {
-                return true;
+                return false;
             };
-            let Some(o) = self.code_open(&mut guard, &menu, &data) else {
-                return true;
+            let o = match self.code_open(&mut guard, &menu, &data) {
+                Ok(o) => o,
+                Err(e) => {
+                    drop(guard);
+                    fail(&menu, e);
+                    return false;
+                }
             };
             self.code_render(o, data, origin);
             o.frames.push_back(Instant::now());
@@ -1000,9 +1046,28 @@ mod imp {
             g.as_ref()?.slots.get(&(slot as u32)).copied()
         }
 
+        /// Whether the open menu's code screen runs (else its JSON screen is drawn and pressed).
+        pub(in crate::game) fn code_screen_running(&self) -> bool {
+            let Some((menu, _, _)) = self.code_target() else {
+                return false;
+            };
+            OPEN.lock()
+                .ok()
+                .is_some_and(|g| g.as_ref().is_some_and(|o| o.menu == menu))
+        }
+
         pub(in crate::game) fn code_screen_stats(&self) -> Option<CodeStats> {
             let g = OPEN.lock().ok()?;
-            let o = g.as_ref()?;
+            let Some(o) = g.as_ref() else {
+                // A code screen that could not run: its menu and why.
+                let block = self.native_open_block()?;
+                let reason = failure(&block)?;
+                return Some(CodeStats {
+                    menu: block,
+                    error: Some(reason),
+                    ..Default::default()
+                });
+            };
             let ms = |d: Duration| d.as_secs_f64() * 1000.0;
             Some(CodeStats {
                 menu: o.menu.clone(),
@@ -1220,18 +1285,28 @@ impl Game<'_> {
 }
 
 #[cfg(feature = "mods")]
-pub(super) use imp::{WASM, reset};
+pub(super) use imp::{WASM, failure, reset};
 
 #[cfg(not(feature = "mods"))]
 pub(super) fn reset() {}
+
+/// Without the WebAssembly runtime a code screen never runs: its JSON screen is drawn, and this says why.
+#[cfg(not(feature = "mods"))]
+pub(super) fn failure(_menu: &str) -> Option<String> {
+    Some("this build runs no mod code (no mods feature)".into())
+}
 
 #[cfg(not(feature = "mods"))]
 impl Game<'_> {
     pub(in crate::game) fn code_screen_draw(
         &self,
+        _block: &str,
         _batch: &mut HudBatch,
         _origin: [f32; 2],
     ) -> bool {
+        false
+    }
+    pub(in crate::game) fn code_screen_running(&self) -> bool {
         false
     }
     pub(in crate::game) fn code_screen_draw_after_slots(&self, _batch: &mut HudBatch) {}

@@ -4405,7 +4405,7 @@ impl Game<'_> {
             rgba(198, 198, 198, 255),
         );
         // A code screen draws its own panel and has the frames drawn where it says (`SLOTS`).
-        if !super::menu_screens::screen_of(&s.block).is_some_and(|d| d.code) {
+        if !self.code_screen_running() {
             self.draw_native_slot_frames(batch, ox, oy);
         }
         super::menu_screens::set_screen_at([s.at.0, s.at.1, s.at.2]);
