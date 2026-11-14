@@ -95,7 +95,11 @@ fn load_namespace(root: &Path, namespace: &str, map: &mut HashMap<String, NineSl
                 .strip_prefix(&base)
                 .map(|r| r.to_string_lossy().replace('\\', "/"))
                 .unwrap_or_default();
-            let key = if namespace == "minecraft" { key } else { format!("{namespace}:{key}") };
+            let key = if namespace == "minecraft" {
+                key
+            } else {
+                format!("{namespace}:{key}")
+            };
             map.insert(key, nine_slice);
         }
     }
@@ -1406,9 +1410,14 @@ impl EditBox {
 mod tests {
     #[test]
     fn a_content_mods_gui_sprites_keep_their_nine_slice_metadata() {
-        let root = std::env::temp_dir().join(format!("horizon-mod-nine-slice-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("horizon-mod-nine-slice-{}", std::process::id()));
         let meta = r#"{"gui": {"scaling": {"type": "nine_slice", "width": 16, "height": 16, "border": 4}}}"#;
-        for (ns, rel) in [("mymod", "base"), ("mymod", "bar/base"), ("minecraft", "widget/button")] {
+        for (ns, rel) in [
+            ("mymod", "base"),
+            ("mymod", "bar/base"),
+            ("minecraft", "widget/button"),
+        ] {
             let path = root.join(format!("assets/{ns}/textures/gui/sprites/{rel}.png.mcmeta"));
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(path, meta).unwrap();
@@ -1416,7 +1425,11 @@ mod tests {
         load_metadata(&root);
         let _ = std::fs::remove_dir_all(&root);
         // A mod's sprites by the atlas's names (`<ns>:gui/sprites/...`), vanilla's without a namespace.
-        for key in ["mymod:gui/sprites/base", "mymod:gui/sprites/bar/base", "gui/sprites/widget/button"] {
+        for key in [
+            "mymod:gui/sprites/base",
+            "mymod:gui/sprites/bar/base",
+            "gui/sprites/widget/button",
+        ] {
             let n = nine_slice_metadata(key).unwrap_or_else(|| panic!("no nine-slice for {key}"));
             assert_eq!((n.width, n.height, n.border), (16, 16, [4; 4]));
         }
