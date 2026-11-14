@@ -951,3 +951,57 @@ impl Game<'_> {
         hovered(screen, data, &l, at).unwrap_or_default()
     }
 }
+
+/// The last mod menu opened, as `open_native_screen` found it: for the log and `horizon-ctl state`'s `mod_menus`.
+pub(super) static LAST_MENU: Mutex<Option<serde_json::Value>> = Mutex::new(None);
+
+impl Game<'_> {
+    /// A container opened on menu type `menu`: logs which screen it got (JSON, code or none) and why, once per open.
+    pub(super) fn note_menu_open(&self, menu: &str, target: Option<(i32, i32, i32)>) {
+        let block = target.map(|t| self.res.facts().get(self.world.block(t.0, t.1, t.2)).name.to_string());
+        let shown = self.native_opening_block();
+        let kind = match shown.as_deref().and_then(screen_of) {
+            Some(s) if s.code => "code",
+            Some(_) => "json",
+            None => "none",
+        };
+        let known = horizon_client::containers::mod_menu_type(menu).is_some();
+        let registered = screen_of(menu).is_some();
+        let atlas = &self.gui.atlas;
+        let namespace = menu.split_once(':').map_or(menu, |(ns, _)| ns);
+        let mod_sprites = atlas.sprites.keys().filter(|k| k.starts_with(&format!("{namespace}:"))).count();
+        let value = serde_json::json!({
+            "menu": menu,
+            "block": block,
+            "screen": kind,
+            "menu_type_known": known,
+            "screen_registered": registered,
+            "panel_found": shown.is_some(),
+            "registry_menu_types": horizon_client::containers::mod_menu_types().len(),
+            "registry_screens": MENU_SCREENS.get().map_or(0, |m| m.len()),
+            "mod_gui_sprites": mod_sprites,
+            "gui_atlas": [atlas.width, atlas.height],
+        });
+        if menu.contains(':') && !menu.starts_with("minecraft:") {
+            log::info!("Horizon: mod menu opened: {value}");
+        }
+        if let Ok(mut l) = LAST_MENU.lock() {
+            *l = Some(value);
+        }
+    }
+
+    /// `horizon-ctl state`'s `mod_menus`: the last content load (mods, error, registries) and the last mod menu opened.
+    pub(super) fn mod_menus_state(&self) -> serde_json::Value {
+        let report = super::mods::CONTENT_REPORT.lock().ok().and_then(|r| r.clone());
+        let atlas = &self.gui.atlas;
+        serde_json::json!({
+            "content_mods": report.as_ref().map(|r| r.mods.clone()),
+            "content_error": report.and_then(|r| r.error),
+            "registry_menu_types": horizon_client::containers::mod_menu_types().len(),
+            "registry_screens": MENU_SCREENS.get().map_or(0, |m| m.len()),
+            "mod_gui_sprites": atlas.sprites.keys().filter(|k| k.contains(':')).count(),
+            "gui_atlas": [atlas.width, atlas.height],
+            "last_menu": LAST_MENU.lock().ok().and_then(|l| l.clone()),
+        })
+    }
+}

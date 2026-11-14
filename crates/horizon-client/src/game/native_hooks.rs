@@ -4217,6 +4217,11 @@ impl Game<'_> {
                 data: Vec::new(),
             });
         }
+        self.note_menu_open(menu, target);
+    }
+    /// The block (or menu type) of the mod screen `open_native_screen` just found, before the container shows.
+    pub(super) fn native_opening_block(&self) -> Option<String> {
+        self.mod_screen.as_ref().map(|s| s.block.clone())
     }
     /// The screen of the mod block `target` when it is the one opening `menu`.
     fn open_block_screen(&mut self, key: Pos, target: Option<Pos>, window: i32, menu: &str) {

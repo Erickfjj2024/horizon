@@ -529,6 +529,8 @@ impl Game<'_> {
         });
         // An open menu drawn by code (API 56): its render times and the fps with it open.
         v["screen_code"] = self.code_screen_state();
+        // The mods' menus: the last content load, the registries, the last mod menu opened and its screen.
+        v["mod_menus"] = self.mod_menus_state();
         v
     }
 

@@ -318,7 +318,7 @@ pub(super) fn content_root(
                 Ok(types) => known.insert(types),
                 Err(e) => {
                     log::warn!("Horizon: content mods not loaded: {e}");
-                    register_mob_effects(&[]);
+                    note_content(&[], Some(e.to_string()));
                     return root.to_owned();
                 }
             },
@@ -374,18 +374,50 @@ pub(super) fn content_root(
                     out.display()
                 );
             }
-            register_mob_effects(&mods);
-            register_entity_types(&mods);
-            register_menu_types(&mods);
+            // The registries take their first registration for the whole process: an empty one (no mods yet, or a
+            // load that failed) must not lock them, or a later load with the mods could not register them.
+            if !mods.is_empty() {
+                register_mob_effects(&mods);
+                register_entity_types(&mods);
+                register_menu_types(&mods);
+            }
+            note_content(&mods, None);
             out
         }
         Err(e) => {
             log::warn!("Horizon: content mods not loaded: {e}");
-            register_mob_effects(&[]);
-            register_entity_types(&[]);
-            register_menu_types(&[]);
+            note_content(&mods, Some(e.to_string()));
             root.to_owned()
         }
+    }
+}
+
+/// What the last content load did, for the log and `horizon-ctl state`'s `mod_menus`.
+#[derive(Clone, Debug, Default)]
+pub(super) struct ContentReport {
+    pub mods: Vec<String>,
+    pub error: Option<String>,
+}
+pub(super) static CONTENT_REPORT: std::sync::Mutex<Option<ContentReport>> = std::sync::Mutex::new(None);
+
+/// Notes and logs a content load: which mods, how many menu types and screens the registries hold now, the error.
+fn note_content(mods: &[horizon_client::mod_content::ContentMod], error: Option<String>) {
+    let ids: Vec<String> = mods.iter().map(|m| m.id.clone()).collect();
+    let menus = horizon_client::containers::mod_menu_types().len();
+    let screens = super::menu_screens::MENU_SCREENS.get().map_or(0, |m| m.len());
+    let code = super::menu_screens::MENU_SCREENS.get().map_or(0, |m| m.values().filter(|s| s.code).count());
+    match &error {
+        None => log::info!(
+            "Horizon: content loaded for mods [{}]: the registries hold {menus} menu type(s), {screens} menu screen(s), {code} drawn by code",
+            ids.join(", ")
+        ),
+        Some(e) => log::warn!(
+            "Horizon: content of mods [{}] not loaded ({e}); the registries hold {menus} menu type(s), {screens} menu screen(s)",
+            ids.join(", ")
+        ),
+    }
+    if let Ok(mut r) = CONTENT_REPORT.lock() {
+        *r = Some(ContentReport { mods: ids, error });
     }
 }
 
